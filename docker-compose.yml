@@ -1,24 +1,14 @@
-name: kisekae
-
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:${PORT:-8000}:8000"
+    build: .
+    container_name: kisekae-web
     env_file:
       - .env
+    ports:
+      - "8000:8000"
     volumes:
-      - db_data:/app/data
+      - static_volume:/app/staticfiles
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8000}/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 volumes:
-  db_data:
-    name: kisekae_db_data
+  static_volume:

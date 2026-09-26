@@ -1,15 +1,3 @@
 .env
 .venv/**
 KiseKaeDjango/__pycache__/**
-__pycache__/
-*.pyc
-*.pyo
-
-# SQLite database (persisted via Docker volume)
-data/*.sqlite3
-
-# Django collected static files
-staticfiles/
-
-# Docker generated
-db.sqlite3

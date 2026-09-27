@@ -1,19 +1,35 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from django.db import models
 from rest_framework import serializers
 
 from .utils import (
     get_user_by_identifier,
     identify_channel,
-    normalize_identifier,
-    normalize_phone,
+    name_validator,
+    phone_validator,
 )
 
 User = get_user_model()
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+        validators=[name_validator],
+    )
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=False,
+        allow_null=True,
+    )
+    phone = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        allow_null=True,
+        validators=[phone_validator],
+    )
     password = serializers.CharField(write_only=True, required=False, allow_blank=False)
     confirm_password = serializers.CharField(write_only=True, required=False, allow_blank=False)
 
@@ -22,10 +38,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["name", "email", "phone", "password", "confirm_password"]
 
     def validate(self, attrs):
+        name = attrs.get("name")
         email = attrs.get("email")
         phone = attrs.get("phone")
+
         if not email and not phone:
             raise serializers.ValidationError("Provide at least an email or a phone number.")
+
+        if name:
+            attrs["name"] = name.strip()
 
         if email:
             email = email.strip().lower()
@@ -34,14 +55,10 @@ class RegisterSerializer(serializers.ModelSerializer):
             attrs["email"] = email
 
         if phone:
-            norm_phone = normalize_phone(phone)
-            if not norm_phone:
-                raise serializers.ValidationError({"phone": "Enter a valid phone number."})
-            digits = "".join(ch for ch in phone if ch.isdigit())
-            bare_10 = digits[-10:] if len(digits) >= 10 else digits
-            if User.objects.filter(models.Q(phone=norm_phone) | models.Q(phone=bare_10)).exists():
+            phone = phone.strip()
+            if User.objects.filter(phone=phone).exists():
                 raise serializers.ValidationError({"phone": "An account with this phone number already exists."})
-            attrs["phone"] = norm_phone
+            attrs["phone"] = phone
 
         password = attrs.get("password")
         confirm_password = attrs.pop("confirm_password", None)
@@ -67,7 +84,13 @@ class LoginPasswordSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         identifier = attrs.get("identifier", "").strip()
-        user, channel = get_user_by_identifier(identifier)
+        channel = identify_channel(identifier)
+        if channel is None:
+            raise serializers.ValidationError(
+                {"identifier": "Enter a valid email address or phone number in format '+919876543210'."}
+            )
+
+        user, _ = get_user_by_identifier(identifier)
         if not user:
             raise serializers.ValidationError("No account found with that email or phone number.")
 
@@ -92,7 +115,9 @@ class OTPRequestSerializer(serializers.Serializer):
     def validate_identifier(self, value):
         cleaned = value.strip()
         if identify_channel(cleaned) is None:
-            raise serializers.ValidationError("Enter a valid email address or phone number.")
+            raise serializers.ValidationError(
+                "Enter a valid email address or 10-digit Indian phone number starting with '+91' (e.g. +919876543210)."
+            )
         return cleaned
 
 
@@ -103,7 +128,9 @@ class OTPVerifySerializer(serializers.Serializer):
     def validate_identifier(self, value):
         cleaned = value.strip()
         if identify_channel(cleaned) is None:
-            raise serializers.ValidationError("Enter a valid email address or phone number.")
+            raise serializers.ValidationError(
+                "Enter a valid email address or 10-digit Indian phone number starting with '+91' (e.g. +919876543210)."
+            )
         return cleaned
 
     def validate_code(self, value):

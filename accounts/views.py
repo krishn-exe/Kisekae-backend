@@ -110,11 +110,6 @@ class LoginPasswordView(APIView):
 
 
 class OTPRequestView(APIView):
-    """Issues a one-time login code via email or SMS.
-
-    Returns the same success message whether or not an account exists,
-    preventing user enumeration.
-    """
 
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
@@ -122,7 +117,7 @@ class OTPRequestView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Request a 6-digit login OTP code",
-        description="Generates and sends a 6-digit one-time code via email or Fast2SMS. Rate limited to once every 60 seconds per identifier.",
+        description="Generates and sends a 6-digit one-time code via email or SMS (Twilio). Rate limited to once every 60 seconds per identifier.",
         request=OTPRequestSerializer,
         responses={
             200: inline_serializer(
@@ -151,6 +146,8 @@ class OTPRequestView(APIView):
                 )
 
             raw_code = otp.issue()
+            if settings.DEBUG:
+                logger.info("DEBUG OTP for %s: %s", identifier, raw_code)
             try:
                 send_target = user.email if channel == "email" else (user.phone or identifier)
                 self._send_code(channel, send_target, raw_code)
@@ -222,7 +219,6 @@ class OTPVerifyView(APIView):
         if not user.is_active:
             return Response({"detail": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Mark the verified channel
         if channel == "email" and not user.is_email_verified:
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])

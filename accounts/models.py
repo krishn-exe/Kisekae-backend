@@ -3,7 +3,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .utils import normalize_phone
+from .utils import name_validator, phone_validator
 
 
 class UserManager(BaseUserManager):
@@ -14,11 +14,7 @@ class UserManager(BaseUserManager):
             raise ValueError("A user needs at least an email or a phone number.")
 
         email = email.strip().lower() if email else None
-        if phone:
-            norm_phone = normalize_phone(phone)
-            phone = norm_phone if norm_phone else phone.strip()
-        else:
-            phone = None
+        phone = phone.strip() if phone else None
 
         user = self.model(email=email, phone=phone, **extra_fields)
 
@@ -47,9 +43,19 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    name = models.CharField(max_length=150, blank=True)
+    name = models.CharField(
+        max_length=150,
+        blank=True,
+        validators=[name_validator],
+    )
     email = models.EmailField(unique=True, null=True, blank=True)
-    phone = models.CharField(max_length=15, unique=True, null=True, blank=True)
+    phone = models.CharField(
+        max_length=15,
+        unique=True,
+        null=True,
+        blank=True,
+        validators=[phone_validator],
+    )
 
     is_email_verified = models.BooleanField(default=False)
     is_phone_verified = models.BooleanField(default=False)
@@ -73,6 +79,9 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def clean(self):
         super().clean()
+        if self.name:
+            self.name = self.name.strip()
+
         if self.email == "":
             self.email = None
         elif self.email:
@@ -81,14 +90,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.phone == "":
             self.phone = None
         elif self.phone:
-            norm = normalize_phone(self.phone)
-            if norm:
-                self.phone = norm
+            self.phone = self.phone.strip()
 
         if not self.email and not self.phone:
             raise ValidationError("Provide at least an email or a phone number.")
 
     def save(self, *args, **kwargs):
+        if self.name:
+            self.name = self.name.strip()
+
         if self.email == "":
             self.email = None
         elif self.email:
@@ -97,9 +107,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.phone == "":
             self.phone = None
         elif self.phone:
-            norm = normalize_phone(self.phone)
-            if norm:
-                self.phone = norm
+            self.phone = self.phone.strip()
 
         super().save(*args, **kwargs)
 

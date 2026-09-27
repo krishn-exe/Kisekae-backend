@@ -1,91 +1,74 @@
 import re
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
-from django.db import models
+from django.core.validators import RegexValidator, validate_email
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Strict Regex Rules
+PHONE_REGEX = re.compile(r"^\+91[6-9]\d{9}$")
+NAME_REGEX = re.compile(r"^[A-Za-z\s\.\'-]{2,150}$")
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 
+phone_validator = RegexValidator(
+    regex=PHONE_REGEX,
+    message="Phone number must be a valid 10-digit Indian number with '+91' prefix (e.g. +919876543210).",
+)
 
-def normalize_phone(phone: str) -> str | None:
-    if not phone or not isinstance(phone, str):
-        return None
-
-    cleaned = re.sub(r"[\s\-\(\)\.]", "", phone.strip())
-    digits = "".join(ch for ch in cleaned if ch.isdigit())
-
-    if len(digits) == 10:
-        return f"+91{digits}"
-
-    if len(digits) == 11 and digits.startswith("0"):
-        return f"+91{digits[1:]}"
-
-    if len(digits) == 12 and digits.startswith("91"):
-        return f"+91{digits[2:]}"
-
-    if cleaned.startswith("+") and 7 <= len(digits) <= 15:
-        return f"+{digits}"
-
-    if 7 <= len(digits) <= 15:
-        return f"+{digits}"
-
-    return None
+name_validator = RegexValidator(
+    regex=NAME_REGEX,
+    message="Name must be 2-150 characters and can only contain letters, spaces, hyphens, periods, and apostrophes.",
+)
 
 
 def identify_channel(identifier: str) -> str | None:
+    """Strictly identifies whether identifier is a valid 'email', 'phone', or None.
+
+    Does NOT loosely strip symbols or re-parse digits.
+    """
     if not identifier or not isinstance(identifier, str):
         return None
 
     cleaned = identifier.strip()
 
-    # Check email
-    if EMAIL_RE.match(cleaned):
+    # Strict check for phone: must match +91 followed by 10 digits starting with 6-9
+    if PHONE_REGEX.match(cleaned):
+        return "phone"
+
+    # Strict check for email
+    if EMAIL_REGEX.match(cleaned):
         try:
             validate_email(cleaned)
             return "email"
         except ValidationError:
             pass
 
-    # Check phone
-    if normalize_phone(cleaned) is not None:
-        return "phone"
-
     return None
 
 
 def normalize_identifier(identifier: str) -> str:
+    """Returns normalized identifier: lowercased for email, stripped for phone."""
     if not identifier or not isinstance(identifier, str):
         return ""
-
     cleaned = identifier.strip()
     channel = identify_channel(cleaned)
     if channel == "email":
         return cleaned.lower()
-    if channel == "phone":
-        norm = normalize_phone(cleaned)
-        return norm if norm else cleaned
     return cleaned
 
 
 def get_user_by_identifier(identifier: str):
+    """Looks up a user by email (case-insensitive) or phone (exact strict match).
+
+    Returns (user, channel) tuple.
+    """
     User = get_user_model()
     channel = identify_channel(identifier)
     if not channel:
         return None, None
 
+    cleaned = identifier.strip()
     if channel == "email":
-        email = identifier.strip().lower()
-        user = User.objects.filter(email__iexact=email).first()
+        user = User.objects.filter(email__iexact=cleaned.lower()).first()
         return user, "email"
     else:
-        norm_phone = normalize_phone(identifier)
-        digits = "".join(ch for ch in identifier if ch.isdigit())
-        bare_10 = digits[-10:] if len(digits) >= 10 else digits
-
-        q = models.Q(phone=norm_phone)
-        if bare_10:
-            q |= models.Q(phone=bare_10)
-        q |= models.Q(phone=identifier.strip())
-
-        user = User.objects.filter(q).first()
+        user = User.objects.filter(phone=cleaned).first()
         return user, "phone"

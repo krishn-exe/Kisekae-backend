@@ -8,7 +8,17 @@ services:
       - "8000:8000"
     volumes:
       - static_volume:/app/staticfiles
+    depends_on:
+      - redis
     restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: kisekae-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
 
 volumes:
   static_volume:
+  redis_data:

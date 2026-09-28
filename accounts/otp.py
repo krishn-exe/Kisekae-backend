@@ -1,10 +1,8 @@
 import logging
 import secrets
 
-from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
-import requests
 
 from .utils import normalize_identifier
 
@@ -78,49 +76,3 @@ class RedisOTP:
                 cache.set(self.key, payload, timeout=remaining_ttl)
 
         return matched
-
-
-def send_otp_whatsapp(phone_number: str, raw_code: str) -> bool:
-    """Dispatches OTP via Meta WhatsApp Cloud API if credentials are set, or logs in development."""
-    access_token = getattr(settings, "META_WHATSAPP_ACCESS_TOKEN", None)
-    phone_number_id = getattr(settings, "META_WHATSAPP_PHONE_NUMBER_ID", None)
-
-    if not access_token or not phone_number_id:
-        logger.info(
-            "Meta WhatsApp credentials not set. OTP for %s: %s",
-            phone_number,
-            raw_code,
-        )
-        return False
-
-    digits = "".join(ch for ch in str(phone_number) if ch.isdigit())
-    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": digits,
-        "type": "text",
-        "text": {
-            "preview_url": False,
-            "body": f"Your Kisekae verification code is {raw_code}. It expires in 5 minutes.",
-        },
-    }
-
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        logger.info("Meta WhatsApp message sent to %s: %s", digits, data)
-        return True
-    except Exception as e:
-        logger.error("Failed to send Meta WhatsApp message to %s: %s", digits, e)
-        raise RuntimeError(f"Meta WhatsApp delivery failed: {e}") from e
-
-
-# Backward compatibility aliases
-send_otp_phone = send_otp_whatsapp
-send_otp_sms = send_otp_whatsapp

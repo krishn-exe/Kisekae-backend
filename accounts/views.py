@@ -15,7 +15,7 @@ from .google import (
     get_or_create_google_user,
     verify_google_id_token,
 )
-from .otp import RedisOTP, send_otp_whatsapp
+from .otp import RedisOTP
 from .serializers import (
     ChangePasswordSerializer,
     GoogleAuthSerializer,
@@ -136,8 +136,7 @@ class OTPRequestView(APIView):
             "If an email identifier is provided, the code is sent to that email. "
             "If a phone identifier is provided, the code is routed to the account's registered email address. "
             "Rate limited to once every 60 seconds per identifier. "
-            "Set `purpose` to 'password_reset' for forgot-password flow (defaults to 'login'). "
-            "In development mode (DEBUG=True), the generated OTP is included in the response as `debug_otp`."
+            "Set `purpose` to 'password_reset' for forgot-password flow (defaults to 'login')."
         ),
         request=OTPRequestSerializer,
         responses={
@@ -145,7 +144,6 @@ class OTPRequestView(APIView):
                 name="OTPRequestResponse",
                 fields={
                     "detail": serializers.CharField(),
-                    "debug_otp": serializers.CharField(required=False),
                 },
             ),
             400: OpenApiResponse(description="Invalid identifier format"),
@@ -161,7 +159,6 @@ class OTPRequestView(APIView):
 
         user, channel = get_user_by_identifier(identifier)
 
-        raw_code = None
         if user and user.is_active:
             otp = RedisOTP(identifier=identifier, purpose=purpose)
             can_send, wait_secs = otp.can_issue()
@@ -172,19 +169,14 @@ class OTPRequestView(APIView):
                 )
 
             raw_code = otp.issue()
-            if settings.DEBUG:
-                logger.info("DEBUG OTP for %s (%s): %s", identifier, purpose, raw_code)
             try:
-                if channel == "email":
-                    self._send_code("email", user.email, raw_code, purpose)
+                target_email = user.email
+                if target_email:
+                    if channel == "phone":
+                        logger.info("Routing phone OTP for %s to registered email %s", identifier, target_email)
+                    self._send_code(target_email, raw_code, purpose)
                 else:
-                    # Phone identifier entered: route OTP to user's registered email
-                    if user.email:
-                        logger.info("Routing phone OTP for %s to registered email %s", identifier, user.email)
-                        self._send_code("email", user.email, raw_code, purpose)
-                    else:
-                        send_target = user.phone or identifier
-                        self._send_code("whatsapp", send_target, raw_code, purpose)
+                    logger.warning("User for identifier %s has no registered email.", identifier)
             except Exception as e:
                 logger.exception("Failed to send OTP code to %s: %s", identifier, e)
                 return Response(
@@ -192,24 +184,21 @@ class OTPRequestView(APIView):
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
 
-        resp_data = {"detail": "If an account exists, a code has been sent."}
-        if settings.DEBUG and raw_code:
-            resp_data["debug_otp"] = raw_code
-        return Response(resp_data, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "If an account exists, a code has been sent."},
+            status=status.HTTP_200_OK,
+        )
 
     @staticmethod
-    def _send_code(channel, target, raw_code, purpose="login"):
+    def _send_code(target_email, raw_code, purpose="login"):
         subject = "Your Kisekae password reset code" if purpose == "password_reset" else "Your Kisekae login code"
         body = f"Your {'password reset' if purpose == 'password_reset' else 'login'} code is {raw_code}. It expires in 5 minutes."
-        if channel == "email":
-            send_mail(
-                subject=subject,
-                message=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[target],
-            )
-        else:
-            send_otp_whatsapp(target, raw_code)
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[target_email],
+        )
 
 
 class OTPVerifyView(APIView):

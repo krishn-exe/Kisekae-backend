@@ -8,12 +8,13 @@ from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken
 
 from .google import (
     get_or_create_google_user,
     verify_google_id_token,
 )
+from .models import RefreshToken
 from .otp import RedisOTP
 from .serializers import (
     ChangePasswordSerializer,
@@ -24,6 +25,7 @@ from .serializers import (
     OTPVerifySerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
+    TokenRefreshSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,9 @@ User = get_user_model()
 
 
 def tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-    return {"refresh": str(refresh), "access": str(refresh.access_token)}
+    access = AccessToken.for_user(user)
+    refresh = RefreshToken.create_token(user)
+    return {"refresh": refresh, "access": str(access)}
 
 
 class RegisterView(APIView):
@@ -239,6 +242,59 @@ class OTPVerifyView(APIView):
         return Response({"tokens": tokens_for_user(user)}, status=status.HTTP_200_OK)
 
 
+class TokenRefreshView(APIView):
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = TokenRefreshSerializer
+    www_authenticate_realm = "api"
+
+    def get_authenticate_header(self, request):
+        return f'Bearer realm="{self.www_authenticate_realm}"'
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Refresh an access token",
+        description=(
+            "Refreshes an access token using an active DB-backed refresh token. "
+            "Rotates the refresh token upon successful use."
+        ),
+        request=TokenRefreshSerializer,
+        responses={
+            200: inline_serializer(
+                name="TokenRefreshResponse",
+                fields={
+                    "access": serializers.CharField(),
+                    "refresh": serializers.CharField(),
+                },
+            ),
+            400: OpenApiResponse(description="Validation error (e.g. missing refresh token)"),
+            401: OpenApiResponse(description="Invalid, expired, or revoked refresh token"),
+            403: OpenApiResponse(description="Account is inactive"),
+        },
+    )
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token_obj = serializer.validated_data["token_obj"]
+
+        # Revoke old refresh token upon rotation
+        token_obj.is_revoked = True
+        token_obj.save(update_fields=["is_revoked"])
+
+        # Issue new token pair
+        access = AccessToken.for_user(token_obj.user)
+        new_refresh = RefreshToken.create_token(token_obj.user)
+
+        return Response(
+            {
+                "access": str(access),
+                "refresh": new_refresh,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class LogoutView(APIView):
 
     authentication_classes = []
@@ -249,11 +305,12 @@ class LogoutView(APIView):
         tags=["Accounts"],
         summary="Log out user and blacklist access token",
         description=(
-            "Logs out the user by placing their access token on a Redis blacklist with its remaining TTL. "
+            "Logs out the user by placing their access token on a Redis blacklist with its remaining TTL "
+            "and marking the refresh token as revoked in the database. "
             "The access token must be provided in the `Authorization: Bearer <access_token>` header. "
             "The refresh token is provided in the request body under `refresh`. "
             "Both access and refresh tokens are validated to ensure they belong to the same user "
-            "and the access token is not already blacklisted."
+            "and neither token has already been revoked or blacklisted."
         ),
         auth=[{"jwtAuth": []}],
         request=LogoutSerializer,
@@ -369,6 +426,7 @@ class ResetPasswordView(APIView):
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
+        RefreshToken.revoke_all_for_user(user)
 
         return Response(
             {"detail": "Password reset successfully. Please login with your new password."},

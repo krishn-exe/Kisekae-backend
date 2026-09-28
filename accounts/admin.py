@@ -1,7 +1,18 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import User
+from .models import RefreshToken, User
+
+
+@admin.register(RefreshToken)
+class RefreshTokenAdmin(admin.ModelAdmin):
+    list_display = ("user", "token_hash_preview", "is_revoked", "expires_at", "created_at")
+    list_filter = ("is_revoked", "created_at", "expires_at")
+    search_fields = ("user__email", "token_hash")
+    readonly_fields = ("created_at",)
+
+    def token_hash_preview(self, obj):
+        return f"{obj.token_hash[:10]}..."
 
 
 @admin.register(User)

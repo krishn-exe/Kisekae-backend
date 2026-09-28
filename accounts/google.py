@@ -44,10 +44,6 @@ def verify_google_id_token(token: str) -> dict:
     Validates signature, expiration, issuer, and audience (if configured).
     """
     client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-
-    if not client_id and not getattr(settings, "DEBUG", False):
-        raise ValueError("GOOGLE_OAUTH_CLIENT_ID must be configured in production.")
-
     audience = client_id if client_id else None
 
     try:

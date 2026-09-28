@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - static_volume:/app/staticfiles
+      - ./staticfiles:/app/staticfiles
     depends_on:
       - redis
     restart: unless-stopped
@@ -20,5 +20,4 @@ services:
       - redis_data:/data
 
 volumes:
-  static_volume:
   redis_data:

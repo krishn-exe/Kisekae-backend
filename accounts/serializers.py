@@ -208,7 +208,6 @@ class LogoutSerializer(serializers.Serializer):
         access_jti = access_payload["jti"]
         access_exp = access_payload["exp"]
 
-        # Only the access token is placed on the Redis blacklist with its remaining TTL
         blacklist_access_token(access_jti, access_exp)
 
 
@@ -261,44 +260,11 @@ class ResetPasswordSerializer(serializers.Serializer):
 
 
 class GoogleAuthSerializer(serializers.Serializer):
-    """Validates Google OAuth request payload.
-
-    Accepts either an `id_token` (or `credential` alias from Google Identity Services)
-    or an authorization `code` (from Google OAuth redirect flow).
-    """
-
     id_token = serializers.CharField(
-        required=False,
+        required=True,
         allow_blank=False,
         help_text="Google ID token (JWT) from Google Identity Services or One Tap.",
     )
-    credential = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        help_text="Alias for id_token matching Google Identity Services JavaScript callback.",
-    )
-    code = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        help_text="Authorization code from Google OAuth redirect flow.",
-    )
-    redirect_uri = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        help_text="Redirect URI used when requesting the authorization code. Defaults to 'postmessage'.",
-    )
 
-    def validate(self, attrs):
-        id_token_val = attrs.get("id_token") or attrs.get("credential")
-        code = attrs.get("code")
-
-        if not id_token_val and not code:
-            raise serializers.ValidationError("Either 'id_token' (or 'credential') or 'code' is required.")
-
-        if id_token_val:
-            attrs["id_token"] = id_token_val.strip()
-
-        if code:
-            attrs["code"] = code.strip()
-
-        return attrs
+    def validate_id_token(self, value):
+        return value.strip()

@@ -5,3 +5,4 @@ __pycache__/
 *$py.class
 accounts/tests.py
 openapi.yaml
+staticfiles/

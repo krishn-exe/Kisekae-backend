@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .google import (
-    exchange_google_code,
     get_or_create_google_user,
     verify_google_id_token,
 )
@@ -37,7 +36,6 @@ def tokens_for_user(user):
 
 
 class RegisterView(APIView):
-    """Create a new user account. Email is mandatory. Name and password are optional."""
 
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
@@ -86,7 +84,6 @@ class RegisterView(APIView):
 
 
 class LoginPasswordView(APIView):
-    """Authenticate with email and password, returning JWT tokens."""
 
     permission_classes = [AllowAny]
     serializer_class = LoginPasswordSerializer
@@ -121,7 +118,6 @@ class LoginPasswordView(APIView):
 
 
 class OTPRequestView(APIView):
-    """Send a 6-digit OTP code to the user's email."""
 
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
@@ -192,7 +188,6 @@ class OTPRequestView(APIView):
 
 
 class OTPVerifyView(APIView):
-    """Verify a 6-digit OTP code and receive JWT tokens. Also marks the email as verified."""
 
     permission_classes = [AllowAny]
     serializer_class = OTPVerifySerializer
@@ -245,7 +240,6 @@ class OTPVerifyView(APIView):
 
 
 class LogoutView(APIView):
-    """Log out by blacklisting the access token on Redis. Access token is validated from header and refresh token from body."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -293,7 +287,6 @@ class LogoutView(APIView):
 
 
 class ChangePasswordView(APIView):
-    """Authenticated password change: requires valid (non-blacklisted) access token."""
 
     permission_classes = [IsAuthenticated]
     serializer_class = ChangePasswordSerializer
@@ -324,7 +317,6 @@ class ChangePasswordView(APIView):
 
 
 class ResetPasswordView(APIView):
-    """Unauthenticated password reset: verifies OTP then sets new password."""
 
     permission_classes = [AllowAny]
     serializer_class = ResetPasswordSerializer
@@ -385,7 +377,6 @@ class ResetPasswordView(APIView):
 
 
 class GoogleAuthView(APIView):
-    """Authenticate or register a user using Google OAuth (ID token or Authorization Code)."""
 
     permission_classes = [AllowAny]
     serializer_class = GoogleAuthSerializer
@@ -395,8 +386,7 @@ class GoogleAuthView(APIView):
         summary="Google OAuth login and registration",
         description=(
             "Authenticates or registers a user via Google. "
-            "Accepts an `id_token` (or `credential` from Google Identity Services / One Tap) "
-            "or an authorization `code` (from OAuth redirect). "
+            "Accepts a Google `id_token` (JWT) from Google Identity Services or One Tap. "
             "If the user exists by email, logs them in. "
             "If the user is new, automatically registers them with their Google profile details. "
             "Returns standard JWT access/refresh tokens."
@@ -449,27 +439,16 @@ class GoogleAuthView(APIView):
             ),
             400: OpenApiResponse(description="Invalid token, unverified email, or missing parameters"),
             403: OpenApiResponse(description="Account is inactive"),
-            500: OpenApiResponse(description="Google token verification or exchange failed"),
+            500: OpenApiResponse(description="Google token verification failed"),
         },
     )
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        id_token_str = serializer.validated_data.get("id_token")
-        code = serializer.validated_data.get("code")
-        redirect_uri = serializer.validated_data.get("redirect_uri")
+        id_token_str = serializer.validated_data["id_token"]
 
         try:
-            if code:
-                token_data = exchange_google_code(code, redirect_uri)
-                id_token_str = token_data.get("id_token")
-                if not id_token_str:
-                    return Response(
-                        {"detail": "Google token response did not contain an id_token."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
             payload = verify_google_id_token(id_token_str)
             user, created = get_or_create_google_user(payload)
 

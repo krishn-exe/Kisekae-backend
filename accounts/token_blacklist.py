@@ -18,7 +18,6 @@ def blacklist_access_token(jti: str, exp_timestamp: float | int) -> bool:
 
 
 def is_access_token_blacklisted(jti: str) -> bool:
-    """Check if an access token JTI is present in the Redis blacklist."""
     if not jti:
         return False
     key = f"{ACCESS_TOKEN_BLACKLIST_PREFIX}:{jti}"

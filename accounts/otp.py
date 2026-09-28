@@ -12,16 +12,11 @@ class RedisOTP:
 
     def __init__(self, email: str, purpose: str = "login"):
         self.email = email.strip().lower() if email else ""
-        self.identifier = self.email
         self.purpose = purpose
         self.key = f"otp:{purpose}:{self.email}"
         self.cooldown_key = f"otp:cooldown:{purpose}:{self.email}"
 
     def can_issue(self) -> tuple[bool, int]:
-        """Checks if a new code can be issued, enforcing cooldown between requests.
-
-        Returns (can_issue: bool, wait_seconds: int).
-        """
         if cache.get(self.cooldown_key):
             ttl_func = getattr(cache, "ttl", None)
             rem = ttl_func(self.cooldown_key) if callable(ttl_func) else None
@@ -29,10 +24,6 @@ class RedisOTP:
         return True, 0
 
     def issue(self) -> str:
-        """Generates a 6-digit code, stores its hash in cache, sets cooldown,
-
-        and returns the raw code.
-        """
         raw_code = f"{secrets.randbelow(1_000_000):06d}"
         cache.set(
             self.key,

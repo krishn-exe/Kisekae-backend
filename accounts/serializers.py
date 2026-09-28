@@ -33,9 +33,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         validators=[name_validator],
     )
     email = serializers.EmailField(
-        required=False,
+        required=True,
         allow_blank=False,
-        allow_null=True,
+        allow_null=False,
     )
     phone = serializers.CharField(
         required=False,
@@ -54,17 +54,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         email = attrs.get("email")
         phone = attrs.get("phone")
 
-        if not email and not phone:
-            raise serializers.ValidationError("Provide at least an email or a phone number.")
+        if not email:
+            raise serializers.ValidationError({"email": "Email address is required for registration."})
 
         if name:
             attrs["name"] = name.strip()
 
-        if email:
-            email = email.strip().lower()
-            if User.objects.filter(email__iexact=email).exists():
-                raise serializers.ValidationError({"email": "An account with this email already exists."})
-            attrs["email"] = email
+        email = email.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({"email": "An account with this email already exists."})
+        attrs["email"] = email
 
         if phone:
             phone = phone.strip()

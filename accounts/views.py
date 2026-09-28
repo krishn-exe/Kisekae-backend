@@ -38,7 +38,7 @@ def tokens_for_user(user):
 
 
 class RegisterView(APIView):
-    """Create a new user account with email and/or phone. Password is optional for OTP-only accounts."""
+    """Create a new user account. Email is mandatory. Phone, name, and password are optional."""
 
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
@@ -46,7 +46,7 @@ class RegisterView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Register a new user account",
-        description="Creates a new user with email and/or phone. Password is optional (OTP-only accounts).",
+        description="Creates a new user with mandatory email. Phone and name are optional. Password is optional (OTP-only accounts).",
         request=RegisterSerializer,
         responses={
             201: inline_serializer(
@@ -57,7 +57,7 @@ class RegisterView(APIView):
                         fields={
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
-                            "email": serializers.EmailField(allow_null=True),
+                            "email": serializers.EmailField(),
                             "phone": serializers.CharField(allow_null=True),
                         },
                     ),
@@ -123,7 +123,7 @@ class LoginPasswordView(APIView):
 
 
 class OTPRequestView(APIView):
-    """Send a 6-digit OTP code via email or WhatsApp for login or password reset."""
+    """Send a 6-digit OTP code via email (or routed to registered email when phone identifier is entered)."""
 
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
@@ -132,7 +132,9 @@ class OTPRequestView(APIView):
         tags=["Accounts"],
         summary="Request a 6-digit OTP code",
         description=(
-            "Generates and sends a 6-digit one-time code via email or WhatsApp (Meta Cloud API). "
+            "Generates and sends a 6-digit one-time code. "
+            "If an email identifier is provided, the code is sent to that email. "
+            "If a phone identifier is provided, the code is routed to the account's registered email address. "
             "Rate limited to once every 60 seconds per identifier. "
             "Set `purpose` to 'password_reset' for forgot-password flow (defaults to 'login'). "
             "In development mode (DEBUG=True), the generated OTP is included in the response as `debug_otp`."
@@ -173,8 +175,16 @@ class OTPRequestView(APIView):
             if settings.DEBUG:
                 logger.info("DEBUG OTP for %s (%s): %s", identifier, purpose, raw_code)
             try:
-                send_target = user.email if channel == "email" else (user.phone or identifier)
-                self._send_code(channel, send_target, raw_code, purpose)
+                if channel == "email":
+                    self._send_code("email", user.email, raw_code, purpose)
+                else:
+                    # Phone identifier entered: route OTP to user's registered email
+                    if user.email:
+                        logger.info("Routing phone OTP for %s to registered email %s", identifier, user.email)
+                        self._send_code("email", user.email, raw_code, purpose)
+                    else:
+                        send_target = user.phone or identifier
+                        self._send_code("whatsapp", send_target, raw_code, purpose)
             except Exception as e:
                 logger.exception("Failed to send OTP code to %s: %s", identifier, e)
                 return Response(

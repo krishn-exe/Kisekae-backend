@@ -15,7 +15,11 @@ from .token_blacklist import (
     blacklist_access_token,
     is_access_token_blacklisted,
 )
-from .utils import name_validator
+from .utils import (
+    email_validator,
+    name_validator,
+    otp_code_validator,
+)
 
 User = get_user_model()
 
@@ -31,12 +35,27 @@ class RegisterSerializer(serializers.ModelSerializer):
         required=True,
         allow_blank=False,
         allow_null=False,
+        validators=[email_validator],
     )
     password = serializers.CharField(write_only=True, required=False, allow_blank=False)
 
     class Meta:
         model = User
         fields = ["name", "email", "password"]
+
+    def validate_name(self, value):
+        if not value:
+            return ""
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        name_validator(cleaned)
+        return cleaned
+
+    def validate_email(self, value):
+        cleaned = value.strip().lower()
+        email_validator(cleaned)
+        return cleaned
 
     def validate(self, attrs):
         name = attrs.get("name")
@@ -64,8 +83,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class LoginPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = serializers.EmailField(validators=[email_validator])
     password = serializers.CharField(write_only=True)
+
+    def validate_email(self, value):
+        cleaned = value.strip().lower()
+        email_validator(cleaned)
+        return cleaned
 
     def validate(self, attrs):
         email = attrs.get("email", "").strip().lower()
@@ -89,7 +113,7 @@ class LoginPasswordSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    email = serializers.EmailField(validators=[email_validator])
     purpose = serializers.ChoiceField(
         choices=["login", "password_reset"],
         default="login",
@@ -98,20 +122,23 @@ class OTPRequestSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value):
-        return value.strip().lower()
+        cleaned = value.strip().lower()
+        email_validator(cleaned)
+        return cleaned
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    email = serializers.EmailField()
-    code = serializers.CharField(max_length=6, min_length=6)
+    email = serializers.EmailField(validators=[email_validator])
+    code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
 
     def validate_email(self, value):
-        return value.strip().lower()
+        cleaned = value.strip().lower()
+        email_validator(cleaned)
+        return cleaned
 
     def validate_code(self, value):
         cleaned = value.strip()
-        if not cleaned.isdigit() or len(cleaned) != 6:
-            raise serializers.ValidationError("Enter a valid 6-digit code.")
+        otp_code_validator(cleaned)
         return cleaned
 
 
@@ -241,17 +268,18 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
 
-    email = serializers.EmailField()
-    code = serializers.CharField(max_length=6, min_length=6)
+    email = serializers.EmailField(validators=[email_validator])
+    code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
     new_password = serializers.CharField(write_only=True)
 
     def validate_email(self, value):
-        return value.strip().lower()
+        cleaned = value.strip().lower()
+        email_validator(cleaned)
+        return cleaned
 
     def validate_code(self, value):
         cleaned = value.strip()
-        if not cleaned.isdigit() or len(cleaned) != 6:
-            raise serializers.ValidationError("Enter a valid 6-digit code.")
+        otp_code_validator(cleaned)
         return cleaned
 
     def validate_new_password(self, value):

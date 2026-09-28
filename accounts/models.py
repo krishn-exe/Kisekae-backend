@@ -3,7 +3,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .utils import name_validator
+from .utils import email_validator, name_validator
 
 
 class UserManager(BaseUserManager):
@@ -46,7 +46,10 @@ class User(AbstractBaseUser, PermissionsMixin):
         blank=True,
         validators=[name_validator],
     )
-    email = models.EmailField(unique=True)
+    email = models.EmailField(
+        unique=True,
+        validators=[email_validator],
+    )
 
     is_email_verified = models.BooleanField(default=False)
 
@@ -63,10 +66,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().clean()
         if self.name:
             self.name = self.name.strip()
+            name_validator(self.name)
 
         if not self.email:
             raise ValidationError("Email is required.")
         self.email = self.email.strip().lower()
+        email_validator(self.email)
 
     def save(self, *args, **kwargs):
         if self.name:

@@ -15,12 +15,7 @@ from .token_blacklist import (
     blacklist_access_token,
     is_access_token_blacklisted,
 )
-from .utils import (
-    get_user_by_identifier,
-    identify_channel,
-    name_validator,
-    phone_validator,
-)
+from .utils import name_validator
 
 User = get_user_model()
 
@@ -37,22 +32,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         allow_blank=False,
         allow_null=False,
     )
-    phone = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        allow_null=True,
-        validators=[phone_validator],
-    )
     password = serializers.CharField(write_only=True, required=False, allow_blank=False)
 
     class Meta:
         model = User
-        fields = ["name", "email", "phone", "password"]
+        fields = ["name", "email", "password"]
 
     def validate(self, attrs):
         name = attrs.get("name")
         email = attrs.get("email")
-        phone = attrs.get("phone")
 
         if not email:
             raise serializers.ValidationError({"email": "Email address is required for registration."})
@@ -65,12 +53,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"email": "An account with this email already exists."})
         attrs["email"] = email
 
-        if phone:
-            phone = phone.strip()
-            if User.objects.filter(phone=phone).exists():
-                raise serializers.ValidationError({"phone": "An account with this phone number already exists."})
-            attrs["phone"] = phone
-
         password = attrs.get("password")
         if password:
             validate_password(password)
@@ -82,20 +64,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class LoginPasswordSerializer(serializers.Serializer):
-    identifier = serializers.CharField()
+    email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        identifier = attrs.get("identifier", "").strip()
-        channel = identify_channel(identifier)
-        if channel is None:
-            raise serializers.ValidationError(
-                {"identifier": "Enter a valid email address or phone number in format '+919876543210'."}
-            )
-
-        user, _ = get_user_by_identifier(identifier)
+        email = attrs.get("email", "").strip().lower()
+        user = User.objects.filter(email__iexact=email).first()
         if not user:
-            raise serializers.ValidationError("No account found with that email or phone number.")
+            raise serializers.ValidationError("No account found with that email address.")
 
         if not user.is_active:
             raise serializers.ValidationError("This account is inactive.")
@@ -113,7 +89,7 @@ class LoginPasswordSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    identifier = serializers.CharField()
+    email = serializers.EmailField()
     purpose = serializers.ChoiceField(
         choices=["login", "password_reset"],
         default="login",
@@ -121,26 +97,16 @@ class OTPRequestSerializer(serializers.Serializer):
         help_text="Purpose of the OTP. Use 'password_reset' for forgot-password flow.",
     )
 
-    def validate_identifier(self, value):
-        cleaned = value.strip()
-        if identify_channel(cleaned) is None:
-            raise serializers.ValidationError(
-                "Enter a valid email address or 10-digit Indian phone number starting with '+91' (e.g. +919876543210)."
-            )
-        return cleaned
+    def validate_email(self, value):
+        return value.strip().lower()
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    identifier = serializers.CharField()
+    email = serializers.EmailField()
     code = serializers.CharField(max_length=6, min_length=6)
 
-    def validate_identifier(self, value):
-        cleaned = value.strip()
-        if identify_channel(cleaned) is None:
-            raise serializers.ValidationError(
-                "Enter a valid email address or 10-digit Indian phone number starting with '+91' (e.g. +919876543210)."
-            )
-        return cleaned
+    def validate_email(self, value):
+        return value.strip().lower()
 
     def validate_code(self, value):
         cleaned = value.strip()
@@ -152,11 +118,6 @@ class OTPVerifySerializer(serializers.Serializer):
 class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField(
         help_text="The refresh token to be revoked."
-    )
-    access = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        help_text="The access token to be blacklisted. Optional if provided in the Authorization header.",
     )
 
     def _validate_access_token(self, raw_access: str) -> dict:
@@ -217,18 +178,10 @@ class LogoutSerializer(serializers.Serializer):
         return payload
 
     def validate(self, attrs):
-        header_token = self.context.get("header_token")
-        body_access = attrs.get("access")
-
-        if header_token and body_access and header_token != body_access:
-            raise serializers.ValidationError(
-                {"access": "Access token in Authorization header does not match access token in request body."}
-            )
-
-        raw_access = header_token or body_access
+        raw_access = self.context.get("header_token")
         if not raw_access:
             raise serializers.ValidationError(
-                {"access": "Access token is required. Provide it in the Authorization header or in the request body."}
+                {"access": "Access token is required in the Authorization header ('Bearer <token>')."}
             )
 
         raw_refresh = attrs.get("refresh")
@@ -289,17 +242,12 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
 
-    identifier = serializers.CharField()
+    email = serializers.EmailField()
     code = serializers.CharField(max_length=6, min_length=6)
     new_password = serializers.CharField(write_only=True)
 
-    def validate_identifier(self, value):
-        cleaned = value.strip()
-        if identify_channel(cleaned) is None:
-            raise serializers.ValidationError(
-                "Enter a valid email address or phone number in format '+919876543210'."
-            )
-        return cleaned
+    def validate_email(self, value):
+        return value.strip().lower()
 
     def validate_code(self, value):
         cleaned = value.strip()

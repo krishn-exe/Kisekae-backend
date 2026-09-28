@@ -4,22 +4,18 @@ import secrets
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
 
-from .utils import normalize_identifier
-
-logger = logging.getLogger(__name__)
-
-
 class RedisOTP:
 
     TTL_SECONDS = 300
     MAX_ATTEMPTS = 5
     COOLDOWN_SECONDS = 60
 
-    def __init__(self, identifier: str, purpose: str = "login"):
-        self.identifier = normalize_identifier(identifier)
+    def __init__(self, email: str, purpose: str = "login"):
+        self.email = email.strip().lower() if email else ""
+        self.identifier = self.email
         self.purpose = purpose
-        self.key = f"otp:{purpose}:{self.identifier}"
-        self.cooldown_key = f"otp:cooldown:{purpose}:{self.identifier}"
+        self.key = f"otp:{purpose}:{self.email}"
+        self.cooldown_key = f"otp:cooldown:{purpose}:{self.email}"
 
     def can_issue(self) -> tuple[bool, int]:
         """Checks if a new code can be issued, enforcing cooldown between requests.

@@ -26,7 +26,6 @@ from .serializers import (
     RegisterSerializer,
     ResetPasswordSerializer,
 )
-from .utils import get_user_by_identifier
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -38,7 +37,7 @@ def tokens_for_user(user):
 
 
 class RegisterView(APIView):
-    """Create a new user account. Email is mandatory. Phone, name, and password are optional."""
+    """Create a new user account. Email is mandatory. Name and password are optional."""
 
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
@@ -46,7 +45,7 @@ class RegisterView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Register a new user account",
-        description="Creates a new user with mandatory email. Phone and name are optional. Password is optional (OTP-only accounts).",
+        description="Creates a new user with mandatory email. Name and password are optional (OTP-only accounts).",
         request=RegisterSerializer,
         responses={
             201: inline_serializer(
@@ -58,7 +57,6 @@ class RegisterView(APIView):
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
-                            "phone": serializers.CharField(allow_null=True),
                         },
                     ),
                     "tokens": inline_serializer(
@@ -80,7 +78,7 @@ class RegisterView(APIView):
 
         return Response(
             {
-                "user": {"id": user.id, "name": user.name, "email": user.email, "phone": user.phone},
+                "user": {"id": user.id, "name": user.name, "email": user.email},
                 "tokens": tokens_for_user(user),
             },
             status=status.HTTP_201_CREATED,
@@ -88,15 +86,15 @@ class RegisterView(APIView):
 
 
 class LoginPasswordView(APIView):
-    """Authenticate with email or phone number and password, returning JWT tokens."""
+    """Authenticate with email and password, returning JWT tokens."""
 
     permission_classes = [AllowAny]
     serializer_class = LoginPasswordSerializer
 
     @extend_schema(
         tags=["Accounts"],
-        summary="Log in with email/phone and password",
-        description="Authenticates with email or phone number and password, returning JWT access and refresh tokens.",
+        summary="Log in with email and password",
+        description="Authenticates with email and password, returning JWT access and refresh tokens.",
         request=LoginPasswordSerializer,
         responses={
             200: inline_serializer(
@@ -123,7 +121,7 @@ class LoginPasswordView(APIView):
 
 
 class OTPRequestView(APIView):
-    """Send a 6-digit OTP code via email (or routed to registered email when phone identifier is entered)."""
+    """Send a 6-digit OTP code to the user's email."""
 
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
@@ -132,10 +130,8 @@ class OTPRequestView(APIView):
         tags=["Accounts"],
         summary="Request a 6-digit OTP code",
         description=(
-            "Generates and sends a 6-digit one-time code. "
-            "If an email identifier is provided, the code is sent to that email. "
-            "If a phone identifier is provided, the code is routed to the account's registered email address. "
-            "Rate limited to once every 60 seconds per identifier. "
+            "Generates and sends a 6-digit one-time code to the specified email address. "
+            "Rate limited to once every 60 seconds per email. "
             "Set `purpose` to 'password_reset' for forgot-password flow (defaults to 'login')."
         ),
         request=OTPRequestSerializer,
@@ -146,7 +142,7 @@ class OTPRequestView(APIView):
                     "detail": serializers.CharField(),
                 },
             ),
-            400: OpenApiResponse(description="Invalid identifier format"),
+            400: OpenApiResponse(description="Invalid email format"),
             429: OpenApiResponse(description="Cooldown in effect — please wait 60 seconds"),
             503: OpenApiResponse(description="Delivery provider unavailable"),
         },
@@ -154,13 +150,13 @@ class OTPRequestView(APIView):
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        identifier = serializer.validated_data["identifier"]
+        email = serializer.validated_data["email"]
         purpose = serializer.validated_data.get("purpose", "login")
 
-        user, channel = get_user_by_identifier(identifier)
+        user = User.objects.filter(email__iexact=email).first()
 
         if user and user.is_active:
-            otp = RedisOTP(identifier=identifier, purpose=purpose)
+            otp = RedisOTP(email=email, purpose=purpose)
             can_send, wait_secs = otp.can_issue()
             if not can_send:
                 return Response(
@@ -170,15 +166,9 @@ class OTPRequestView(APIView):
 
             raw_code = otp.issue()
             try:
-                target_email = user.email
-                if target_email:
-                    if channel == "phone":
-                        logger.info("Routing phone OTP for %s to registered email %s", identifier, target_email)
-                    self._send_code(target_email, raw_code, purpose)
-                else:
-                    logger.warning("User for identifier %s has no registered email.", identifier)
+                self._send_code(user.email, raw_code, purpose)
             except Exception as e:
-                logger.exception("Failed to send OTP code to %s: %s", identifier, e)
+                logger.exception("Failed to send OTP code to %s: %s", email, e)
                 return Response(
                     {"detail": "Unable to send verification code. Please try again later."},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -202,7 +192,7 @@ class OTPRequestView(APIView):
 
 
 class OTPVerifyView(APIView):
-    """Verify a 6-digit OTP code and receive JWT tokens. Also marks the email or phone as verified."""
+    """Verify a 6-digit OTP code and receive JWT tokens. Also marks the email as verified."""
 
     permission_classes = [AllowAny]
     serializer_class = OTPVerifySerializer
@@ -210,7 +200,7 @@ class OTPVerifyView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Verify OTP code and authenticate",
-        description="Verifies the 6-digit OTP code against Redis. On success, issues JWT tokens and marks the channel as verified.",
+        description="Verifies the 6-digit OTP code against Redis. On success, issues JWT tokens and marks the email as verified.",
         request=OTPVerifySerializer,
         responses={
             200: inline_serializer(
@@ -227,39 +217,37 @@ class OTPVerifyView(APIView):
             ),
             400: OpenApiResponse(description="Invalid or expired code"),
             403: OpenApiResponse(description="Account is inactive"),
-            404: OpenApiResponse(description="No account found with that identifier"),
+            404: OpenApiResponse(description="No account found with that email address"),
         },
     )
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        identifier = serializer.validated_data["identifier"]
+        email = serializer.validated_data["email"]
         code = serializer.validated_data["code"]
 
-        otp = RedisOTP(identifier=identifier, purpose="login")
+        otp = RedisOTP(email=email, purpose="login")
         if not otp.verify(code):
             return Response({"detail": "Invalid or expired code."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, channel = get_user_by_identifier(identifier)
+        user = User.objects.filter(email__iexact=email).first()
         if not user:
-            return Response({"detail": "No account found with that identifier."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "No account found with that email address."}, status=status.HTTP_404_NOT_FOUND)
 
         if not user.is_active:
             return Response({"detail": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
 
-        if channel == "email" and not user.is_email_verified:
+        if not user.is_email_verified:
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])
-        elif channel == "phone" and not user.is_phone_verified:
-            user.is_phone_verified = True
-            user.save(update_fields=["is_phone_verified"])
 
         return Response({"tokens": tokens_for_user(user)}, status=status.HTTP_200_OK)
 
 
 class LogoutView(APIView):
-    """Log out by blacklisting the access token on Redis. Both access and refresh tokens are validated."""
+    """Log out by blacklisting the access token on Redis. Access token is validated from header and refresh token from body."""
 
+    authentication_classes = []
     permission_classes = [AllowAny]
     serializer_class = LogoutSerializer
 
@@ -268,10 +256,12 @@ class LogoutView(APIView):
         summary="Log out user and blacklist access token",
         description=(
             "Logs out the user by placing their access token on a Redis blacklist with its remaining TTL. "
-            "The access token can be provided either in the `Authorization: Bearer <access_token>` header "
-            "or in the request body under `access`. Both access and refresh tokens are validated to ensure "
-            "they belong to the same user and the access token is not already blacklisted."
+            "The access token must be provided in the `Authorization: Bearer <access_token>` header. "
+            "The refresh token is provided in the request body under `refresh`. "
+            "Both access and refresh tokens are validated to ensure they belong to the same user "
+            "and the access token is not already blacklisted."
         ),
+        auth=[{"jwtAuth": []}],
         request=LogoutSerializer,
         responses={
             200: inline_serializer(
@@ -344,7 +334,7 @@ class ResetPasswordView(APIView):
         summary="Reset password via OTP (unauthenticated)",
         description=(
             "Resets the password for an unauthenticated user. "
-            "First request an OTP via `POST /accounts/otp/request/`, then submit the identifier, "
+            "First request an OTP via `POST /accounts/otp/request/`, then submit the email, "
             "OTP code, and new password here. Does NOT return tokens — user must login again manually."
         ),
         request=ResetPasswordSerializer,
@@ -354,28 +344,28 @@ class ResetPasswordView(APIView):
                 fields={"detail": serializers.CharField()},
             ),
             400: OpenApiResponse(description="Invalid/expired OTP code or weak password"),
-            404: OpenApiResponse(description="No account found with that identifier"),
+            404: OpenApiResponse(description="No account found with that email address"),
         },
     )
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        identifier = serializer.validated_data["identifier"]
+        email = serializer.validated_data["email"]
         code = serializer.validated_data["code"]
         new_password = serializer.validated_data["new_password"]
 
-        otp = RedisOTP(identifier=identifier, purpose="password_reset")
+        otp = RedisOTP(email=email, purpose="password_reset")
         if not otp.verify(code):
             return Response(
                 {"detail": "Invalid or expired code."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user, _ = get_user_by_identifier(identifier)
+        user = User.objects.filter(email__iexact=email).first()
         if not user:
             return Response(
-                {"detail": "No account found with that identifier."},
+                {"detail": "No account found with that email address."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -422,7 +412,6 @@ class GoogleAuthView(APIView):
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(allow_null=True),
-                            "phone": serializers.CharField(allow_null=True),
                         },
                     ),
                     "tokens": inline_serializer(
@@ -446,7 +435,6 @@ class GoogleAuthView(APIView):
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(allow_null=True),
-                            "phone": serializers.CharField(allow_null=True),
                         },
                     ),
                     "tokens": inline_serializer(
@@ -498,7 +486,6 @@ class GoogleAuthView(APIView):
                         "id": user.id,
                         "name": user.name,
                         "email": user.email,
-                        "phone": user.phone,
                     },
                     "tokens": tokens_for_user(user),
                     "created": created,

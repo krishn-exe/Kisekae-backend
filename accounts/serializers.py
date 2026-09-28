@@ -311,3 +311,47 @@ class ResetPasswordSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    """Validates Google OAuth request payload.
+
+    Accepts either an `id_token` (or `credential` alias from Google Identity Services)
+    or an authorization `code` (from Google OAuth redirect flow).
+    """
+
+    id_token = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Google ID token (JWT) from Google Identity Services or One Tap.",
+    )
+    credential = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Alias for id_token matching Google Identity Services JavaScript callback.",
+    )
+    code = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Authorization code from Google OAuth redirect flow.",
+    )
+    redirect_uri = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Redirect URI used when requesting the authorization code. Defaults to 'postmessage'.",
+    )
+
+    def validate(self, attrs):
+        id_token_val = attrs.get("id_token") or attrs.get("credential")
+        code = attrs.get("code")
+
+        if not id_token_val and not code:
+            raise serializers.ValidationError("Either 'id_token' (or 'credential') or 'code' is required.")
+
+        if id_token_val:
+            attrs["id_token"] = id_token_val.strip()
+
+        if code:
+            attrs["code"] = code.strip()
+
+        return attrs

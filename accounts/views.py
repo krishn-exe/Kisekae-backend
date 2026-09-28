@@ -10,9 +10,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .google import (
+    exchange_google_code,
+    get_or_create_google_user,
+    verify_google_id_token,
+)
 from .otp import RedisOTP, send_otp_whatsapp
 from .serializers import (
     ChangePasswordSerializer,
+    GoogleAuthSerializer,
     LoginPasswordSerializer,
     LogoutSerializer,
     OTPRequestSerializer,
@@ -387,3 +393,124 @@ class ResetPasswordView(APIView):
             {"detail": "Password reset successfully. Please login with your new password."},
             status=status.HTTP_200_OK,
         )
+
+
+class GoogleAuthView(APIView):
+    """Authenticate or register a user using Google OAuth (ID token or Authorization Code)."""
+
+    permission_classes = [AllowAny]
+    serializer_class = GoogleAuthSerializer
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Google OAuth login and registration",
+        description=(
+            "Authenticates or registers a user via Google. "
+            "Accepts an `id_token` (or `credential` from Google Identity Services / One Tap) "
+            "or an authorization `code` (from OAuth redirect). "
+            "If the user exists by email, logs them in. "
+            "If the user is new, automatically registers them with their Google profile details. "
+            "Returns standard JWT access/refresh tokens."
+        ),
+        request=GoogleAuthSerializer,
+        responses={
+            200: inline_serializer(
+                name="GoogleAuthResponse",
+                fields={
+                    "user": inline_serializer(
+                        name="GoogleUserSummary",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                            "email": serializers.EmailField(allow_null=True),
+                            "phone": serializers.CharField(allow_null=True),
+                        },
+                    ),
+                    "tokens": inline_serializer(
+                        name="GoogleAuthTokens",
+                        fields={
+                            "refresh": serializers.CharField(),
+                            "access": serializers.CharField(),
+                        },
+                    ),
+                    "created": serializers.BooleanField(
+                        help_text="True if a new user was created, False if existing user logged in."
+                    ),
+                },
+            ),
+            201: inline_serializer(
+                name="GoogleAuthCreatedResponse",
+                fields={
+                    "user": inline_serializer(
+                        name="GoogleCreatedUserSummary",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                            "email": serializers.EmailField(allow_null=True),
+                            "phone": serializers.CharField(allow_null=True),
+                        },
+                    ),
+                    "tokens": inline_serializer(
+                        name="GoogleAuthCreatedTokens",
+                        fields={
+                            "refresh": serializers.CharField(),
+                            "access": serializers.CharField(),
+                        },
+                    ),
+                    "created": serializers.BooleanField(),
+                },
+            ),
+            400: OpenApiResponse(description="Invalid token, unverified email, or missing parameters"),
+            403: OpenApiResponse(description="Account is inactive"),
+            500: OpenApiResponse(description="Google token verification or exchange failed"),
+        },
+    )
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        id_token_str = serializer.validated_data.get("id_token")
+        code = serializer.validated_data.get("code")
+        redirect_uri = serializer.validated_data.get("redirect_uri")
+
+        try:
+            if code:
+                token_data = exchange_google_code(code, redirect_uri)
+                id_token_str = token_data.get("id_token")
+                if not id_token_str:
+                    return Response(
+                        {"detail": "Google token response did not contain an id_token."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            payload = verify_google_id_token(id_token_str)
+            user, created = get_or_create_google_user(payload)
+
+            if not user.is_active:
+                return Response(
+                    {"detail": "This account is inactive."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+            return Response(
+                {
+                    "user": {
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                        "phone": user.phone,
+                    },
+                    "tokens": tokens_for_user(user),
+                    "created": created,
+                },
+                status=status_code,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            logger.exception("Unexpected error in GoogleAuthView: %s", exc)
+            return Response(
+                {"detail": "Authentication with Google failed."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

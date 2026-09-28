@@ -6,3 +6,4 @@ __pycache__/
 accounts/tests.py
 openapi.yaml
 staticfiles/
+test_client/**

@@ -33,7 +33,7 @@ def sanitize_google_name(raw_name: str | None) -> str:
 
 def verify_google_id_token(token: str) -> dict:
     client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
-    audience = client_id if client_id else None
+    audience = client_id.strip() if client_id else None
 
     try:
         payload = google_id_token.verify_oauth2_token(
@@ -53,6 +53,9 @@ def get_or_create_google_user(payload: dict) -> Tuple[User, bool]:
         raise ValueError("Google account did not provide an email address.")
 
     email_verified = payload.get("email_verified", False)
+    if isinstance(email_verified, str):
+        email_verified = email_verified.lower() == "true"
+
     if not email_verified:
         raise ValueError("Google account email is not verified.")
 

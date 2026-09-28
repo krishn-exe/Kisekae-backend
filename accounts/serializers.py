@@ -1,16 +1,15 @@
 import jwt
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from rest_framework import serializers
+from rest_framework import exceptions, serializers
 from rest_framework_simplejwt.exceptions import (
     TokenBackendError,
     TokenBackendExpiredToken,
-    TokenError,
 )
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.state import token_backend
-from rest_framework_simplejwt.tokens import RefreshToken
 
+from .models import RefreshToken
 from .token_blacklist import (
     blacklist_access_token,
     is_access_token_blacklisted,
@@ -185,24 +184,18 @@ class LogoutSerializer(serializers.Serializer):
 
         return payload
 
-    def _validate_refresh_token(self, raw_refresh: str) -> dict:
-        try:
-            refresh = RefreshToken(raw_refresh)
-        except TokenError as e:
-            raise serializers.ValidationError({"refresh": f"Invalid or expired refresh token: {str(e)}."})
+    def _validate_refresh_token(self, raw_refresh: str) -> RefreshToken:
+        token_obj = RefreshToken.resolve(raw_refresh)
+        if not token_obj:
+            raise serializers.ValidationError({"refresh": "Invalid refresh token."})
 
-        payload = refresh.payload
-        token_type = payload.get("token_type")
-        if token_type != "refresh":
-            raise serializers.ValidationError(
-                {"refresh": f"Invalid token type for refresh token: expected 'refresh', got '{token_type}'."}
-            )
+        if token_obj.is_revoked:
+            raise serializers.ValidationError({"refresh": "Refresh token has already been revoked."})
 
-        jti = payload.get("jti")
-        if not jti:
-            raise serializers.ValidationError({"refresh": "Malformed refresh token: missing jti claim."})
+        if token_obj.is_expired:
+            raise serializers.ValidationError({"refresh": "Refresh token has expired."})
 
-        return payload
+        return token_obj
 
     def validate(self, attrs):
         raw_access = self.context.get("header_token")
@@ -216,10 +209,10 @@ class LogoutSerializer(serializers.Serializer):
             raise serializers.ValidationError({"refresh": "Refresh token is required."})
 
         access_payload = self._validate_access_token(raw_access)
-        refresh_payload = self._validate_refresh_token(raw_refresh)
+        refresh_token_obj = self._validate_refresh_token(raw_refresh)
 
         access_user_id = access_payload.get(api_settings.USER_ID_CLAIM)
-        refresh_user_id = refresh_payload.get(api_settings.USER_ID_CLAIM)
+        refresh_user_id = refresh_token_obj.user_id
 
         if access_user_id is None or refresh_user_id is None or str(access_user_id) != str(refresh_user_id):
             raise serializers.ValidationError(
@@ -227,7 +220,7 @@ class LogoutSerializer(serializers.Serializer):
             )
 
         attrs["access_payload"] = access_payload
-        attrs["refresh_payload"] = refresh_payload
+        attrs["refresh_token_obj"] = refresh_token_obj
         return attrs
 
     def save(self, **kwargs):
@@ -236,6 +229,43 @@ class LogoutSerializer(serializers.Serializer):
         access_exp = access_payload["exp"]
 
         blacklist_access_token(access_jti, access_exp)
+
+        refresh_token_obj = self.validated_data["refresh_token_obj"]
+        refresh_token_obj.is_revoked = True
+        refresh_token_obj.save(update_fields=["is_revoked"])
+
+
+class TokenRefreshSerializer(serializers.Serializer):
+    refresh = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        help_text="The opaque refresh token to rotate.",
+    )
+
+    def validate_refresh(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("Refresh token cannot be blank.")
+        return cleaned
+
+    def validate(self, attrs):
+        raw_refresh = attrs.get("refresh")
+        token_obj = RefreshToken.resolve(raw_refresh)
+
+        if not token_obj:
+            raise exceptions.AuthenticationFailed({"detail": "Invalid or expired refresh token."})
+
+        if token_obj.is_revoked:
+            raise exceptions.AuthenticationFailed({"detail": "Refresh token has been revoked."})
+
+        if token_obj.is_expired:
+            raise exceptions.AuthenticationFailed({"detail": "Refresh token has expired."})
+
+        if not token_obj.user.is_active:
+            raise exceptions.PermissionDenied({"detail": "This account is inactive."})
+
+        attrs["token_obj"] = token_obj
+        return attrs
 
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -264,6 +294,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
+        RefreshToken.revoke_all_for_user(user)
 
 
 class ResetPasswordSerializer(serializers.Serializer):

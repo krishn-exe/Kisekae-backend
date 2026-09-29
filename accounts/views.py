@@ -537,3 +537,33 @@ class GoogleAuthView(APIView):
                 {"detail": "Authentication with Google failed."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+class UserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Get current user details",
+        description="Returns the authenticated user's details.",
+        responses={
+            200: inline_serializer(
+                name="UserDetailResponse",
+                fields={
+                    "id": serializers.IntegerField(),
+                    "name": serializers.CharField(),
+                    "email": serializers.EmailField(allow_null=True),
+                },
+            ),
+            401: OpenApiResponse(description="Unauthenticated or blacklisted token"),
+        },
+    )
+    def get(self, request):
+        user = request.user
+        return Response(
+            {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+            },
+            status=status.HTTP_200_OK,
+        )

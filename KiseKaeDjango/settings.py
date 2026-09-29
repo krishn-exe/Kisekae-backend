@@ -147,10 +147,10 @@ SPECTACULAR_SETTINGS = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
 }
 
-REFRESH_TOKEN_LIFETIME_DAYS = 7
+REFRESH_TOKEN_LIFETIME_DAYS = 14
 
 
 # Internationalization

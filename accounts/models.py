@@ -1,13 +1,7 @@
-import hashlib
-import secrets
-from datetime import timedelta
-
-from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 
 from .utils import email_validator, name_validator
 
@@ -90,88 +84,3 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email or f"user #{self.pk}"
-
-
-class RefreshToken(models.Model):
-    """
-    Server-side opaque refresh token model.
-    The raw token is returned to the client and never stored.
-    Only the SHA-256 hash is saved in the database.
-    """
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="refresh_tokens",
-    )
-    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField(db_index=True)
-    is_revoked = models.BooleanField(default=False, db_index=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["user", "is_revoked"]),
-        ]
-
-    def __str__(self):
-        return f"RefreshToken(user_id={self.user_id}, revoked={self.is_revoked})"
-
-    @property
-    def is_expired(self) -> bool:
-        return timezone.now() >= self.expires_at
-
-    @property
-    def is_valid(self) -> bool:
-        return not self.is_revoked and not self.is_expired
-
-    @classmethod
-    def hash_token(cls, raw_token: str) -> str:
-        return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-
-    @classmethod
-    def create_token(cls, user, lifetime_days: int | None = None) -> str:
-        """
-        Creates a new DB-backed refresh token for the user.
-        Returns the raw secret string.
-        """
-        if lifetime_days is None:
-            lifetime_days = getattr(settings, "REFRESH_TOKEN_LIFETIME_DAYS", 7)
-        raw_token = secrets.token_urlsafe(48)
-        token_hash = cls.hash_token(raw_token)
-        expires_at = timezone.now() + timedelta(days=lifetime_days)
-        cls.objects.create(
-            user=user,
-            token_hash=token_hash,
-            expires_at=expires_at,
-        )
-        return raw_token
-
-    @classmethod
-    def resolve(cls, raw_token: str):
-        """
-        Looks up a refresh token by its raw string.
-        Returns the RefreshToken instance (with user joined) or None.
-        """
-        if not raw_token or not isinstance(raw_token, str):
-            return None
-        token_hash = cls.hash_token(raw_token.strip())
-        return cls.objects.select_related("user").filter(token_hash=token_hash).first()
-
-    @classmethod
-    def revoke(cls, raw_token: str) -> bool:
-        """
-        Marks a single refresh token as revoked.
-        Returns True if a token was found and updated, False otherwise.
-        """
-        if not raw_token or not isinstance(raw_token, str):
-            return False
-        token_hash = cls.hash_token(raw_token.strip())
-        updated = cls.objects.filter(token_hash=token_hash, is_revoked=False).update(is_revoked=True)
-        return updated > 0
-
-    @classmethod
-    def revoke_all_for_user(cls, user) -> int:
-        """
-        Revokes all active refresh tokens for a user.
-        """
-        return cls.objects.filter(user=user, is_revoked=False).update(is_revoked=True)

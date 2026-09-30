@@ -8,6 +8,7 @@ from .utils import (
     email_validator,
     name_validator,
     otp_code_validator,
+    password_validator,
 )
 
 User = get_user_model()
@@ -26,7 +27,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         allow_null=False,
         validators=[email_validator],
     )
-    password = serializers.CharField(write_only=True, required=False, allow_blank=False)
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=False,
+        validators=[password_validator],
+    )
 
     class Meta:
         model = User
@@ -89,6 +95,9 @@ class LoginPasswordSerializer(serializers.Serializer):
         if not user.is_active:
             raise serializers.ValidationError("This account is inactive.")
 
+        if not user.is_email_verified:
+            raise serializers.ValidationError("Email is not verified. Please verify your email before logging in.")
+
         if not user.has_usable_password():
             raise serializers.ValidationError(
                 "This account doesn't have a password set. Use 'Send me a code' to sign in instead."
@@ -104,10 +113,10 @@ class LoginPasswordSerializer(serializers.Serializer):
 class OTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(validators=[email_validator])
     purpose = serializers.ChoiceField(
-        choices=["login", "password_reset"],
+        choices=["login", "password_reset", "verify_email"],
         default="login",
         required=False,
-        help_text="Purpose of the OTP. Use 'password_reset' for forgot-password flow.",
+        help_text="Purpose of the OTP. Options: 'login', 'password_reset', 'verify_email'.",
     )
 
     def validate_email(self, value):
@@ -119,6 +128,11 @@ class OTPRequestSerializer(serializers.Serializer):
 class OTPVerifySerializer(serializers.Serializer):
     email = serializers.EmailField(validators=[email_validator])
     code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
+    purpose = serializers.ChoiceField(
+        choices=["login", "verify_email"],
+        required=False,
+        help_text="Purpose of the OTP. Options: 'login' or 'verify_email'. Defaults to 'login'.",
+    )
 
     def validate_email(self, value):
         cleaned = value.strip().lower()
@@ -154,7 +168,7 @@ class LogoutSerializer(serializers.Serializer):
 class ChangePasswordSerializer(serializers.Serializer):
 
     old_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, validators=[password_validator])
 
     def validate_old_password(self, value):
         user = self.context["request"].user
@@ -202,7 +216,7 @@ class ResetPasswordSerializer(serializers.Serializer):
 
     email = serializers.EmailField(validators=[email_validator])
     code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
-    new_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, validators=[password_validator])
 
     def validate_email(self, value):
         cleaned = value.strip().lower()

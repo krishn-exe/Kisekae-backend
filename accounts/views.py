@@ -49,19 +49,14 @@ class RegisterView(APIView):
             201: inline_serializer(
                 name="RegisterResponse",
                 fields={
-                    "user": inline_serializer(
-                        name="RegisteredUserSummary",
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="RegisteredUserData",
                         fields={
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
-                        },
-                    ),
-                    "tokens": inline_serializer(
-                        name="AuthTokenPair",
-                        fields={
-                            "refresh": serializers.CharField(),
-                            "access": serializers.CharField(),
                         },
                     ),
                 },
@@ -72,16 +67,17 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
+        user = serializer.save()
 
         return Response(
             {
-                "success": "True",
-                "message": "User registerd successfuly"
+                "success": True,
+                "message": "User registered successfully",
                 "data": {
                     "id": user.id,
                     "name": user.name,
-                    "email": user.email
-                    },
+                    "email": user.email,
+                },
             },
             status=status.HTTP_201_CREATED,
         )
@@ -132,7 +128,7 @@ class OTPRequestView(APIView):
         description=(
             "Generates and sends a 6-digit one-time code to the specified email address. "
             "Rate limited to once every 60 seconds per email. "
-            "Set `purpose` to 'password_reset' for forgot-password flow (defaults to 'login')."
+            "Set `purpose` to 'verify_email' for email verification, 'password_reset' for forgot-password flow (defaults to 'login')."
         ),
         request=OTPRequestSerializer,
         responses={
@@ -156,23 +152,26 @@ class OTPRequestView(APIView):
         user = User.objects.filter(email__iexact=email).first()
 
         if user and user.is_active:
-            otp = RedisOTP(email=email, purpose=purpose)
-            can_send, wait_secs = otp.can_issue()
-            if not can_send:
-                return Response(
-                    {"detail": f"Please wait {wait_secs} seconds before requesting a new code."},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
+            if purpose == "password_reset" and not user.is_email_verified:
+                pass
+            else:
+                otp = RedisOTP(email=email, purpose=purpose)
+                can_send, wait_secs = otp.can_issue()
+                if not can_send:
+                    return Response(
+                        {"detail": f"Please wait {wait_secs} seconds before requesting a new code."},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
 
-            raw_code = otp.issue()
-            try:
-                self._send_code(user.email, raw_code, purpose)
-            except Exception as e:
-                logger.exception("Failed to send OTP code to %s: %s", email, e)
-                return Response(
-                    {"detail": "Unable to send verification code. Please try again later."},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
+                raw_code = otp.issue()
+                try:
+                    self._send_code(user.email, raw_code, purpose)
+                except Exception as e:
+                    logger.exception("Failed to send OTP code to %s: %s", email, e)
+                    return Response(
+                        {"detail": "Unable to send verification code. Please try again later."},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
 
         return Response(
             {"detail": "If an account exists, a code has been sent."},
@@ -181,8 +180,17 @@ class OTPRequestView(APIView):
 
     @staticmethod
     def _send_code(target_email, raw_code, purpose="login"):
-        subject = "Your Kisekae password reset code" if purpose == "password_reset" else "Your Kisekae login code"
-        body = f"Your {'password reset' if purpose == 'password_reset' else 'login'} code is {raw_code}. It expires in 5 minutes."
+        if purpose == "password_reset":
+            subject = "Your Kisekae password reset code"
+            action_desc = "password reset"
+        elif purpose == "verify_email":
+            subject = "Your Kisekae email verification code"
+            action_desc = "email verification"
+        else:
+            subject = "Your Kisekae login code"
+            action_desc = "login"
+
+        body = f"Your {action_desc} code is {raw_code}. It expires in 5 minutes."
         send_mail(
             subject=subject,
             message=body,
@@ -198,8 +206,12 @@ class OTPVerifyView(APIView):
 
     @extend_schema(
         tags=["Accounts"],
-        summary="Verify OTP code and authenticate",
-        description="Verifies the 6-digit OTP code against Redis. On success, issues JWT tokens and marks the email as verified.",
+        summary="Verify OTP code and authenticate or verify email",
+        description=(
+            "Verifies the 6-digit OTP code against Redis. "
+            "If `purpose` is 'verify_email', marks the user's email as verified. "
+            "If `purpose` is 'login' (default), marks the email as verified and issues JWT tokens."
+        ),
         request=OTPVerifySerializer,
         responses={
             200: inline_serializer(
@@ -211,7 +223,9 @@ class OTPVerifyView(APIView):
                             "refresh": serializers.CharField(),
                             "access": serializers.CharField(),
                         },
-                    )
+                        required=False,
+                    ),
+                    "detail": serializers.CharField(required=False),
                 },
             ),
             400: OpenApiResponse(description="Invalid or expired code"),
@@ -224,8 +238,15 @@ class OTPVerifyView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
         code = serializer.validated_data["code"]
+        purpose = serializer.validated_data.get("purpose")
 
-        otp = RedisOTP(email=email, purpose="login")
+        if not purpose:
+            if cache.get(f"otp:verify_email:{email}") and not cache.get(f"otp:login:{email}"):
+                purpose = "verify_email"
+            else:
+                purpose = "login"
+
+        otp = RedisOTP(email=email, purpose=purpose)
         if not otp.verify(code):
             return Response({"detail": "Invalid or expired code."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -235,6 +256,18 @@ class OTPVerifyView(APIView):
 
         if not user.is_active:
             return Response({"detail": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+
+        if purpose == "verify_email":
+            if not user.is_email_verified:
+                user.is_email_verified = True
+                user.save(update_fields=["is_email_verified"])
+            return Response(
+                {
+                    "detail": "Email verified successfully.",
+                    "tokens": tokens_for_user(user),
+                },
+                status=status.HTTP_200_OK,
+            )
 
         if not user.is_email_verified:
             user.is_email_verified = True
@@ -300,6 +333,11 @@ class ChangePasswordView(APIView):
         },
     )
     def post(self, request):
+        if not request.user.is_active:
+            return Response({"detail": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+        if not request.user.is_email_verified:
+            return Response({"detail": "Email is not verified."}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = self.serializer_class(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -326,6 +364,7 @@ class ResetPasswordView(APIView):
                 fields={"detail": serializers.CharField()},
             ),
             400: OpenApiResponse(description="Invalid/expired OTP code or weak password"),
+            403: OpenApiResponse(description="Account is inactive or email not verified"),
             404: OpenApiResponse(description="No account found with that email address"),
         },
     )
@@ -354,6 +393,12 @@ class ResetPasswordView(APIView):
         if not user.is_active:
             return Response(
                 {"detail": "This account is inactive."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not user.is_email_verified:
+            return Response(
+                {"detail": "Email is not verified."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -447,7 +492,7 @@ class GoogleAuthView(APIView):
                 },
             ),
             400: OpenApiResponse(description="Invalid token, unverified email, or missing parameters"),
-            403: OpenApiResponse(description="Account is inactive"),
+            403: OpenApiResponse(description="Account is inactive or email not verified"),
             500: OpenApiResponse(description="Google token verification failed"),
         },
     )
@@ -464,6 +509,12 @@ class GoogleAuthView(APIView):
             if not user.is_active:
                 return Response(
                     {"detail": "This account is inactive."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            if not user.is_email_verified:
+                return Response(
+                    {"detail": "Email is not verified."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
@@ -503,18 +554,25 @@ class UserDetailView(APIView):
                     "id": serializers.IntegerField(),
                     "name": serializers.CharField(),
                     "email": serializers.EmailField(allow_null=True),
+                    "is_email_verified": serializers.BooleanField(),
                 },
             ),
             401: OpenApiResponse(description="Unauthenticated or blacklisted token"),
+            403: OpenApiResponse(description="Inactive user or unverified email"),
         },
     )
     def get(self, request):
         user = request.user
+        if not user.is_active:
+            return Response({"detail": "This account is inactive."}, status=status.HTTP_403_FORBIDDEN)
+        if not user.is_email_verified:
+            return Response({"detail": "Email is not verified."}, status=status.HTTP_403_FORBIDDEN)
         return Response(
             {
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
+                "is_email_verified": user.is_email_verified,
             },
             status=status.HTTP_200_OK,
         )

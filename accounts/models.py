@@ -3,7 +3,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .utils import email_validator, name_validator
+from .utils import email_validator, name_validator, password_validator
 
 
 class UserManager(BaseUserManager):
@@ -16,7 +16,8 @@ class UserManager(BaseUserManager):
         email = self.normalize_email(email).strip().lower()
         user = self.model(email=email, **extra_fields)
 
-        if password:
+        if password is not None:
+            password_validator(password)
             user.set_password(password)
         else:
             user.set_unusable_password()

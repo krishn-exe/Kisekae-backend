@@ -4,6 +4,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 accounts/tests.py
-openapi.yaml
 staticfiles/
-test_client/**

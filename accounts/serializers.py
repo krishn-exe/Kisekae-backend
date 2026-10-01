@@ -240,12 +240,35 @@ class ResetPasswordSerializer(serializers.Serializer):
         return attrs
 
 
-class GoogleAuthSerializer(serializers.Serializer):
-    id_token = serializers.CharField(
-        required=True,
+class OAuthLoginSerializer(serializers.Serializer):
+    code = serializers.CharField(
+        required=False,
         allow_blank=False,
-        help_text="Google ID token (JWT) from Google Identity Services or One Tap.",
+        help_text="Authorization code returned by the OAuth provider.",
+    )
+    callback_url = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Redirect URI registered with the OAuth provider (e.g. kisekae://auth/callback).",
+    )
+    access_token = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Optional direct OAuth access token if already obtained by client.",
     )
 
-    def validate_id_token(self, value):
-        return value.strip()
+    def validate(self, attrs):
+        code = attrs.get("code")
+        access_token = attrs.get("access_token")
+        if not code and not access_token:
+            raise serializers.ValidationError({"code": "Authorization code or access token is required."})
+        return attrs
+
+
+class GoogleOAuthSerializer(OAuthLoginSerializer):
+    pass
+
+
+class GitHubOAuthSerializer(OAuthLoginSerializer):
+    pass

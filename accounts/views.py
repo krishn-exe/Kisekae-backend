@@ -13,15 +13,15 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as SimpleJWTTokenRefreshView
 
-from .google import (
-    get_or_create_google_user,
-    verify_google_id_token,
-)
+from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+
 from .otp import RedisOTP
 from .responses import error_response, success_response
 from .serializers import (
     ChangePasswordSerializer,
-    GoogleAuthSerializer,
+    GitHubOAuthSerializer,
+    GoogleOAuthSerializer,
     LoginPasswordSerializer,
     LogoutSerializer,
     OTPRequestSerializer,
@@ -29,6 +29,7 @@ from .serializers import (
     RegisterSerializer,
     ResetPasswordSerializer,
 )
+from .social import process_social_login
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -961,30 +962,100 @@ class ResetPasswordView(APIView):
         )
 
 
-class GoogleAuthView(APIView):
-
+class BaseOAuthView(APIView):
     permission_classes = [AllowAny]
-    serializer_class = GoogleAuthSerializer
+    adapter_class = None
+    provider_name = ""
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        code = serializer.validated_data.get("code")
+        callback_url = serializer.validated_data.get("callback_url")
+        access_token = serializer.validated_data.get("access_token")
+
+        try:
+            user, created, provider_name = process_social_login(
+                request=request,
+                adapter_class=self.adapter_class,
+                code=code,
+                callback_url=callback_url,
+                access_token=access_token,
+            )
+
+            if not user.is_active:
+                return error_response(
+                    message="This account is inactive.",
+                    code="ACCOUNT_INACTIVE",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+            if not user.is_email_verified:
+                return error_response(
+                    message="Email is not verified.",
+                    code="EMAIL_NOT_VERIFIED",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+            status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+            message = (
+                f"Account created and authenticated via {provider_name}"
+                if created
+                else f"{provider_name} authentication successful"
+            )
+            return success_response(
+                message=message,
+                data={
+                    "user": {
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                    },
+                    "created": created,
+                },
+                tokens=tokens_for_user(user),
+                status_code=status_code,
+            )
+        except ValueError as exc:
+            return error_response(
+                message=str(exc),
+                code=f"INVALID_{self.provider_name.upper()}_AUTH",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            logger.exception("Unexpected error in %s OAuth: %s", self.provider_name, exc)
+            return error_response(
+                message=f"Authentication with {self.provider_name} failed.",
+                code="AUTHENTICATION_FAILED",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class GoogleOAuthView(BaseOAuthView):
+    serializer_class = GoogleOAuthSerializer
+    adapter_class = GoogleOAuth2Adapter
+    provider_name = "Google"
 
     @extend_schema(
         tags=["Accounts"],
-        summary="Google OAuth login and registration",
+        summary="Google OAuth2 login and registration",
         description=(
-            "Authenticates or registers a user via Google. "
-            "Accepts a Google `id_token` (JWT). "
+            "Authenticates or registers a user via Google OAuth2 using django-allauth. "
+            "Accepts an authorization `code` (and optional `callback_url`). "
             "Returns user info in the response body. "
             "Tokens are delivered in headers: `Authorization: Bearer <access_token>` "
             "and `X-Refresh-Token: <refresh_token>`."
         ),
-        request=GoogleAuthSerializer,
+        request=GoogleOAuthSerializer,
         responses={
             200: inline_serializer(
-                name="GoogleAuthResponse",
+                name="GoogleOAuthResponse",
                 fields={
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": inline_serializer(
-                        name="GoogleAuthData",
+                        name="GoogleOAuthData",
                         fields={
                             "user": inline_serializer(
                                 name="GoogleUserSummary",
@@ -1000,12 +1071,12 @@ class GoogleAuthView(APIView):
                 },
             ),
             201: inline_serializer(
-                name="GoogleAuthCreatedResponse",
+                name="GoogleOAuthCreatedResponse",
                 fields={
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": inline_serializer(
-                        name="GoogleAuthCreatedData",
+                        name="GoogleOAuthCreatedData",
                         fields={
                             "user": inline_serializer(
                                 name="GoogleCreatedUserSummary",
@@ -1026,15 +1097,16 @@ class GoogleAuthView(APIView):
         },
         examples=[
             OpenApiExample(
-                name="GoogleAuthRequestExample",
-                summary="Google Auth Request",
+                name="GoogleOAuthRequestExample",
+                summary="Google OAuth Request",
                 value={
-                    "id_token": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjEyMz...google_jwt_id_token",
+                    "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
+                    "callback_url": "kisekae://auth/google/callback",
                 },
                 request_only=True,
             ),
             OpenApiExample(
-                name="GoogleAuthLoginSuccessExample",
+                name="GoogleOAuthLoginSuccessExample",
                 summary="Existing User Login (200 OK)",
                 value={
                     "success": True,
@@ -1052,7 +1124,7 @@ class GoogleAuthView(APIView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                name="GoogleAuthRegisterSuccessExample",
+                name="GoogleOAuthRegisterSuccessExample",
                 summary="New User Created (201 Created)",
                 value={
                     "success": True,
@@ -1069,60 +1141,153 @@ class GoogleAuthView(APIView):
                 response_only=True,
                 status_codes=["201"],
             ),
+            OpenApiExample(
+                name="GoogleOAuthErrorExample",
+                summary="Invalid Code (400 Bad Request)",
+                value={
+                    "success": False,
+                    "message": "Invalid or expired Google authorization code.",
+                    "error": {
+                        "code": "INVALID_GOOGLE_AUTH",
+                        "details": None,
+                    },
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
         ],
     )
     def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        return super().post(request)
 
-        id_token_str = serializer.validated_data["id_token"]
 
-        try:
-            payload = verify_google_id_token(id_token_str)
-            user, created = get_or_create_google_user(payload)
+class GitHubOAuthView(BaseOAuthView):
+    serializer_class = GitHubOAuthSerializer
+    adapter_class = GitHubOAuth2Adapter
+    provider_name = "GitHub"
 
-            if not user.is_active:
-                return error_response(
-                    message="This account is inactive.",
-                    code="ACCOUNT_INACTIVE",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
-
-            if not user.is_email_verified:
-                return error_response(
-                    message="Email is not verified.",
-                    code="EMAIL_NOT_VERIFIED",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
-
-            status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-            message = "Account created and authenticated via Google" if created else "Google authentication successful"
-            return success_response(
-                message=message,
-                data={
-                    "user": {
-                        "id": user.id,
-                        "name": user.name,
-                        "email": user.email,
-                    },
-                    "created": created,
+    @extend_schema(
+        tags=["Accounts"],
+        summary="GitHub OAuth2 login and registration",
+        description=(
+            "Authenticates or registers a user via GitHub OAuth2 using django-allauth. "
+            "Accepts an authorization `code` (and optional `callback_url`). "
+            "Returns user info in the response body. "
+            "Tokens are delivered in headers: `Authorization: Bearer <access_token>` "
+            "and `X-Refresh-Token: <refresh_token>`."
+        ),
+        request=GitHubOAuthSerializer,
+        responses={
+            200: inline_serializer(
+                name="GitHubOAuthResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="GitHubOAuthData",
+                        fields={
+                            "user": inline_serializer(
+                                name="GitHubUserSummary",
+                                fields={
+                                    "id": serializers.IntegerField(),
+                                    "name": serializers.CharField(),
+                                    "email": serializers.EmailField(allow_null=True),
+                                },
+                            ),
+                            "created": serializers.BooleanField(),
+                        },
+                    ),
                 },
-                tokens=tokens_for_user(user),
-                status_code=status_code,
-            )
-        except ValueError as exc:
-            return error_response(
-                message=str(exc),
-                code="INVALID_GOOGLE_TOKEN",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception as exc:
-            logger.exception("Unexpected error in GoogleAuthView: %s", exc)
-            return error_response(
-                message="Authentication with Google failed.",
-                code="AUTHENTICATION_FAILED",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            ),
+            201: inline_serializer(
+                name="GitHubOAuthCreatedResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="GitHubOAuthCreatedData",
+                        fields={
+                            "user": inline_serializer(
+                                name="GitHubCreatedUserSummary",
+                                fields={
+                                    "id": serializers.IntegerField(),
+                                    "name": serializers.CharField(),
+                                    "email": serializers.EmailField(allow_null=True),
+                                },
+                            ),
+                            "created": serializers.BooleanField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            500: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="GitHubOAuthRequestExample",
+                summary="GitHub OAuth Request",
+                value={
+                    "code": "gho_12345678abcdef_example_github_auth_code",
+                    "callback_url": "kisekae://auth/github/callback",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="GitHubOAuthLoginSuccessExample",
+                summary="Existing User Login (200 OK)",
+                value={
+                    "success": True,
+                    "message": "GitHub authentication successful",
+                    "data": {
+                        "user": {
+                            "id": 123,
+                            "name": "Jane GitHub",
+                            "email": "user@example.com",
+                        },
+                        "created": False,
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="GitHubOAuthRegisterSuccessExample",
+                summary="New User Created (201 Created)",
+                value={
+                    "success": True,
+                    "message": "Account created and authenticated via GitHub",
+                    "data": {
+                        "user": {
+                            "id": 124,
+                            "name": "Jane GitHub",
+                            "email": "newuser@example.com",
+                        },
+                        "created": True,
+                    },
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+            OpenApiExample(
+                name="GitHubOAuthErrorExample",
+                summary="Invalid Code (400 Bad Request)",
+                value={
+                    "success": False,
+                    "message": "Invalid or expired GitHub authorization code.",
+                    "error": {
+                        "code": "INVALID_GITHUB_AUTH",
+                        "details": None,
+                    },
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
+    )
+    def post(self, request):
+        return super().post(request)
 
 
 class UserDetailView(APIView):

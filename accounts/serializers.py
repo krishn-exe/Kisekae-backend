@@ -129,9 +129,9 @@ class OTPVerifySerializer(serializers.Serializer):
     email = serializers.EmailField(validators=[email_validator])
     code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
     purpose = serializers.ChoiceField(
-        choices=["login", "verify_email"],
+        choices=["login", "verify_email", "password_reset"],
         required=False,
-        help_text="Purpose of the OTP. Options: 'login' or 'verify_email'. Defaults to 'login'.",
+        help_text="Purpose of the OTP. Options: 'login', 'verify_email', 'password_reset'. Defaults to 'login'.",
     )
 
     def validate_email(self, value):
@@ -214,23 +214,30 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
 
-    email = serializers.EmailField(validators=[email_validator])
-    code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
-    new_password = serializers.CharField(write_only=True, validators=[password_validator])
-
-    def validate_email(self, value):
-        cleaned = value.strip().lower()
-        email_validator(cleaned)
-        return cleaned
-
-    def validate_code(self, value):
-        cleaned = value.strip()
-        otp_code_validator(cleaned)
-        return cleaned
+    token = serializers.CharField(
+        required=False,
+        help_text="Password reset token obtained from OTP verification.",
+    )
+    reset_token = serializers.CharField(
+        required=False,
+        help_text="Alias for token.",
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        validators=[password_validator],
+        help_text="New password conforming to password requirements.",
+    )
 
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+    def validate(self, attrs):
+        token = attrs.get("token") or attrs.get("reset_token")
+        if not token or not str(token).strip():
+            raise serializers.ValidationError({"token": "Password reset token is required."})
+        attrs["token"] = str(token).strip()
+        return attrs
 
 
 class GoogleAuthSerializer(serializers.Serializer):

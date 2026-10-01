@@ -290,7 +290,7 @@ class OTPRequestView(APIView):
                 summary="OTP Code Dispatched (200 OK)",
                 value={
                     "success": True,
-                    "message": "If an account exists, a code has been sent.",
+                    "message": "A code has been sent.",
                     "data": None,
                 },
                 response_only=True,

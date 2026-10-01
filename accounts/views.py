@@ -64,7 +64,7 @@ class RegisterView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Register a new user account",
-        description="Creates a new user with mandatory email. Name and password are optional (OTP-only accounts).",
+        description="Creates a new user with mandatory email. Name and password are optional (OTP-only accounts). Accepts optional `is_seller` boolean (defaults to false).",
         request=RegisterSerializer,
         responses={
             201: inline_serializer(
@@ -78,6 +78,7 @@ class RegisterView(APIView):
                             "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
+                            "is_seller": serializers.BooleanField(),
                         },
                     ),
                 },
@@ -92,6 +93,7 @@ class RegisterView(APIView):
                     "name": "Krishn Sharma",
                     "email": "user@example.com",
                     "password": "StrongPassword123!",
+                    "is_seller": False,
                 },
                 request_only=True,
             ),
@@ -105,6 +107,7 @@ class RegisterView(APIView):
                         "id": 123,
                         "name": "Krishn Sharma",
                         "email": "user@example.com",
+                        "is_seller": False,
                     },
                 },
                 response_only=True,
@@ -139,6 +142,7 @@ class RegisterView(APIView):
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
+                "is_seller": user.is_seller,
             },
             status_code=status.HTTP_201_CREATED,
         )

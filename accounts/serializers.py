@@ -33,10 +33,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         allow_blank=False,
         validators=[password_validator],
     )
+    is_seller = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Designates whether this user registers as a seller. Defaults to false.",
+    )
 
     class Meta:
         model = User
-        fields = ["name", "email", "password"]
+        fields = ["name", "email", "password", "is_seller"]
 
     def validate_name(self, value):
         if not value:

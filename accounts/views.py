@@ -1145,6 +1145,7 @@ class UserDetailView(APIView):
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(allow_null=True),
                             "is_email_verified": serializers.BooleanField(),
+                            "is_seller": serializers.BooleanField(),
                         },
                     ),
                 },
@@ -1164,6 +1165,7 @@ class UserDetailView(APIView):
                         "name": "Krishn Sharma",
                         "email": "user@example.com",
                         "is_email_verified": True,
+                        "is_seller": False,
                     },
                 },
                 response_only=True,
@@ -1206,6 +1208,7 @@ class UserDetailView(APIView):
                 "name": user.name,
                 "email": user.email,
                 "is_email_verified": user.is_email_verified,
+                "is_seller": user.is_seller,
             },
             status_code=status.HTTP_200_OK,
         )

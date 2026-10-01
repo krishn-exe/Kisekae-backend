@@ -6,15 +6,15 @@ from .models import User
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ("email", "name", "is_staff", "is_active", "is_email_verified")
-    list_filter = ("is_staff", "is_superuser", "is_active", "is_email_verified")
+    list_display = ("email", "name", "is_staff", "is_active", "is_email_verified", "is_seller")
+    list_filter = ("is_staff", "is_superuser", "is_active", "is_email_verified", "is_seller")
     search_fields = ("email", "name")
     ordering = ("email",)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Personal info", {"fields": ("name",)}),
         ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        ("Verification", {"fields": ("is_email_verified",)}),
+        ("Verification & Roles", {"fields": ("is_email_verified", "is_seller")}),
         ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (

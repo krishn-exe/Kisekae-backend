@@ -1,4 +1,5 @@
 import logging
+import secrets
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -373,12 +374,14 @@ class OTPVerifyView(APIView):
 
     @extend_schema(
         tags=["Accounts"],
-        summary="Verify OTP code and authenticate or verify email",
+        summary="Verify OTP code and authenticate, verify email, or obtain password reset token",
         description=(
-            "Verifies the 6-digit OTP code against Redis. "
-            "If `purpose` is 'verify_email', marks the user's email as verified. "
-            "If `purpose` is 'login' (default), marks the email as verified and issues JWT tokens in headers: "
-            "`Authorization: Bearer <access_token>` and `X-Refresh-Token: <refresh_token>`."
+            "Verifies the 6-digit OTP code against Redis.\n"
+            "- If `purpose` is 'verify_email', marks the user's email as verified and issues JWT tokens in headers.\n"
+            "- If `purpose` is 'login' (default), marks email as verified and issues JWT tokens in headers: "
+            "`Authorization: Bearer <access_token>` and `X-Refresh-Token: <refresh_token>`.\n"
+            "- If `purpose` is 'password_reset', returns a 5-minute single-use `reset_token` in the response body "
+            "to be used with `POST /accounts/password/reset/`."
         ),
         request=OTPVerifySerializer,
         responses={
@@ -388,16 +391,19 @@ class OTPVerifyView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": inline_serializer(
-                        name="OTPVerifyUserData",
+                        name="OTPVerifyData",
                         fields={
                             "user": inline_serializer(
                                 name="OTPVerifiedUser",
+                                required=False,
+                                allow_null=True,
                                 fields={
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(),
                                 },
                             ),
+                            "reset_token": serializers.CharField(required=False, allow_null=True),
                         },
                     ),
                 },
@@ -408,8 +414,8 @@ class OTPVerifyView(APIView):
         },
         examples=[
             OpenApiExample(
-                name="OTPVerifyRequestExample",
-                summary="OTP Verification Request",
+                name="OTPVerifyLoginRequestExample",
+                summary="OTP Verification Request (Login)",
                 value={
                     "email": "user@example.com",
                     "code": "123456",
@@ -418,8 +424,18 @@ class OTPVerifyView(APIView):
                 request_only=True,
             ),
             OpenApiExample(
-                name="OTPVerifySuccessExample",
-                summary="Successful Verification (200 OK)",
+                name="OTPVerifyPasswordResetRequestExample",
+                summary="OTP Verification Request (Password Reset)",
+                value={
+                    "email": "user@example.com",
+                    "code": "123456",
+                    "purpose": "password_reset",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="OTPVerifyLoginSuccessExample",
+                summary="Successful Verification for Login (200 OK)",
                 value={
                     "success": True,
                     "message": "Verification successful",
@@ -429,6 +445,19 @@ class OTPVerifyView(APIView):
                             "name": "Krishn Sharma",
                             "email": "user@example.com",
                         },
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="OTPVerifyPasswordResetSuccessExample",
+                summary="Successful Verification for Password Reset (200 OK)",
+                value={
+                    "success": True,
+                    "message": "OTP verified successfully. Use the reset token to set a new password.",
+                    "data": {
+                        "reset_token": "wE9fXz2b_example_reset_token_xyz123",
                     },
                 },
                 response_only=True,
@@ -460,6 +489,8 @@ class OTPVerifyView(APIView):
         if not purpose:
             if cache.get(f"otp:verify_email:{email}") and not cache.get(f"otp:login:{email}"):
                 purpose = "verify_email"
+            elif cache.get(f"otp:password_reset:{email}") and not cache.get(f"otp:login:{email}"):
+                purpose = "password_reset"
             else:
                 purpose = "login"
 
@@ -484,6 +515,27 @@ class OTPVerifyView(APIView):
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
                 status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if purpose == "password_reset":
+            if not user.is_email_verified:
+                return error_response(
+                    message="Email is not verified.",
+                    code="EMAIL_NOT_VERIFIED",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+            reset_token = secrets.token_urlsafe(32)
+            cache.set(
+                f"password_reset_token:{reset_token}",
+                {"user_id": user.id, "email": user.email},
+                timeout=300,
+            )
+            return success_response(
+                message="OTP verified successfully. Use the reset token to set a new password.",
+                data={
+                    "reset_token": reset_token,
+                },
+                status_code=status.HTTP_200_OK,
             )
 
         if purpose == "verify_email":
@@ -781,11 +833,11 @@ class ResetPasswordView(APIView):
 
     @extend_schema(
         tags=["Accounts"],
-        summary="Reset password via OTP (unauthenticated)",
+        summary="Reset password using reset token (unauthenticated)",
         description=(
-            "Resets the password for an unauthenticated user. "
-            "First request an OTP via `POST /accounts/otp/request/`, then submit the email, "
-            "OTP code, and new password here."
+            "Resets the password for an unauthenticated user using the single-use reset token "
+            "obtained from `POST /accounts/otp/verify/` with `purpose='password_reset'`. "
+            "Pass the `token` and `new_password`."
         ),
         request=ResetPasswordSerializer,
         responses={
@@ -806,8 +858,7 @@ class ResetPasswordView(APIView):
                 name="ResetPasswordRequestExample",
                 summary="Reset Password Request",
                 value={
-                    "email": "user@example.com",
-                    "code": "123456",
+                    "token": "wE9fXz2b_example_reset_token_xyz123",
                     "new_password": "NewStrongPassword456!",
                 },
                 request_only=True,
@@ -824,13 +875,13 @@ class ResetPasswordView(APIView):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                name="ResetPasswordInvalidCodeExample",
-                summary="Invalid Code (400 Bad Request)",
+                name="ResetPasswordInvalidTokenExample",
+                summary="Invalid or Expired Token (400 Bad Request)",
                 value={
                     "success": False,
-                    "message": "Invalid or expired code.",
+                    "message": "Invalid or expired reset token.",
                     "error": {
-                        "code": "INVALID_OTP",
+                        "code": "INVALID_TOKEN",
                         "details": None,
                     },
                 },
@@ -843,22 +894,24 @@ class ResetPasswordView(APIView):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        email = serializer.validated_data["email"]
-        code = serializer.validated_data["code"]
+        token = serializer.validated_data["token"]
         new_password = serializer.validated_data["new_password"]
 
-        otp = RedisOTP(email=email, purpose="password_reset")
-        if not otp.verify(code):
+        cache_key = f"password_reset_token:{token}"
+        token_data = cache.get(cache_key)
+
+        if not token_data:
             return error_response(
-                message="Invalid or expired code.",
-                code="INVALID_OTP",
+                message="Invalid or expired reset token.",
+                code="INVALID_TOKEN",
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = User.objects.filter(email__iexact=email).first()
+        user_id = token_data.get("user_id") if isinstance(token_data, dict) else token_data
+        user = User.objects.filter(id=user_id).first()
         if not user:
             return error_response(
-                message="No account found with that email address.",
+                message="No account found for this reset token.",
                 code="USER_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
@@ -898,6 +951,8 @@ class ResetPasswordView(APIView):
         ]
         if to_create:
             BlacklistedToken.objects.bulk_create(to_create, ignore_conflicts=True)
+
+        cache.delete(cache_key)
 
         return success_response(
             message="Password reset successfully. Please login with your new password.",

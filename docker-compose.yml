@@ -2,12 +2,35 @@ services:
   web:
     build: .
     container_name: kisekae-web
+    command: gunicorn KiseKaeDjango.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -
     env_file:
       - .env
     ports:
       - "8000:8000"
     volumes:
       - ./staticfiles:/app/staticfiles
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+  worker:
+    build: .
+    container_name: kisekae-worker
+    command: celery -A KiseKaeDjango worker -l info
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+  beat:
+    build: .
+    container_name: kisekae-beat
+    command: celery -A KiseKaeDjango beat -l info
+    env_file:
+      - .env
     depends_on:
       - redis
       - db

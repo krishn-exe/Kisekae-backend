@@ -1,8 +1,10 @@
 #!/bin/sh
 set -e
 
-python manage.py migrate --noinput
+# If starting the web server, run migrations
+if [ "$1" = 'gunicorn' ]; then
+    python manage.py migrate --noinput
+    python manage.py collectstatic --noinput
+fi
 
-python manage.py collectstatic --noinput
-
-exec gunicorn KiseKaeDjango.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -
+exec "$@"

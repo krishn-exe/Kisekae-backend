@@ -2,7 +2,8 @@ from django.urls import path
 
 from .views import (
     ChangePasswordView,
-    GoogleAuthView,
+    GitHubOAuthView,
+    GoogleOAuthView,
     LoginPasswordView,
     LogoutView,
     OTPRequestView,
@@ -16,7 +17,8 @@ from .views import (
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("login/password/", LoginPasswordView.as_view(), name="login-password"),
-    path("oauth/google/", GoogleAuthView.as_view(), name="google-auth"),
+    path("oauth/google/", GoogleOAuthView.as_view(), name="google-oauth"),
+    path("oauth/github/", GitHubOAuthView.as_view(), name="github-oauth"),
     path("otp/request/", OTPRequestView.as_view(), name="otp-request"),
     path("otp/verify/", OTPVerifyView.as_view(), name="otp-verify"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),

@@ -14,15 +14,6 @@ def success_response(
     headers=None,
     tokens=None,
 ):
-    """
-    Standard success envelope:
-    {
-        "success": true,
-        "message": "...",
-        "data": { ... } or null
-    }
-    Tokens (if provided) are returned in response headers, NOT in the body.
-    """
     payload = {
         "success": True,
         "message": message,
@@ -53,17 +44,6 @@ def error_response(
     status_code=status.HTTP_400_BAD_REQUEST,
     headers=None,
 ):
-    """
-    Standard error envelope:
-    {
-        "success": false,
-        "message": "...",
-        "error": {
-            "code": "...",
-            "details": { ... } or null
-        }
-    }
-    """
     payload = {
         "success": False,
         "message": message,
@@ -82,17 +62,6 @@ def error_response(
 
 
 def custom_exception_handler(exc, context):
-    """
-    Global DRF exception handler ensuring all API errors follow the standard envelope:
-    {
-        "success": false,
-        "message": "...",
-        "error": {
-            "code": "...",
-            "details": null or { ... }
-        }
-    }
-    """
     response = exception_handler(exc, context)
 
     if response is not None:
@@ -128,7 +97,6 @@ def custom_exception_handler(exc, context):
                 other_fields = {k: v for k, v in data.items() if k != "non_field_errors"}
                 details = other_fields if other_fields else None
             else:
-                # Field validation errors (e.g. {"email": [...], "password": [...]})
                 message = "Validation failed"
                 error_code = "VALIDATION_ERROR"
                 details = data
@@ -147,8 +115,6 @@ def custom_exception_handler(exc, context):
             details = data
         else:
             message = str(data)
-
-        # Normalize common error message patterns to consistent codes
         msg_lower = message.lower()
         if "inactive" in msg_lower:
             error_code = "ACCOUNT_INACTIVE"

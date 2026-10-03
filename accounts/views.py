@@ -1109,6 +1109,8 @@ class BaseOAuthView(APIView):
         code = serializer.validated_data.get("code")
         callback_url = serializer.validated_data.get("callback_url")
         access_token = serializer.validated_data.get("access_token")
+        code_verifier = serializer.validated_data.get("code_verifier")
+        client_id = serializer.validated_data.get("client_id")
 
         try:
             user, created, provider_name = process_social_login(
@@ -1117,6 +1119,8 @@ class BaseOAuthView(APIView):
                 code=code,
                 callback_url=callback_url,
                 access_token=access_token,
+                code_verifier=code_verifier,
+                client_id=client_id,
             )
 
             if not user.is_active:
@@ -1176,8 +1180,10 @@ class GoogleOAuthView(BaseOAuthView):
         tags=["Accounts"],
         summary="Google OAuth2 login and registration",
         description=(
-            "Authenticates or registers a user via Google OAuth2 using django-allauth. "
-            "Accepts an authorization `code` (and optional `callback_url`). "
+            "Authenticates or registers a user via Google OAuth2.\n"
+            "Supports both standard confidential web clients and mobile public clients (Android & iOS) via PKCE (RFC 7636).\n"
+            "- For Web: accepts authorization `code` and optional `callback_url`.\n"
+            "- For Mobile (PKCE): accepts authorization `code`, `code_verifier`, and optional `client_id` (Android/iOS) and `callback_url` without requiring a client secret.\n"
             "Returns user info and JWT access token in the response body (`data.access`). "
             "The refresh token is delivered in a secure HttpOnly cookie (`refresh_token`). "
             "Requires that the email address associated with the Google account is verified."
@@ -1235,9 +1241,20 @@ class GoogleOAuthView(BaseOAuthView):
         examples=[
             OpenApiExample(
                 name="GoogleOAuthRequestExample",
-                summary="Google OAuth Request",
+                summary="Google OAuth Request (Web Flow)",
                 value={
                     "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
+                    "callback_url": "kisekae://auth/google/callback",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="GoogleOAuthPKCERequestExample",
+                summary="Google OAuth PKCE Request (Mobile: Android & iOS)",
+                value={
+                    "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
+                    "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJu1p1r_wW1gFWFOEjXk-abcdef1234567890",
+                    "client_id": "1234567890-example.apps.googleusercontent.com",
                     "callback_url": "kisekae://auth/google/callback",
                 },
                 request_only=True,

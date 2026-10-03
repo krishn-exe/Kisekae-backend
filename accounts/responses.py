@@ -1,5 +1,6 @@
 import logging
 
+from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
@@ -19,6 +20,15 @@ def success_response(
         "message": message,
         "data": data,
     }
+
+    if tokens:
+        access_token = tokens.get("access")
+        if access_token:
+            if payload["data"] is None:
+                payload["data"] = {}
+            if isinstance(payload["data"], dict):
+                payload["data"]["access"] = access_token
+
     response = Response(payload, status=status_code)
 
     if headers:
@@ -26,13 +36,16 @@ def success_response(
             response[key] = value
 
     if tokens:
-        access_token = tokens.get("access")
         refresh_token = tokens.get("refresh")
-        if access_token:
-            response["Authorization"] = f"Bearer {access_token}"
         if refresh_token:
-            response["X-Refresh-Token"] = str(refresh_token)
-        response["Access-Control-Expose-Headers"] = "Authorization, X-Refresh-Token"
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh_token),
+                httponly=True,
+                samesite=getattr(settings, "AUTH_COOKIE_SAMESITE", "Lax"),
+                secure=getattr(settings, "AUTH_COOKIE_SECURE", getattr(settings, "SESSION_COOKIE_SECURE", False)),
+                path="/",
+            )
 
     return response
 

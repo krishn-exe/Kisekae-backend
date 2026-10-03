@@ -3,6 +3,7 @@ import secrets
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
 from django.core.mail import send_mail
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
@@ -64,7 +65,12 @@ class RegisterView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Register a new user account",
-        description="Creates a new user with mandatory email. Name and password are optional (OTP-only accounts). Accepts optional `is_seller` boolean (defaults to false).",
+        description=(
+            "Initiates user registration and automatically dispatches a 6-digit verification code to the email address. "
+            "Registration data is staged in Redis with a 15-minute TTL; the user account is created in the database "
+            "upon successful OTP verification (`POST /accounts/otp/verify/`). "
+            "Name and password are optional. Accepts optional `is_seller` boolean (defaults to false)."
+        ),
         request=RegisterSerializer,
         responses={
             201: inline_serializer(
@@ -75,7 +81,6 @@ class RegisterView(APIView):
                     "data": inline_serializer(
                         name="RegisteredUserData",
                         fields={
-                            "id": serializers.IntegerField(),
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
                             "is_seller": serializers.BooleanField(),
@@ -84,6 +89,8 @@ class RegisterView(APIView):
                 },
             ),
             400: COMMON_ERROR_SCHEMA,
+            429: COMMON_ERROR_SCHEMA,
+            503: COMMON_ERROR_SCHEMA,
         },
         examples=[
             OpenApiExample(
@@ -102,9 +109,8 @@ class RegisterView(APIView):
                 summary="Successful Registration (201 Created)",
                 value={
                     "success": True,
-                    "message": "User registered successfully",
+                    "message": "User registered successfully. A verification code has been sent to your email.",
                     "data": {
-                        "id": 123,
                         "name": "Krishn Sharma",
                         "email": "user@example.com",
                         "is_seller": False,
@@ -134,15 +140,49 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        data = serializer.validated_data
+
+        email = data["email"]
+        name = data.get("name", "")
+        password = data.get("password")
+        is_seller = data.get("is_seller", False)
+
+        hashed_password = make_password(password) if password else None
+        pending_data = {
+            "name": name,
+            "email": email,
+            "password": hashed_password,
+            "is_seller": is_seller,
+        }
+        cache.set(f"pending_registration:{email}", pending_data, timeout=900)
+
+        otp = RedisOTP(email=email, purpose="verify_email")
+        can_send, wait_secs = otp.can_issue()
+        if not can_send:
+            return error_response(
+                message=f"Please wait {wait_secs} seconds before requesting a new code.",
+                code="RATE_LIMIT_EXCEEDED",
+                details={"wait_seconds": wait_secs},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        raw_code = otp.issue()
+        try:
+            OTPRequestView._send_code(email, raw_code, purpose="verify_email")
+        except Exception as e:
+            logger.exception("Failed to send OTP code to %s: %s", email, e)
+            return error_response(
+                message="Unable to send verification code. Please try again later.",
+                code="SERVICE_UNAVAILABLE",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return success_response(
-            message="User registered successfully",
+            message="User registered successfully. A verification code has been sent to your email.",
             data={
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "is_seller": user.is_seller,
+                "name": name,
+                "email": email,
+                "is_seller": is_seller,
             },
             status_code=status.HTTP_201_CREATED,
         )
@@ -158,9 +198,8 @@ class LoginPasswordView(APIView):
         summary="Log in with email and password",
         description=(
             "Authenticates with email and password. "
-            "Returns user info in the response body. "
-            "Tokens are delivered in headers: `Authorization: Bearer <access_token>` "
-            "and `X-Refresh-Token: <refresh_token>`."
+            "Returns user info and JWT access token in the response body (`data.access`). "
+            "The refresh token is delivered in a secure HttpOnly cookie (`refresh_token`)."
         ),
         request=LoginPasswordSerializer,
         responses={
@@ -180,6 +219,7 @@ class LoginPasswordView(APIView):
                                     "email": serializers.EmailField(),
                                 },
                             ),
+                            "access": serializers.CharField(help_text="JWT access token"),
                         },
                     ),
                 },
@@ -208,6 +248,7 @@ class LoginPasswordView(APIView):
                             "name": "Krishn Sharma",
                             "email": "user@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                     },
                 },
                 response_only=True,
@@ -319,31 +360,39 @@ class OTPRequestView(APIView):
         purpose = serializer.validated_data.get("purpose", "login")
 
         user = User.objects.filter(email__iexact=email).first()
+        has_pending_reg = cache.get(f"pending_registration:{email}") is not None
 
+        should_send = False
         if user and user.is_active:
             if purpose == "password_reset" and not user.is_email_verified:
-                pass
+                should_send = False
             else:
-                otp = RedisOTP(email=email, purpose=purpose)
-                can_send, wait_secs = otp.can_issue()
-                if not can_send:
-                    return error_response(
-                        message=f"Please wait {wait_secs} seconds before requesting a new code.",
-                        code="RATE_LIMIT_EXCEEDED",
-                        details={"wait_seconds": wait_secs},
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    )
+                should_send = True
+        elif has_pending_reg and purpose == "verify_email":
+            should_send = True
 
-                raw_code = otp.issue()
-                try:
-                    self._send_code(user.email, raw_code, purpose)
-                except Exception as e:
-                    logger.exception("Failed to send OTP code to %s: %s", email, e)
-                    return error_response(
-                        message="Unable to send verification code. Please try again later.",
-                        code="SERVICE_UNAVAILABLE",
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    )
+        if should_send:
+            otp = RedisOTP(email=email, purpose=purpose)
+            can_send, wait_secs = otp.can_issue()
+            if not can_send:
+                return error_response(
+                    message=f"Please wait {wait_secs} seconds before requesting a new code.",
+                    code="RATE_LIMIT_EXCEEDED",
+                    details={"wait_seconds": wait_secs},
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+
+            raw_code = otp.issue()
+            target_email = user.email if user else email
+            try:
+                self._send_code(target_email, raw_code, purpose)
+            except Exception as e:
+                logger.exception("Failed to send OTP code to %s: %s", email, e)
+                return error_response(
+                    message="Unable to send verification code. Please try again later.",
+                    code="SERVICE_UNAVAILABLE",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
         return success_response(
             message="If an account exists, a code has been sent.",
@@ -382,9 +431,11 @@ class OTPVerifyView(APIView):
         summary="Verify OTP code and authenticate, verify email, or obtain password reset token",
         description=(
             "Verifies the 6-digit OTP code against Redis.\n"
-            "- If `purpose` is 'verify_email', marks the user's email as verified and issues JWT tokens in headers.\n"
-            "- If `purpose` is 'login' (default), marks email as verified and issues JWT tokens in headers: "
-            "`Authorization: Bearer <access_token>` and `X-Refresh-Token: <refresh_token>`.\n"
+            "- If `purpose` is 'verify_email', creates the database account (if pending registration) or marks email verified, "
+            "returning user info and JWT access token in `data.access`, with refresh token in an HttpOnly cookie (`refresh_token`). "
+            "If the registration session expired (>15 min), returns 400 with code `REGISTRATION_EXPIRED`.\n"
+            "- If `purpose` is 'login' (default), marks email verified and returns user info and JWT access token in `data.access`, "
+            "with refresh token in an HttpOnly cookie (`refresh_token`).\n"
             "- If `purpose` is 'password_reset', returns a 5-minute single-use `reset_token` in the response body "
             "to be used with `POST /accounts/password/reset/`."
         ),
@@ -408,7 +459,8 @@ class OTPVerifyView(APIView):
                                     "email": serializers.EmailField(),
                                 },
                             ),
-                            "reset_token": serializers.CharField(required=False, allow_null=True),
+                            "access": serializers.CharField(required=False, allow_null=True, help_text="JWT access token"),
+                            "reset_token": serializers.CharField(required=False, allow_null=True, help_text="Single-use password reset token"),
                         },
                     ),
                 },
@@ -450,6 +502,7 @@ class OTPVerifyView(APIView):
                             "name": "Krishn Sharma",
                             "email": "user@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                     },
                 },
                 response_only=True,
@@ -482,6 +535,20 @@ class OTPVerifyView(APIView):
                 response_only=True,
                 status_codes=["400"],
             ),
+            OpenApiExample(
+                name="OTPVerifyRegistrationExpiredExample",
+                summary="Registration Expired (400 Bad Request)",
+                value={
+                    "success": False,
+                    "message": "Registration session expired or not found. Please register again.",
+                    "error": {
+                        "code": "REGISTRATION_EXPIRED",
+                        "details": None,
+                    },
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
         ],
     )
     def post(self, request):
@@ -508,6 +575,70 @@ class OTPVerifyView(APIView):
             )
 
         user = User.objects.filter(email__iexact=email).first()
+
+        if purpose == "verify_email":
+            if user:
+                if not user.is_active:
+                    return error_response(
+                        message="This account is inactive.",
+                        code="ACCOUNT_INACTIVE",
+                        status_code=status.HTTP_403_FORBIDDEN,
+                    )
+                if not user.is_email_verified:
+                    user.is_email_verified = True
+                    user.save(update_fields=["is_email_verified"])
+                cache.delete(f"pending_registration:{email}")
+                return success_response(
+                    message="Email verified successfully.",
+                    data={
+                        "user": {
+                            "id": user.id,
+                            "name": user.name,
+                            "email": user.email,
+                        }
+                    },
+                    tokens=tokens_for_user(user),
+                    status_code=status.HTTP_200_OK,
+                )
+
+            # User not in DB yet - check pending registration in Redis
+            pending_data = cache.get(f"pending_registration:{email}")
+            if not pending_data:
+                return error_response(
+                    message="Registration session expired or not found. Please register again.",
+                    code="REGISTRATION_EXPIRED",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = User(
+                email=pending_data["email"],
+                name=pending_data.get("name", ""),
+                is_seller=pending_data.get("is_seller", False),
+                is_email_verified=True,
+                is_active=True,
+            )
+            pwd = pending_data.get("password")
+            if pwd:
+                user.password = pwd
+            else:
+                user.set_unusable_password()
+            user.save()
+
+            cache.delete(f"pending_registration:{email}")
+
+            return success_response(
+                message="Email verified successfully.",
+                data={
+                    "user": {
+                        "id": user.id,
+                        "name": user.name,
+                        "email": user.email,
+                    }
+                },
+                tokens=tokens_for_user(user),
+                status_code=status.HTTP_200_OK,
+            )
+
         if not user:
             return error_response(
                 message="No account found with that email address.",
@@ -543,23 +674,6 @@ class OTPVerifyView(APIView):
                 status_code=status.HTTP_200_OK,
             )
 
-        if purpose == "verify_email":
-            if not user.is_email_verified:
-                user.is_email_verified = True
-                user.save(update_fields=["is_email_verified"])
-            return success_response(
-                message="Email verified successfully.",
-                data={
-                    "user": {
-                        "id": user.id,
-                        "name": user.name,
-                        "email": user.email,
-                    }
-                },
-                tokens=tokens_for_user(user),
-                status_code=status.HTTP_200_OK,
-            )
-
         if not user.is_email_verified:
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])
@@ -587,8 +701,8 @@ class LogoutView(APIView):
         tags=["Accounts"],
         summary="Log out user and blacklist refresh token",
         description=(
-            "Logs out the user by blacklisting their refresh token. "
-            "Pass the refresh token via `X-Refresh-Token` header or `refresh` body param."
+            "Logs out the user by blacklisting their refresh token and clearing the `refresh_token` cookie. "
+            "The refresh token is automatically read from the HttpOnly cookie, or can be passed via the `refresh` body param."
         ),
         request=LogoutSerializer,
         responses={
@@ -640,18 +754,22 @@ class LogoutView(APIView):
     )
     def post(self, request):
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
-        if "refresh" not in data and "HTTP_X_REFRESH_TOKEN" in request.META:
+        if "refresh" not in data and "refresh_token" in request.COOKIES:
+            data["refresh"] = request.COOKIES["refresh_token"]
+        elif "refresh" not in data and "HTTP_X_REFRESH_TOKEN" in request.META:
             data["refresh"] = request.META["HTTP_X_REFRESH_TOKEN"]
 
         serializer = self.serializer_class(data=data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        return success_response(
+        response = success_response(
             message="Successfully logged out.",
             data=None,
             status_code=status.HTTP_200_OK,
         )
+        response.delete_cookie(key="refresh_token", path="/")
+        return response
 
 
 class TokenRefreshView(SimpleJWTTokenRefreshView):
@@ -660,13 +778,13 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         tags=["Accounts"],
         summary="Refresh JWT access token",
         description=(
-            "Refreshes JWT tokens. Accepts refresh token from `X-Refresh-Token` header or `refresh` body param. "
-            "Returns newly issued tokens in response headers: `Authorization: Bearer <access_token>` "
-            "and `X-Refresh-Token: <refresh_token>`."
+            "Refreshes JWT access token. Accepts the refresh token automatically from the HttpOnly `refresh_token` cookie, "
+            "or via optional `refresh` body param. Returns newly issued access token in the response body (`data.access`) "
+            "and sets the rotated refresh token in the `refresh_token` HttpOnly cookie."
         ),
         request=inline_serializer(
             name="TokenRefreshRequest",
-            fields={"refresh": serializers.CharField(required=False)},
+            fields={"refresh": serializers.CharField(required=False, help_text="Optional if refresh_token cookie is present")},
         ),
         responses={
             200: inline_serializer(
@@ -674,7 +792,12 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
                 fields={
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
-                    "data": serializers.JSONField(allow_null=True),
+                    "data": inline_serializer(
+                        name="TokenRefreshData",
+                        fields={
+                            "access": serializers.CharField(help_text="Newly issued JWT access token"),
+                        },
+                    ),
                 },
             ),
             400: COMMON_ERROR_SCHEMA,
@@ -683,7 +806,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         examples=[
             OpenApiExample(
                 name="TokenRefreshRequestExample",
-                summary="Token Refresh Request",
+                summary="Token Refresh Request (Optional body)",
                 value={
                     "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_refresh_token",
                 },
@@ -695,7 +818,9 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
                 value={
                     "success": True,
                     "message": "Token refreshed successfully",
-                    "data": None,
+                    "data": {
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_new_access_token",
+                    },
                 },
                 response_only=True,
                 status_codes=["200"],
@@ -718,7 +843,9 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
     )
     def post(self, request, *args, **kwargs):
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
-        if "refresh" not in data and "HTTP_X_REFRESH_TOKEN" in request.META:
+        if "refresh" not in data and "refresh_token" in request.COOKIES:
+            data["refresh"] = request.COOKIES["refresh_token"]
+        elif "refresh" not in data and "HTTP_X_REFRESH_TOKEN" in request.META:
             data["refresh"] = request.META["HTTP_X_REFRESH_TOKEN"]
 
         serializer = self.get_serializer(data=data)
@@ -730,15 +857,19 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
 
         response = success_response(
             message="Token refreshed successfully",
-            data=None,
+            data={"access": tokens["access"]},
             status_code=status.HTTP_200_OK,
         )
-        if "access" in tokens:
-            response["Authorization"] = f"Bearer {tokens['access']}"
         refresh = tokens.get("refresh") or data.get("refresh")
         if refresh:
-            response["X-Refresh-Token"] = str(refresh)
-        response["Access-Control-Expose-Headers"] = "Authorization, X-Refresh-Token"
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh),
+                httponly=True,
+                samesite=getattr(settings, "AUTH_COOKIE_SAMESITE", "Lax"),
+                secure=getattr(settings, "AUTH_COOKIE_SECURE", getattr(settings, "SESSION_COOKIE_SECURE", False)),
+                path="/",
+            )
         return response
 
 
@@ -978,6 +1109,8 @@ class BaseOAuthView(APIView):
         code = serializer.validated_data.get("code")
         callback_url = serializer.validated_data.get("callback_url")
         access_token = serializer.validated_data.get("access_token")
+        code_verifier = serializer.validated_data.get("code_verifier")
+        client_id = serializer.validated_data.get("client_id")
 
         try:
             user, created, provider_name = process_social_login(
@@ -986,6 +1119,8 @@ class BaseOAuthView(APIView):
                 code=code,
                 callback_url=callback_url,
                 access_token=access_token,
+                code_verifier=code_verifier,
+                client_id=client_id,
             )
 
             if not user.is_active:
@@ -1045,11 +1180,13 @@ class GoogleOAuthView(BaseOAuthView):
         tags=["Accounts"],
         summary="Google OAuth2 login and registration",
         description=(
-            "Authenticates or registers a user via Google OAuth2 using django-allauth. "
-            "Accepts an authorization `code` (and optional `callback_url`). "
-            "Returns user info in the response body. "
-            "Tokens are delivered in headers: `Authorization: Bearer <access_token>` "
-            "and `X-Refresh-Token: <refresh_token>`."
+            "Authenticates or registers a user via Google OAuth2.\n"
+            "Supports both standard confidential web clients and mobile public clients (Android & iOS) via PKCE (RFC 7636).\n"
+            "- For Web: accepts authorization `code` and optional `callback_url`.\n"
+            "- For Mobile (PKCE): accepts authorization `code`, `code_verifier`, and optional `client_id` (Android/iOS) and `callback_url` without requiring a client secret.\n"
+            "Returns user info and JWT access token in the response body (`data.access`). "
+            "The refresh token is delivered in a secure HttpOnly cookie (`refresh_token`). "
+            "Requires that the email address associated with the Google account is verified."
         ),
         request=GoogleOAuthSerializer,
         responses={
@@ -1069,6 +1206,7 @@ class GoogleOAuthView(BaseOAuthView):
                                     "email": serializers.EmailField(allow_null=True),
                                 },
                             ),
+                            "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
                         },
                     ),
@@ -1090,6 +1228,7 @@ class GoogleOAuthView(BaseOAuthView):
                                     "email": serializers.EmailField(allow_null=True),
                                 },
                             ),
+                            "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
                         },
                     ),
@@ -1102,9 +1241,20 @@ class GoogleOAuthView(BaseOAuthView):
         examples=[
             OpenApiExample(
                 name="GoogleOAuthRequestExample",
-                summary="Google OAuth Request",
+                summary="Google OAuth Request (Web Flow)",
                 value={
                     "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
+                    "callback_url": "kisekae://auth/google/callback",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                name="GoogleOAuthPKCERequestExample",
+                summary="Google OAuth PKCE Request (Mobile: Android & iOS)",
+                value={
+                    "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
+                    "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJu1p1r_wW1gFWFOEjXk-abcdef1234567890",
+                    "client_id": "1234567890-example.apps.googleusercontent.com",
                     "callback_url": "kisekae://auth/google/callback",
                 },
                 request_only=True,
@@ -1121,6 +1271,7 @@ class GoogleOAuthView(BaseOAuthView):
                             "name": "Jane Google",
                             "email": "user@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                         "created": False,
                     },
                 },
@@ -1139,6 +1290,7 @@ class GoogleOAuthView(BaseOAuthView):
                             "name": "Jane Google",
                             "email": "newuser@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                         "created": True,
                     },
                 },
@@ -1176,9 +1328,9 @@ class GitHubOAuthView(BaseOAuthView):
         description=(
             "Authenticates or registers a user via GitHub OAuth2 using django-allauth. "
             "Accepts an authorization `code` (and optional `callback_url`). "
-            "Returns user info in the response body. "
-            "Tokens are delivered in headers: `Authorization: Bearer <access_token>` "
-            "and `X-Refresh-Token: <refresh_token>`."
+            "Returns user info and JWT access token in the response body (`data.access`). "
+            "The refresh token is delivered in a secure HttpOnly cookie (`refresh_token`). "
+            "Requires that the email address associated with the GitHub account is verified on GitHub."
         ),
         request=GitHubOAuthSerializer,
         responses={
@@ -1198,6 +1350,7 @@ class GitHubOAuthView(BaseOAuthView):
                                     "email": serializers.EmailField(allow_null=True),
                                 },
                             ),
+                            "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
                         },
                     ),
@@ -1219,6 +1372,7 @@ class GitHubOAuthView(BaseOAuthView):
                                     "email": serializers.EmailField(allow_null=True),
                                 },
                             ),
+                            "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
                         },
                     ),
@@ -1250,6 +1404,7 @@ class GitHubOAuthView(BaseOAuthView):
                             "name": "Jane GitHub",
                             "email": "user@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                         "created": False,
                     },
                 },
@@ -1268,6 +1423,7 @@ class GitHubOAuthView(BaseOAuthView):
                             "name": "Jane GitHub",
                             "email": "newuser@example.com",
                         },
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                         "created": True,
                     },
                 },

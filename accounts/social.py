@@ -4,11 +4,58 @@ from typing import Tuple
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client, OAuth2Error
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 
 from .adapter import sanitize_social_name
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+def extract_verified_oauth_email(social_login, provider) -> str:
+    """
+    Safely extract a verified email address from the OAuth social login.
+    Rejects unverified email addresses to prevent account takeover attacks.
+    """
+    email_addresses = getattr(social_login, "email_addresses", []) or []
+
+    # 1. Check allauth's parsed EmailAddress list (populated for GitHub and Google)
+    if email_addresses:
+        # Prioritize primary verified email
+        for ea in email_addresses:
+            if getattr(ea, "verified", False) and getattr(ea, "primary", False) and getattr(ea, "email", None):
+                return ea.email.strip().lower()
+        # Fallback to any verified email
+        for ea in email_addresses:
+            if getattr(ea, "verified", False) and getattr(ea, "email", None):
+                return ea.email.strip().lower()
+        # If email_addresses were returned but none are verified, reject!
+        raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
+
+    # 2. Check extra_data (e.g., Google ID token / userinfo)
+    extra_data = getattr(social_login.account, "extra_data", {}) or {}
+    email_verified = extra_data.get("email_verified")
+    if email_verified is None:
+        email_verified = extra_data.get("verified_email")
+
+    candidate_email = (
+        getattr(social_login.user, "email", None)
+        or extra_data.get("email")
+    )
+
+    if not candidate_email:
+        raise ValueError(f"{provider.name} account did not provide an email address.")
+
+    provider_id = (getattr(provider, "id", "") or getattr(provider, "name", "")).lower()
+    # For GitHub, email_addresses should always be present; public profile email alone is untrusted
+    if "github" in provider_id:
+        raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
+
+    # For Google and OIDC providers with email_verified boolean
+    if email_verified is False:
+        raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
+
+    return candidate_email.strip().lower()
 
 
 def process_social_login(
@@ -58,19 +105,7 @@ def process_social_login(
     social_login = adapter.complete_login(raw_request, app, token, response=token_data)
     social_login.token = token
 
-    email = social_login.user.email
-    if not email:
-        for email_address in social_login.email_addresses:
-            if email_address.email:
-                email = email_address.email
-                break
-    if not email:
-        email = social_login.account.extra_data.get("email")
-
-    if not email:
-        raise ValueError(f"{provider.name} account did not provide an email address.")
-
-    email = email.strip().lower()
+    email = extract_verified_oauth_email(social_login, provider)
 
     user = User.objects.filter(email__iexact=email).first()
     created = False
@@ -85,8 +120,10 @@ def process_social_login(
     if user:
         updated_fields = []
         if not user.is_email_verified:
+            # Prevent pre-account takeover: reset any attacker-set password
+            user.set_unusable_password()
             user.is_email_verified = True
-            updated_fields.append("is_email_verified")
+            updated_fields.extend(["password", "is_email_verified"])
         if not user.name and clean_name:
             user.name = clean_name
             updated_fields.append("name")
@@ -106,4 +143,7 @@ def process_social_login(
         social_login.save(raw_request, connect=True)
         created = True
 
+    cache.delete(f"pending_registration:{email}")
+
     return user, created, provider.name
+

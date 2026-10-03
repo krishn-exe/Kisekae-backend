@@ -203,6 +203,35 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('EMAIL_HOST_US
 GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 
+# Mobile Google OAuth (PKCE)
+GOOGLE_ANDROID_CLIENT_ID = os.getenv('GOOGLE_ANDROID_CLIENT_ID', '')
+GOOGLE_ANDROID_CALLBACK_URL = os.getenv('GOOGLE_ANDROID_CALLBACK_URL', 'kisekae://auth/google/callback')
+GOOGLE_IOS_CLIENT_ID = os.getenv('GOOGLE_IOS_CLIENT_ID', '')
+GOOGLE_IOS_CALLBACK_URL = os.getenv('GOOGLE_IOS_CALLBACK_URL', 'live.kisekae.app:/oauth2redirect')
+
+# Allowlist of accepted Google Client IDs (Web, Android, iOS)
+GOOGLE_ALLOWED_CLIENT_IDS = [
+    cid for cid in [
+        GOOGLE_OAUTH_CLIENT_ID,
+        GOOGLE_ANDROID_CLIENT_ID,
+        GOOGLE_IOS_CLIENT_ID,
+    ] if cid
+]
+
+# Allowlist of accepted Google Redirect URIs
+GOOGLE_ALLOWED_REDIRECT_URIS = [
+    uri for uri in [
+        os.getenv('GOOGLE_OAUTH_CALLBACK_URL', ''),
+        GOOGLE_ANDROID_CALLBACK_URL,
+        GOOGLE_IOS_CALLBACK_URL,
+        'live.kisekae.app:/oauth2redirect',
+        'live.kisekae.app://oauth2redirect',
+        'kisekae:/oauth2redirect',
+        'kisekae://oauth2redirect',
+        'kisekae://auth/google/callback',
+    ] if uri
+]
+
 GITHUB_OAUTH_CLIENT_ID = os.getenv('GITHUB_OAUTH_CLIENT_ID', '')
 GITHUB_OAUTH_CLIENT_SECRET = os.getenv('GITHUB_OAUTH_CLIENT_SECRET', '')
 
@@ -216,15 +245,29 @@ SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 SOCIALACCOUNT_ADAPTER = 'accounts.adapter.CustomSocialAccountAdapter'
 ACCOUNT_ADAPTER = 'accounts.adapter.CustomAccountAdapter'
 
+GOOGLE_APPS_CONFIG = [
+    {
+        'client_id': GOOGLE_OAUTH_CLIENT_ID,
+        'secret': GOOGLE_OAUTH_CLIENT_SECRET,
+        'key': '',
+    },
+]
+if GOOGLE_ANDROID_CLIENT_ID:
+    GOOGLE_APPS_CONFIG.append({
+        'client_id': GOOGLE_ANDROID_CLIENT_ID,
+        'secret': '',
+        'key': '',
+    })
+if GOOGLE_IOS_CLIENT_ID:
+    GOOGLE_APPS_CONFIG.append({
+        'client_id': GOOGLE_IOS_CLIENT_ID,
+        'secret': '',
+        'key': '',
+    })
+
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
-        'APPS': [
-            {
-                'client_id': GOOGLE_OAUTH_CLIENT_ID,
-                'secret': GOOGLE_OAUTH_CLIENT_SECRET,
-                'key': '',
-            },
-        ],
+        'APPS': GOOGLE_APPS_CONFIG,
         'SCOPE': ['profile', 'email'],
         'AUTH_PARAMS': {'access_type': 'online'},
     },

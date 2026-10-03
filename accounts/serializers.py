@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
@@ -272,7 +273,66 @@ class OAuthLoginSerializer(serializers.Serializer):
 
 
 class GoogleOAuthSerializer(OAuthLoginSerializer):
-    pass
+    code_verifier = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        min_length=43,
+        max_length=128,
+        help_text="PKCE code verifier (RFC 7636) used for mobile/public clients (Android & iOS).",
+    )
+    client_id = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="OAuth client ID (Web, Android, or iOS). Must be in the allowed client IDs list.",
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        code = attrs.get("code")
+        code_verifier = attrs.get("code_verifier")
+        client_id = attrs.get("client_id")
+        callback_url = attrs.get("callback_url")
+
+        if code_verifier and not code:
+            raise serializers.ValidationError(
+                {"code": "Authorization code is required when code_verifier is provided."}
+            )
+
+        allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
+        if client_id:
+            if allowed_client_ids and client_id not in allowed_client_ids:
+                raise serializers.ValidationError(
+                    {"client_id": f"Client ID '{client_id}' is not in the allowed client IDs list."}
+                )
+        elif code_verifier and allowed_client_ids:
+            if len(allowed_client_ids) == 1:
+                attrs["client_id"] = allowed_client_ids[0]
+            elif getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", None) and not getattr(settings, "GOOGLE_IOS_CLIENT_ID", None):
+                attrs["client_id"] = settings.GOOGLE_ANDROID_CLIENT_ID
+            elif getattr(settings, "GOOGLE_IOS_CLIENT_ID", None) and not getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", None):
+                attrs["client_id"] = settings.GOOGLE_IOS_CLIENT_ID
+
+        # Fill default callback URL if PKCE and omitted
+        if code_verifier and not callback_url:
+            effective_client_id = attrs.get("client_id")
+            if effective_client_id and effective_client_id == getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", None):
+                attrs["callback_url"] = getattr(settings, "GOOGLE_ANDROID_CALLBACK_URL", "kisekae://auth/google/callback")
+            elif effective_client_id and effective_client_id == getattr(settings, "GOOGLE_IOS_CLIENT_ID", None):
+                attrs["callback_url"] = getattr(settings, "GOOGLE_IOS_CALLBACK_URL", "live.kisekae.app:/oauth2redirect")
+            elif getattr(settings, "GOOGLE_ANDROID_CALLBACK_URL", None):
+                attrs["callback_url"] = settings.GOOGLE_ANDROID_CALLBACK_URL
+
+        allowed_redirect_uris = getattr(settings, "GOOGLE_ALLOWED_REDIRECT_URIS", [])
+        callback_url = attrs.get("callback_url")
+        if callback_url and allowed_redirect_uris:
+            normalized_callback = callback_url.rstrip("/")
+            normalized_allowed = [uri.rstrip("/") for uri in allowed_redirect_uris]
+            if normalized_callback not in normalized_allowed:
+                raise serializers.ValidationError(
+                    {"callback_url": f"Callback URL '{callback_url}' is not in the allowed redirect URIs list."}
+                )
+
+        return attrs
 
 
 class GitHubOAuthSerializer(OAuthLoginSerializer):

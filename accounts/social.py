@@ -2,6 +2,7 @@ import logging
 from typing import Tuple
 
 import requests
+from allauth.socialaccount.adapter import get_adapter as get_socialaccount_adapter
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client, OAuth2Error
 from django.conf import settings
@@ -92,17 +93,16 @@ def exchange_google_pkce_tokens(
         raise ValueError("Unable to reach Google authorization server. Please try again.") from exc
 
     if not response.ok:
-        logger.warning(
-            "Google PKCE token exchange failed with status %d: %s",
-            response.status_code,
-            response.text,
-        )
+        logger.warning("Google PKCE token exchange failed with status %d", response.status_code)
         raise ValueError("Invalid or expired Google authorization code.")
 
     try:
-        return response.json()
+        token_data = response.json()
     except Exception as exc:
         raise ValueError("Invalid response received from Google authorization server.") from exc
+    if not isinstance(token_data, dict):
+        raise ValueError("Invalid response received from Google authorization server.")
+    return token_data
 
 
 def verify_google_id_token(
@@ -113,8 +113,9 @@ def verify_google_id_token(
     Verifies a Google ID token JWT using Google's public JWKS certificates.
     Ensures signature, expiration, issuer, audience, and email verification.
     """
-    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
-    audience = allowed_client_ids if allowed_client_ids else (expected_client_id or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None))
+    audience = expected_client_id or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+    if not audience:
+        raise ValueError("No Google client ID configured for ID token verification.")
 
     try:
         id_info = google_id_token.verify_oauth2_token(
@@ -172,7 +173,10 @@ def process_google_pkce_login(
 
     id_token_str = token_data.get("id_token")
     if not id_token_str:
-        logger.error("Google token response did not contain id_token: %s", token_data)
+        logger.error(
+            "Google token response did not contain id_token; returned fields: %s",
+            sorted(token_data.keys()),
+        )
         raise ValueError("Google authorization response did not include an ID token.")
 
     id_info = verify_google_id_token(id_token_str, expected_client_id=effective_client_id)
@@ -244,7 +248,6 @@ def process_social_login(
         raw_request.session = {}
 
     adapter = adapter_class(raw_request)
-    provider = adapter.get_provider()
 
     # If code_verifier is present, route to PKCE flow (mobile clients without client secret)
     if code_verifier and code:
@@ -257,13 +260,27 @@ def process_social_login(
                 client_id=client_id,
             )
         else:
-            raise ValueError(f"PKCE flow is not supported for {provider.name}.")
+            raise ValueError(f"PKCE flow is not supported for {adapter.provider_id}.")
+
+    # Resolve the django-allauth provider for non-PKCE flows using a specific
+    # client ID. Google has separate web, Android, and iOS apps, so an unscoped
+    # lookup is ambiguous when more than one is configured.
+    provider_client_id = client_id
+    if adapter.provider_id == "google" and not provider_client_id:
+        provider_client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "")
+
+    social_adapter = get_socialaccount_adapter(raw_request)
+    provider = social_adapter.get_provider(
+        raw_request,
+        provider=adapter.provider_id,
+        client_id=provider_client_id or None,
+    )
 
     app = None
-    if client_id:
+    if provider_client_id:
         try:
             for a in provider.get_apps(raw_request):
-                if a.client_id == client_id:
+                if a.client_id == provider_client_id:
                     app = a
                     break
         except Exception:

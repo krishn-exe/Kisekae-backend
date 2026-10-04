@@ -223,6 +223,7 @@ GOOGLE_ALLOWED_REDIRECT_URIS = [
     uri for uri in [
         os.getenv('GOOGLE_OAUTH_CALLBACK_URL', ''),
         GOOGLE_ANDROID_CALLBACK_URL,
+        'com.googleusercontent.apps.1046679130755-pc337dk11oovnipgu1at9ueog5nt072c:/callback',
         GOOGLE_IOS_CALLBACK_URL,
         'live.kisekae.app:/oauth2redirect',
         'live.kisekae.app://oauth2redirect',

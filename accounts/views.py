@@ -59,6 +59,7 @@ COMMON_ERROR_SCHEMA = inline_serializer(
 
 class RegisterView(APIView):
 
+    throttle_scope = "register"
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
@@ -190,6 +191,7 @@ class RegisterView(APIView):
 
 class LoginPasswordView(APIView):
 
+    throttle_scope = "password_login"
     permission_classes = [AllowAny]
     serializer_class = LoginPasswordSerializer
 
@@ -291,6 +293,7 @@ class LoginPasswordView(APIView):
 
 class OTPRequestView(APIView):
 
+    throttle_scope = "otp_request"
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
 
@@ -423,6 +426,7 @@ class OTPRequestView(APIView):
 
 class OTPVerifyView(APIView):
 
+    throttle_scope = "otp_verify"
     permission_classes = [AllowAny]
     serializer_class = OTPVerifySerializer
 
@@ -694,6 +698,7 @@ class OTPVerifyView(APIView):
 
 class LogoutView(APIView):
 
+    throttle_scope = "logout"
     permission_classes = [AllowAny]
     serializer_class = LogoutSerializer
 
@@ -773,6 +778,8 @@ class LogoutView(APIView):
 
 
 class TokenRefreshView(SimpleJWTTokenRefreshView):
+
+    throttle_scope = "token_refresh"
 
     @extend_schema(
         tags=["Accounts"],
@@ -875,6 +882,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
 
 class ChangePasswordView(APIView):
 
+    throttle_scope = "password_change"
     permission_classes = [IsAuthenticated]
     serializer_class = ChangePasswordSerializer
 
@@ -964,6 +972,7 @@ class ChangePasswordView(APIView):
 
 class ResetPasswordView(APIView):
 
+    throttle_scope = "password_reset"
     permission_classes = [AllowAny]
     serializer_class = ResetPasswordSerializer
 
@@ -1172,6 +1181,7 @@ class BaseOAuthView(APIView):
 
 
 class GoogleOAuthView(BaseOAuthView):
+    throttle_scope = "oauth_google"
     serializer_class = GoogleOAuthSerializer
     adapter_class = GoogleOAuth2Adapter
     provider_name = "Google"
@@ -1318,6 +1328,7 @@ class GoogleOAuthView(BaseOAuthView):
 
 
 class GitHubOAuthView(BaseOAuthView):
+    throttle_scope = "oauth_github"
     serializer_class = GitHubOAuthSerializer
     adapter_class = GitHubOAuth2Adapter
     provider_name = "GitHub"
@@ -1451,6 +1462,7 @@ class GitHubOAuthView(BaseOAuthView):
 
 
 class UserDetailView(APIView):
+    throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(

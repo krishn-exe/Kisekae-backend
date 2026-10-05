@@ -5,7 +5,6 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from django.core.mail import send_mail
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -31,6 +30,7 @@ from .serializers import (
     ResetPasswordSerializer,
 )
 from .social import process_social_login
+from .tasks import send_otp_email_task
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -405,23 +405,7 @@ class OTPRequestView(APIView):
 
     @staticmethod
     def _send_code(target_email, raw_code, purpose="login"):
-        if purpose == "password_reset":
-            subject = "Your Kisekae password reset code"
-            action_desc = "password reset"
-        elif purpose == "verify_email":
-            subject = "Your Kisekae email verification code"
-            action_desc = "email verification"
-        else:
-            subject = "Your Kisekae login code"
-            action_desc = "login"
-
-        body = f"Your {action_desc} code is {raw_code}. It expires in 5 minutes."
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[target_email],
-        )
+        send_otp_email_task.delay(target_email, raw_code, purpose)
 
 
 class OTPVerifyView(APIView):

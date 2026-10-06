@@ -67,11 +67,14 @@ class StoreService:
 
         target_membership = (
             StoreMembership.objects.select_for_update()
+            .select_related("user")
             .filter(store=store, id=new_owner_member_id)
             .first()
         )
         if not target_membership:
             raise ValidationError("Target member not found in this store.")
+        if not target_membership.user.is_active:
+            raise ValidationError("Cannot transfer ownership to an inactive user.")
 
         if target_membership.id == owner_membership.id:
             raise ValidationError("Cannot transfer ownership to yourself.")

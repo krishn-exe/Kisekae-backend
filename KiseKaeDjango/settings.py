@@ -157,6 +157,8 @@ REST_FRAMEWORK = {
         'password_change': '6/hour',
         'password_reset': '12/hour',
         'user_detail': '144/hour',
+        'store_read': '300/hour',
+        'store_write': '60/hour',
     },
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',

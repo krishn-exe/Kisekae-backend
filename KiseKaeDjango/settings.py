@@ -142,6 +142,22 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'register': '12/hour',
+        'password_login': '12/hour',
+        'otp_request': '24/hour',
+        'otp_verify': '36/hour',
+        'oauth_google': '36/hour',
+        'oauth_github': '36/hour',
+        'token_refresh': '144/hour',
+        'logout': '72/hour',
+        'password_change': '6/hour',
+        'password_reset': '12/hour',
+        'user_detail': '144/hour',
+    },
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
@@ -189,6 +205,7 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+DJANGO_CELERY_BEAT_TZ_AWARE = False
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Email

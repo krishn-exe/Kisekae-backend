@@ -5,7 +5,6 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from django.core.mail import send_mail
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -31,6 +30,7 @@ from .serializers import (
     ResetPasswordSerializer,
 )
 from .social import process_social_login
+from .tasks import send_otp_email_task
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -59,6 +59,7 @@ COMMON_ERROR_SCHEMA = inline_serializer(
 
 class RegisterView(APIView):
 
+    throttle_scope = "register"
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
@@ -190,6 +191,7 @@ class RegisterView(APIView):
 
 class LoginPasswordView(APIView):
 
+    throttle_scope = "password_login"
     permission_classes = [AllowAny]
     serializer_class = LoginPasswordSerializer
 
@@ -291,6 +293,7 @@ class LoginPasswordView(APIView):
 
 class OTPRequestView(APIView):
 
+    throttle_scope = "otp_request"
     permission_classes = [AllowAny]
     serializer_class = OTPRequestSerializer
 
@@ -402,27 +405,12 @@ class OTPRequestView(APIView):
 
     @staticmethod
     def _send_code(target_email, raw_code, purpose="login"):
-        if purpose == "password_reset":
-            subject = "Your Kisekae password reset code"
-            action_desc = "password reset"
-        elif purpose == "verify_email":
-            subject = "Your Kisekae email verification code"
-            action_desc = "email verification"
-        else:
-            subject = "Your Kisekae login code"
-            action_desc = "login"
-
-        body = f"Your {action_desc} code is {raw_code}. It expires in 5 minutes."
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[target_email],
-        )
+        send_otp_email_task.delay(target_email, raw_code, purpose)
 
 
 class OTPVerifyView(APIView):
 
+    throttle_scope = "otp_verify"
     permission_classes = [AllowAny]
     serializer_class = OTPVerifySerializer
 
@@ -694,6 +682,7 @@ class OTPVerifyView(APIView):
 
 class LogoutView(APIView):
 
+    throttle_scope = "logout"
     permission_classes = [AllowAny]
     serializer_class = LogoutSerializer
 
@@ -773,6 +762,8 @@ class LogoutView(APIView):
 
 
 class TokenRefreshView(SimpleJWTTokenRefreshView):
+
+    throttle_scope = "token_refresh"
 
     @extend_schema(
         tags=["Accounts"],
@@ -875,6 +866,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
 
 class ChangePasswordView(APIView):
 
+    throttle_scope = "password_change"
     permission_classes = [IsAuthenticated]
     serializer_class = ChangePasswordSerializer
 
@@ -964,6 +956,7 @@ class ChangePasswordView(APIView):
 
 class ResetPasswordView(APIView):
 
+    throttle_scope = "password_reset"
     permission_classes = [AllowAny]
     serializer_class = ResetPasswordSerializer
 
@@ -1172,6 +1165,7 @@ class BaseOAuthView(APIView):
 
 
 class GoogleOAuthView(BaseOAuthView):
+    throttle_scope = "oauth_google"
     serializer_class = GoogleOAuthSerializer
     adapter_class = GoogleOAuth2Adapter
     provider_name = "Google"
@@ -1318,6 +1312,7 @@ class GoogleOAuthView(BaseOAuthView):
 
 
 class GitHubOAuthView(BaseOAuthView):
+    throttle_scope = "oauth_github"
     serializer_class = GitHubOAuthSerializer
     adapter_class = GitHubOAuth2Adapter
     provider_name = "GitHub"
@@ -1451,6 +1446,7 @@ class GitHubOAuthView(BaseOAuthView):
 
 
 class UserDetailView(APIView):
+    throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(

@@ -6,6 +6,15 @@ from .models import Store, StoreMembership, StoreRole, StoreStatus
 
 class StoreService:
     @staticmethod
+    def _lock_store_for_membership_change(store):
+        store = Store.objects.select_for_update().get(pk=store.pk)
+        if store.status in {StoreStatus.SUSPENDED, StoreStatus.ARCHIVED}:
+            raise ValidationError(
+                f"Cannot change memberships while the store is {store.status.lower()}."
+            )
+        return store
+
+    @staticmethod
     @transaction.atomic
     def create_store(user, name, description="", contact_email="", contact_phone=""):
         store = Store.objects.create(
@@ -47,6 +56,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def transfer_ownership(store, current_owner, new_owner_member_id):
+        store = StoreService._lock_store_for_membership_change(store)
         owner_membership = (
             StoreMembership.objects.select_for_update()
             .filter(store=store, user=current_owner, role=StoreRole.OWNER)
@@ -77,6 +87,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def add_member(store, user, role=StoreRole.MANAGER):
+        store = StoreService._lock_store_for_membership_change(store)
         if not user.is_seller:
             raise ValidationError("Only users with seller status can be members of a store.")
         if StoreMembership.objects.filter(store=store, user=user).exists():
@@ -93,6 +104,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def remove_member(store, member_id, actor_user):
+        store = StoreService._lock_store_for_membership_change(store)
         membership = (
             StoreMembership.objects.select_related("user")
             .filter(store=store, id=member_id)
@@ -111,6 +123,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def leave_store(store, user):
+        store = StoreService._lock_store_for_membership_change(store)
         membership = StoreMembership.objects.filter(store=store, user=user).first()
         if not membership:
             raise ValidationError("You are not a member of this store.")

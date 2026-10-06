@@ -40,6 +40,16 @@ class Store(models.Model):
         default=StoreStatus.ACTIVE,
         db_index=True,
     )
+    archived_from_status = models.CharField(
+        max_length=20,
+        choices=[
+            (StoreStatus.ACTIVE, "Active"),
+            (StoreStatus.INACTIVE, "Inactive"),
+            (StoreStatus.SUSPENDED, "Suspended"),
+        ],
+        null=True,
+        blank=True,
+    )
     archived_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -73,14 +83,20 @@ class Store(models.Model):
         return self.status == StoreStatus.ARCHIVED
 
     def archive(self):
+        if self.status == StoreStatus.ARCHIVED:
+            return
+        self.archived_from_status = self.status
         self.status = StoreStatus.ARCHIVED
         self.archived_at = timezone.now()
-        self.save(update_fields=["status", "archived_at", "updated_at"])
+        self.save(update_fields=["status", "archived_from_status", "archived_at", "updated_at"])
 
     def restore(self):
-        self.status = StoreStatus.ACTIVE
+        if self.status != StoreStatus.ARCHIVED:
+            return
+        self.status = self.archived_from_status or StoreStatus.SUSPENDED
+        self.archived_from_status = None
         self.archived_at = None
-        self.save(update_fields=["status", "archived_at", "updated_at"])
+        self.save(update_fields=["status", "archived_from_status", "archived_at", "updated_at"])
 
     def save(self, *args, **kwargs):
         if not self.slug:

@@ -35,7 +35,14 @@ STORE_ERROR_SCHEMA = inline_serializer(
 )
 
 
-class StoreListCreateView(APIView):
+class StoreMethodThrottleMixin:
+    def get_throttles(self):
+        write_methods = {"POST", "PUT", "PATCH", "DELETE"}
+        self.throttle_scope = "store_write" if self.request.method in write_methods else "store_read"
+        return super().get_throttles()
+
+
+class StoreListCreateView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
     pagination_class = StorePagination
@@ -119,7 +126,7 @@ class StoreListCreateView(APIView):
         )
 
 
-class StoreDetailView(APIView):
+class StoreDetailView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
 
@@ -308,7 +315,7 @@ class StoreTransferOwnershipView(APIView):
         )
 
 
-class StoreMemberListCreateView(APIView):
+class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
 

@@ -72,6 +72,17 @@ class StoreService:
         return store
 
     @staticmethod
+    @transaction.atomic
+    def suspend_store(store):
+        store.suspend()
+        # Revoke any pending invitations for this store
+        store.invitations.filter(status=InvitationStatus.PENDING).update(
+            status=InvitationStatus.REVOKED,
+            responded_at=timezone.now(),
+        )
+        return store
+
+    @staticmethod
     def restore_store(store):
         store.restore()
         return store
@@ -279,7 +290,23 @@ class StoreService:
         if invitation.status != InvitationStatus.PENDING:
             raise ValidationError(f"This invitation is no longer valid (currently {invitation.status.lower()}).")
 
-        store = StoreService._lock_store_for_membership_change(invitation.store)
+        store = Store.objects.select_for_update().get(pk=invitation.store_id)
+        if store.status == StoreStatus.SUSPENDED:
+            invitation.status = InvitationStatus.REVOKED
+            invitation.responded_at = timezone.now()
+            invitation.save(update_fields=["status", "responded_at"])
+            raise ValidationError("Cannot accept invitation because this store is suspended.")
+
+        if store.status == StoreStatus.ARCHIVED:
+            invitation.status = InvitationStatus.REVOKED
+            invitation.responded_at = timezone.now()
+            invitation.save(update_fields=["status", "responded_at"])
+            raise ValidationError("Cannot accept invitation because this store is archived.")
+
+        if store.status != StoreStatus.ACTIVE:
+            raise ValidationError(
+                f"Cannot change memberships while the store is {store.status.lower()}."
+            )
 
         existing_membership = StoreMembership.objects.filter(store=store, user=user).first()
         if existing_membership:

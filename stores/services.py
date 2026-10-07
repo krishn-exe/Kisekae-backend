@@ -258,10 +258,18 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def accept_invitation(invitation, user):
-        if not user.is_seller:
+        if not getattr(user, "is_active", False):
+            raise ValidationError("User account is inactive.")
+
+        if not getattr(user, "is_seller", False):
             raise ValidationError("Only registered sellers can accept store invitations.")
 
-        if user.email.strip().lower() != invitation.email.strip().lower():
+        if not getattr(user, "is_email_verified", False):
+            raise ValidationError("User email must be verified to accept store invitations.")
+
+        user_email = (getattr(user, "email", None) or "").strip().lower()
+        invitation_email = (invitation.email or "").strip().lower()
+        if not user_email or user_email != invitation_email:
             raise ValidationError("This invitation was addressed to a different email address.")
 
         if invitation.is_expired:
@@ -298,7 +306,12 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def decline_invitation(invitation, user):
-        if user.email.strip().lower() != invitation.email.strip().lower():
+        if not getattr(user, "is_active", False):
+            raise ValidationError("User account is inactive.")
+
+        user_email = (getattr(user, "email", None) or "").strip().lower()
+        invitation_email = (invitation.email or "").strip().lower()
+        if not user_email or user_email != invitation_email:
             raise ValidationError("This invitation was addressed to a different email address.")
 
         if invitation.status != InvitationStatus.PENDING:

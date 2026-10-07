@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .models import Store, StoreMembership, StoreRole, StoreStatus
+from .models import Store, StoreInvitation, StoreMembership, StoreRole, StoreStatus
 
 User = get_user_model()
 
@@ -40,6 +40,8 @@ class AddMemberSerializer(serializers.Serializer):
 class StoreSerializer(serializers.ModelSerializer):
     my_role = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    logo_url = serializers.CharField(read_only=True, allow_null=True)
+    banner_url = serializers.CharField(read_only=True, allow_null=True)
 
     class Meta:
         model = Store
@@ -48,6 +50,8 @@ class StoreSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "description",
+            "logo_url",
+            "banner_url",
             "contact_email",
             "contact_phone",
             "status",
@@ -109,3 +113,46 @@ class TransferOwnershipSerializer(serializers.Serializer):
     member_id = serializers.IntegerField(
         help_text="The ID of the store membership to transfer ownership to."
     )
+
+
+class StoreInvitationStoreSerializer(serializers.ModelSerializer):
+    logo_url = serializers.CharField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Store
+        fields = ["id", "name", "slug", "logo_url"]
+
+
+class StoreInvitationSerializer(serializers.ModelSerializer):
+    store = StoreInvitationStoreSerializer(read_only=True)
+    invited_by = StoreMemberUserSerializer(read_only=True)
+
+    class Meta:
+        model = StoreInvitation
+        fields = [
+            "id",
+            "store",
+            "email",
+            "status",
+            "invited_by",
+            "expires_at",
+            "created_at",
+            "responded_at",
+        ]
+
+
+class CreateInvitationSerializer(serializers.Serializer):
+    email = serializers.EmailField(help_text="Email address to invite to manage this store.")
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class AcceptTokenSerializer(serializers.Serializer):
+    token = serializers.CharField(
+        help_text="The invitation token received in the invitation email or deep link."
+    )
+
+
+class ImageUploadSerializer(serializers.Serializer):
+    file = serializers.ImageField(help_text="Image file (JPEG, PNG, WEBP).")

@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 
     'accounts',
     'stores',
+    'storages',
 
 ]
 
@@ -159,6 +160,7 @@ REST_FRAMEWORK = {
         'user_detail': '144/hour',
         'store_read': '300/hour',
         'store_write': '60/hour',
+        'store_invite': '60/hour',
     },
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -205,6 +207,46 @@ if os.getenv("DJANGO_USE_WHITENOISE", "False") == "True":
         MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
         "whitenoise.middleware.WhiteNoiseMiddleware",
     )
+
+# Media & Storage configuration (S3 if bucket configured, else FileSystemStorage)
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "ap-south-1")
+AWS_S3_CUSTOM_DOMAIN = os.getenv("AWS_S3_CUSTOM_DOMAIN", "") or None
+AWS_DEFAULT_ACL = None
+AWS_S3_FILE_OVERWRITE = False
+AWS_QUERYSTRING_AUTH = False
+AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
+
+MEDIA_ROOT = BASE_DIR / "media"
+if AWS_S3_CUSTOM_DOMAIN:
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+elif AWS_STORAGE_BUCKET_NAME:
+    MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/"
+else:
+    MEDIA_URL = "/media/"
+
+if AWS_STORAGE_BUCKET_NAME:
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
+STORE_INVITATION_TTL_DAYS = int(os.getenv("STORE_INVITATION_TTL_DAYS", 7))
 
 # CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/0"

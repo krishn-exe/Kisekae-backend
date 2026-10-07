@@ -643,9 +643,16 @@ class InviteeInvitationListView(APIView):
         responses={200: StoreInvitationSerializer(many=True)},
     )
     def get(self, request):
+        user_email = (getattr(request.user, "email", None) or "").strip().lower()
+        if not user_email:
+            return success_response(
+                message="Pending invitations fetched successfully.",
+                data=[],
+            )
+
         invitations = (
             StoreInvitation.objects.filter(
-                email__iexact=request.user.email,
+                email__iexact=user_email,
                 status=InvitationStatus.PENDING,
             )
             .select_related("store", "invited_by")

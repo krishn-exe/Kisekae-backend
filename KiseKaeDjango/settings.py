@@ -200,6 +200,12 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+if os.getenv("DJANGO_USE_WHITENOISE", "False") == "True":
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
+        "whitenoise.middleware.WhiteNoiseMiddleware",
+    )
+
 # CELERY
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/0"
 CELERY_RESULT_BACKEND = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/1"

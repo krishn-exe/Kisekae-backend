@@ -124,6 +124,16 @@ class Store(models.Model):
         self.archived_at = timezone.now()
         self.save(update_fields=["status", "archived_from_status", "archived_at", "updated_at"])
 
+    def suspend(self):
+        if self.status == StoreStatus.SUSPENDED:
+            return
+        self.status = StoreStatus.SUSPENDED
+        self.save(update_fields=["status", "updated_at"])
+        self.invitations.filter(status=InvitationStatus.PENDING).update(
+            status=InvitationStatus.REVOKED,
+            responded_at=timezone.now(),
+        )
+
     def restore(self):
         if self.status != StoreStatus.ARCHIVED:
             return
@@ -133,6 +143,12 @@ class Store(models.Model):
         self.save(update_fields=["status", "archived_from_status", "archived_at", "updated_at"])
 
     def save(self, *args, **kwargs):
+        is_suspending = False
+        if self.pk and self.status == StoreStatus.SUSPENDED:
+            orig = Store.objects.filter(pk=self.pk).values("status").first()
+            if orig and orig["status"] != StoreStatus.SUSPENDED:
+                is_suspending = True
+
         if not self.slug:
             base_slug = slugify(self.name) or "store"
             slug = base_slug
@@ -142,6 +158,12 @@ class Store(models.Model):
                 counter += 1
             self.slug = slug
         super().save(*args, **kwargs)
+
+        if is_suspending:
+            self.invitations.filter(status=InvitationStatus.PENDING).update(
+                status=InvitationStatus.REVOKED,
+                responded_at=timezone.now(),
+            )
 
 
 class StoreInvitation(models.Model):

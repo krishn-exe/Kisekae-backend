@@ -26,6 +26,17 @@ class StoreAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     readonly_fields = ("created_at", "updated_at", "archived_at")
     inlines = [StoreMembershipInline, StoreInvitationInline]
+    actions = ["suspend_stores", "archive_stores"]
+
+    @admin.action(description="Suspend selected stores")
+    def suspend_stores(self, request, queryset):
+        for store in queryset:
+            store.suspend()
+
+    @admin.action(description="Archive selected stores")
+    def archive_stores(self, request, queryset):
+        for store in queryset:
+            store.archive()
 
 
 @admin.register(StoreMembership)

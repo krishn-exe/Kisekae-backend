@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 from pathlib import Path
 import dotenv
 import os
+import sys
 from datetime import timedelta
 
 # Load environment variables
@@ -59,6 +60,7 @@ INSTALLED_APPS = [
 
     'accounts',
     'stores',
+    'products',
     'storages',
 
 ]
@@ -117,6 +119,19 @@ CACHES = {
         },
     }
 }
+
+if "test" in sys.argv:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        }
+    }
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 
 # Password validation

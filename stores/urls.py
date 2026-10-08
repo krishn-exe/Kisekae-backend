@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from .views import (
     InviteeInvitationAcceptView,
@@ -47,4 +47,7 @@ urlpatterns = [
     path("<int:pk>/invitations/", StoreInvitationListCreateView.as_view(), name="store-invitation-list-create"),
     path("<int:pk>/invitations/<int:inv_id>/", StoreInvitationRevokeView.as_view(), name="store-invitation-revoke"),
     path("<int:pk>/invitations/<int:inv_id>/resend/", StoreInvitationResendView.as_view(), name="store-invitation-resend"),
+
+    # Store Products
+    path("<int:pk>/products/", include("products.urls")),
 ]

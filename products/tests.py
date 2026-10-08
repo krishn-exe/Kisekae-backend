@@ -59,6 +59,36 @@ class ProductModelTests(TestCase):
         self.assertEqual(p1.slug, "silk-scarf")
         self.assertEqual(p2.slug, "silk-scarf-1")
 
+    def test_slug_race_condition_retry(self):
+        p1 = Product.objects.create(
+            store=self.store,
+            name="Silk Scarf",
+            price=Decimal("499.00"),
+        )
+        self.assertEqual(p1.slug, "silk-scarf")
+
+        p2 = Product(
+            store=self.store,
+            name="Silk Scarf",
+            price=Decimal("599.00"),
+        )
+
+        original_candidate_gen = p2._generate_candidate_slug
+        calls = []
+
+        def mocked_candidate_gen(start_counter=0):
+            calls.append(start_counter)
+            if len(calls) == 1:
+                # Simulate race condition: initial attempt generates colliding slug
+                return "silk-scarf"
+            return original_candidate_gen(start_counter=start_counter)
+
+        p2._generate_candidate_slug = mocked_candidate_gen
+        p2.save()
+
+        self.assertEqual(p2.slug, "silk-scarf-1")
+        self.assertGreater(len(calls), 1)
+
     def test_product_queryset_methods(self):
         p_active = Product.objects.create(
             store=self.store,

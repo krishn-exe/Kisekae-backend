@@ -1,7 +1,7 @@
 import uuid
 
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils.text import slugify
 
 
@@ -101,17 +101,34 @@ class Product(models.Model):
             return self.image.url
         return None
 
+    def _generate_candidate_slug(self, start_counter=0):
+        base_slug = slugify(self.name) or "product"
+        if start_counter == 0 and not Product.objects.filter(store=self.store, slug=base_slug).exclude(pk=self.pk).exists():
+            return base_slug
+
+        counter = max(1, start_counter)
+        while Product.objects.filter(store=self.store, slug=f"{base_slug}-{counter}").exclude(pk=self.pk).exists():
+            counter += 1
+        return f"{base_slug}-{counter}"
+
     def save(self, *args, **kwargs):
         if not self.slug:
             base_slug = slugify(self.name) or "product"
-            slug = base_slug
-            counter = 1
-            while (
-                Product.objects.filter(store=self.store, slug=slug)
-                .exclude(pk=self.pk)
-                .exists()
-            ):
-                slug = f"{base_slug}-{counter}"
-                counter += 1
-            self.slug = slug
+            counter = 0
+            max_retries = 5
+            for _ in range(max_retries):
+                self.slug = self._generate_candidate_slug(start_counter=counter)
+                try:
+                    with transaction.atomic():
+                        return super().save(*args, **kwargs)
+                except IntegrityError as exc:
+                    err_str = str(exc).lower()
+                    if any(kw in err_str for kw in ["slug", "unique_product_slug", "unique constraint"]):
+                        counter += 1
+                        continue
+                    raise
+            # Fallback if multiple concurrent retries still collided
+            self.slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+            return super().save(*args, **kwargs)
+
         super().save(*args, **kwargs)

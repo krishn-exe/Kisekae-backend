@@ -64,3 +64,32 @@ Kisekae is an online fashion store, that lets users try on clothing apparels usi
 - Users receive order confirmation, shipping, and delivery updates via email, SMS, and in-app push notifications
 - Users can customize which channels (email/SMS/push) they want to receive notifications on, through user profile settings
 - Promotional and sales notifications
+
+## Monitoring & Observability
+
+The application is instrumented with Prometheus and comes with Grafana dashboards pre-configured.
+
+### Services & Endpoints
+
+| Service | URL | Description | Credentials (Default) |
+| --- | --- | --- | --- |
+| **Django Metrics** | `http://localhost:8000/metrics` | Prometheus metrics endpoint exported by `django-prometheus` | N/A |
+| **Prometheus** | `http://localhost:9090` | Prometheus UI, query browser, and targets dashboard | None |
+| **Grafana** | `http://localhost:3000` | Grafana metrics dashboard & visualizations | User: `admin`, Password: `admin` |
+
+### Running the Monitoring Stack
+
+Start all services including Prometheus and Grafana using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+### Pre-provisioned Dashboards
+
+Grafana automatically provisions the Prometheus datasource and imports the **Django Application Overview** dashboard (`django-overview`), providing out-of-the-box visibility into:
+- Total request throughput and response rates (2xx, 4xx, 5xx)
+- P50, P95, and P99 latency percentiles
+- Requests per view/endpoint and HTTP method
+- Database execution rates, query durations, and error rates
+- Python runtime statistics (garbage collection, memory)

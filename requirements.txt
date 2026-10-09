@@ -22,3 +22,5 @@ cryptography==50.0.1
 PyYAML==6.0.3
 uritemplate==4.2.0
 whitenoise==6.12.0
+django-storages==1.14.6
+boto3==1.43.108

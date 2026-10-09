@@ -15,6 +15,7 @@ def google_to_app(request):
     )
 
 urlpatterns = [
+    path('', include('django_prometheus.urls')),
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('stores/', include('stores.urls')),

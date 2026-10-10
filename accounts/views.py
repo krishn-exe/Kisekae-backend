@@ -90,6 +90,7 @@ class RegisterView(APIView):
                 },
             ),
             400: COMMON_ERROR_SCHEMA,
+            409: COMMON_ERROR_SCHEMA,
             429: COMMON_ERROR_SCHEMA,
             503: COMMON_ERROR_SCHEMA,
         },
@@ -136,6 +137,20 @@ class RegisterView(APIView):
                 response_only=True,
                 status_codes=["400"],
             ),
+            OpenApiExample(
+                name="RegisterPendingExample",
+                summary="Registration Already Pending (409 Conflict)",
+                value={
+                    "success": False,
+                    "message": "A registration is already pending for this email. Please wait 850 seconds or verify the code sent.",
+                    "error": {
+                        "code": "REGISTRATION_PENDING",
+                        "details": {"ttl": 850},
+                    },
+                },
+                response_only=True,
+                status_codes=["409"],
+            ),
         ],
     )
     def post(self, request):
@@ -155,7 +170,18 @@ class RegisterView(APIView):
             "password": hashed_password,
             "is_seller": is_seller,
         }
-        cache.set(f"pending_registration:{email}", pending_data, timeout=900)
+        
+        cache_key = f"pending_registration:{email}"
+        if not cache.add(cache_key, pending_data, timeout=900):
+            ttl_func = getattr(cache, "ttl", None)
+            ttl = ttl_func(cache_key) if callable(ttl_func) else None
+            ttl = max(ttl or 900, 1)
+            return error_response(
+                message=f"A registration is already pending for this email. Please wait {ttl} seconds or verify the code sent.",
+                code="REGISTRATION_PENDING",
+                details={"ttl": ttl},
+                status_code=status.HTTP_409_CONFLICT,
+            )
 
         otp = RedisOTP(email=email, purpose="verify_email")
         can_send, wait_secs = otp.can_issue()
@@ -398,7 +424,7 @@ class OTPRequestView(APIView):
                 )
 
         return success_response(
-            message="If an account exists, a code has been sent.",
+            message="A code has been sent.",
             data=None,
             status_code=status.HTTP_200_OK,
         )

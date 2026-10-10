@@ -9,6 +9,7 @@ scrape_configs:
 
   - job_name: 'django'
     metrics_path: '/metrics'
+    bearer_token: '30ca839b23b1458eab332ff054a1be2d'
     scrape_interval: 5s
     static_configs:
       - targets: ['web:8000']

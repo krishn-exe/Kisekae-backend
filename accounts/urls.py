@@ -12,6 +12,7 @@ from .views import (
     ResetPasswordView,
     TokenRefreshView,
     UserDetailView,
+    UserSettingsView,
 )
 
 urlpatterns = [
@@ -26,4 +27,5 @@ urlpatterns = [
     path("password/change/", ChangePasswordView.as_view(), name="password-change"),
     path("password/reset/", ResetPasswordView.as_view(), name="password-reset"),
     path("me/", UserDetailView.as_view(), name="me"),
+    path("me/settings/", UserSettingsView.as_view(), name="me-settings"),
 ]

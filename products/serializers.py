@@ -81,3 +81,32 @@ class ProductUpdateSerializer(serializers.Serializer):
         if value < 0:
             raise serializers.ValidationError("Price cannot be negative.")
         return value
+
+
+class BulkProductItemUpdateSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(min_value=1)
+    status = serializers.ChoiceField(
+        choices=[ProductStatus.DRAFT, ProductStatus.ACTIVE, ProductStatus.INACTIVE],
+        required=False,
+    )
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    compare_at_price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True
+    )
+
+
+class BulkProductUpdateSerializer(serializers.Serializer):
+    items = serializers.ListField(
+        child=BulkProductItemUpdateSerializer(),
+        allow_empty=False,
+    )
+
+
+class ProductListingStatusSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    active = serializers.IntegerField()
+    draft = serializers.IntegerField()
+    inactive = serializers.IntegerField()
+    in_stock = serializers.IntegerField()
+    out_of_stock = serializers.IntegerField()
+

@@ -64,6 +64,9 @@ INSTALLED_APPS = [
     'accounts',
     'stores',
     'products',
+    'inventory',
+    'orders',
+    'analytics',
     'storages',
 
 ]
@@ -277,6 +280,10 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 DJANGO_CELERY_BEAT_TZ_AWARE = False
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+if 'test' in sys.argv:
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
 
 # Email
 

@@ -7,12 +7,23 @@ from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
 
-from .models import InvitationStatus, Store, StoreInvitation, StoreMembership, StoreRole, StoreStatus
+from .models import (
+    BusinessVerification,
+    InvitationStatus,
+    Store,
+    StoreInvitation,
+    StoreMembership,
+    StoreRole,
+    StoreStatus,
+    VerificationStatus,
+)
 from .pagination import StorePagination
-from .permissions import IsSeller, get_store_membership
+from .permissions import IsBusinessVerified, IsSeller, get_store_membership
 from .serializers import (
     AcceptTokenSerializer,
     AddMemberSerializer,
+    BusinessVerificationSerializer,
+    BusinessVerificationSubmitSerializer,
     CreateInvitationSerializer,
     ImageUploadSerializer,
     StoreCreateSerializer,
@@ -781,7 +792,7 @@ class StoreLogoView(APIView):
         summary="Upload store logo",
         description="Uploads or replaces the store logo (JPEG, PNG, WEBP; max 2MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def put(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -790,6 +801,19 @@ class StoreLogoView(APIView):
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Archived store cannot be modified. Restore it first.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="This store is suspended and cannot be modified.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = ImageUploadSerializer(data=request.data)
@@ -817,7 +841,7 @@ class StoreLogoView(APIView):
         summary="Remove store logo",
         description="Removes the store logo. Accessible by Owner and Managers.",
         request=None,
-        responses={200: StoreSerializer, 404: STORE_ERROR_SCHEMA},
+        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -826,6 +850,19 @@ class StoreLogoView(APIView):
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Archived store cannot be modified. Restore it first.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="This store is suspended and cannot be modified.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         updated_store = StoreService.remove_store_logo(store)
@@ -845,7 +882,7 @@ class StoreBannerView(APIView):
         summary="Upload store banner",
         description="Uploads or replaces the store banner (JPEG, PNG, WEBP; max 5MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def put(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -854,6 +891,19 @@ class StoreBannerView(APIView):
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Archived store cannot be modified. Restore it first.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="This store is suspended and cannot be modified.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = ImageUploadSerializer(data=request.data)
@@ -881,7 +931,7 @@ class StoreBannerView(APIView):
         summary="Remove store banner",
         description="Removes the store banner. Accessible by Owner and Managers.",
         request=None,
-        responses={200: StoreSerializer, 404: STORE_ERROR_SCHEMA},
+        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -892,8 +942,118 @@ class StoreBannerView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
+        if store.is_archived:
+            return error_response(
+                message="Archived store cannot be modified. Restore it first.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="This store is suspended and cannot be modified.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         updated_store = StoreService.remove_store_banner(store)
         return success_response(
             message="Store banner removed successfully.",
             data=StoreSerializer(updated_store, context={"request": request}).data,
+        )
+
+
+# --- BUSINESS VERIFICATION VIEWS ---
+
+
+class BusinessVerificationView(APIView):
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated, IsSeller]
+
+    @extend_schema(
+        tags=["Store Verification"],
+        summary="Get business verification details",
+        description="Returns the business verification status and submitted details for the store.",
+        responses={200: BusinessVerificationSerializer, 404: STORE_ERROR_SCHEMA},
+    )
+    def get(self, request, pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        verification = getattr(store, "business_verification", None)
+        if not verification:
+            return success_response(
+                message="No business verification submitted yet.",
+                data={
+                    "is_submitted": False,
+                    "is_business_verified": False,
+                    "verification": None,
+                },
+            )
+
+        return success_response(
+            message="Business verification fetched successfully.",
+            data={
+                "is_submitted": True,
+                "is_business_verified": store.is_business_verified,
+                "verification": BusinessVerificationSerializer(verification).data,
+            },
+        )
+
+    @extend_schema(
+        tags=["Store Verification"],
+        summary="Submit business verification form",
+        description="Submits the required business verification form (PAN, GSTIN, business address, phone, email). "
+                    "Completing this e-collection enables access to seller dashboard operations.",
+        request=BusinessVerificationSubmitSerializer,
+        responses={200: BusinessVerificationSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+    )
+    def post(self, request, pk):
+        store, membership = get_store_membership(request.user, pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Cannot submit verification for an archived store.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="Cannot submit verification for a suspended store.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = BusinessVerificationSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        verification, _ = BusinessVerification.objects.update_or_create(
+            store=store,
+            defaults={
+                "pan_number": data["pan_number"],
+                "gst_number": data["gst_number"],
+                "business_address": data["business_address"],
+                "business_phone": data["business_phone"],
+                "business_email": data["business_email"],
+                "status": VerificationStatus.APPROVED,
+                "submitted_by": request.user,
+                "rejection_reason": "",
+            },
+        )
+
+        return success_response(
+            message="Business verification form submitted successfully. Your store is verified.",
+            data=BusinessVerificationSerializer(verification).data,
+            status_code=status.HTTP_200_OK,
         )

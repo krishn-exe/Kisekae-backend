@@ -9,11 +9,17 @@ from rest_framework.views import APIView
 from accounts.responses import error_response, success_response
 from stores.models import StoreStatus
 from stores.pagination import StorePagination
-from stores.permissions import IsSeller, get_store_membership
+from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
 from stores.validators import validate_store_image, MAX_LOGO_SIZE
 
 from .models import Product, ProductStatus
-from .serializers import ProductCreateSerializer, ProductSerializer, ProductUpdateSerializer
+from .serializers import (
+    BulkProductUpdateSerializer,
+    ProductCreateSerializer,
+    ProductListingStatusSerializer,
+    ProductSerializer,
+    ProductUpdateSerializer,
+)
 from .services import ProductService
 
 PRODUCT_ERROR_SCHEMA = inline_serializer(
@@ -138,6 +144,13 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
+        if not store.is_business_verified:
+            return error_response(
+                message="Store business verification must be completed before adding products.",
+                code="BUSINESS_VERIFICATION_REQUIRED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = ProductCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -251,7 +264,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
         tags=["Products"],
         summary="Delete a product",
         description="Permanently deletes a product. User must be a member of the store.",
-        responses={200: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_ERROR_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def delete(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
@@ -266,6 +279,19 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
                 message="Product not found.",
                 code="PRODUCT_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Cannot delete products from an archived store.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="Cannot delete products from a suspended store.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         ProductService.delete_product(product)
@@ -288,7 +314,7 @@ class ProductImageView(APIView):
             name="ProductImageUpload",
             fields={"file": serializers.ImageField()},
         ),
-        responses={200: ProductSerializer, 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: ProductSerializer, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def put(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
@@ -297,6 +323,19 @@ class ProductImageView(APIView):
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Cannot modify products in an archived store.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="Cannot modify products in a suspended store.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         product = Product.objects.filter(store=store, pk=product_pk).first()
@@ -335,7 +374,7 @@ class ProductImageView(APIView):
         tags=["Products"],
         summary="Remove product image",
         description="Removes the product image.",
-        responses={200: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_ERROR_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def delete(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
@@ -344,6 +383,19 @@ class ProductImageView(APIView):
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
                 status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Cannot modify products in an archived store.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="Cannot modify products in a suspended store.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
         product = Product.objects.filter(store=store, pk=product_pk).first()
@@ -359,3 +411,114 @@ class ProductImageView(APIView):
             message="Product image removed successfully.",
             data=None,
         )
+
+
+class ProductListingStatusView(APIView):
+    throttle_scope = "store_read"
+    permission_classes = [IsAuthenticated, IsSeller]
+
+    @extend_schema(
+        tags=["Products"],
+        summary="Get catalog listing status overview",
+        description="Returns breakdown of product counts by status (ACTIVE, DRAFT, INACTIVE) and stock health.",
+        responses={200: ProductListingStatusSerializer, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def get(self, request, pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        products = Product.objects.for_store(store)
+        total = products.count()
+        active = products.filter(status=ProductStatus.ACTIVE).count()
+        draft = products.filter(status=ProductStatus.DRAFT).count()
+        inactive = products.filter(status=ProductStatus.INACTIVE).count()
+        in_stock = products.filter(stock__gt=0).count()
+        out_of_stock = products.filter(stock=0).count()
+
+        return success_response(
+            message="Listing status fetched successfully.",
+            data={
+                "total": total,
+                "active": active,
+                "draft": draft,
+                "inactive": inactive,
+                "in_stock": in_stock,
+                "out_of_stock": out_of_stock,
+            },
+        )
+
+
+class ProductBulkUpdateView(APIView):
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated, IsSeller, IsBusinessVerified]
+
+    @extend_schema(
+        tags=["Products"],
+        summary="Bulk update products status and price",
+        request=BulkProductUpdateSerializer,
+        responses={200: inline_serializer(name="BulkProductUpdateResponse", fields={"updated_count": serializers.IntegerField()}), 400: PRODUCT_ERROR_SCHEMA},
+    )
+    def patch(self, request, pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not store.is_business_verified:
+            return error_response(
+                message="Store business verification must be completed before modifying products.",
+                code="BUSINESS_VERIFICATION_REQUIRED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if store.is_archived:
+            return error_response(
+                message="Cannot modify products in an archived store.",
+                code="STORE_ARCHIVED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response(
+                message="Cannot modify products in a suspended store.",
+                code="STORE_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = BulkProductUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        items = serializer.validated_data["items"]
+
+        updated_ids = []
+        errors = []
+        for item in items:
+            product = Product.objects.filter(store=store, pk=item["product_id"]).first()
+            if not product:
+                errors.append({"product_id": item["product_id"], "error": "Product not found"})
+                continue
+            update_data = {}
+            if "status" in item:
+                update_data["status"] = item["status"]
+            if "price" in item:
+                update_data["price"] = item["price"]
+            if "compare_at_price" in item:
+                update_data["compare_at_price"] = item["compare_at_price"]
+            if update_data:
+                ProductService.update_product(product, **update_data)
+                updated_ids.append(product.id)
+
+        return success_response(
+            message=f"Updated {len(updated_ids)} product(s).",
+            data={
+                "updated_ids": updated_ids,
+                "errors": errors,
+            },
+        )
+

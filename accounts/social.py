@@ -162,7 +162,14 @@ def process_google_pkce_login(
     if not effective_client_id:
         raise ValueError("No Google client ID configured on the server.")
 
+    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
+    if allowed_client_ids and effective_client_id not in allowed_client_ids:
+        raise ValueError("Untrusted or invalid Google client ID.")
+
     redirect_uri = callback_url or getattr(settings, "GOOGLE_ANDROID_CALLBACK_URL", "kisekae://auth/google/callback")
+    allowed_uris = getattr(settings, "GOOGLE_ALLOWED_REDIRECT_URIS", [])
+    if allowed_uris and redirect_uri not in allowed_uris:
+        raise ValueError("Untrusted or invalid redirect URI.")
 
     token_data = exchange_google_pkce_tokens(
         code=code,
@@ -262,19 +269,11 @@ def process_social_login(
         else:
             raise ValueError(f"PKCE flow is not supported for {adapter.provider_id}.")
 
-    # Resolve the django-allauth provider for non-PKCE flows using a specific
-    # client ID. Google has separate web, Android, and iOS apps, so an unscoped
-    # lookup is ambiguous when more than one is configured.
-    provider_client_id = client_id
-    if adapter.provider_id == "google" and not provider_client_id:
-        provider_client_id = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "")
-
-    social_adapter = get_socialaccount_adapter(raw_request)
-    provider = social_adapter.get_provider(
-        raw_request,
-        provider=adapter.provider_id,
-        client_id=provider_client_id or None,
-    )
+    try:
+        provider = adapter.get_provider()
+    except Exception:
+        from allauth.socialaccount.adapter import get_adapter
+        provider = get_adapter(raw_request).get_provider(raw_request, provider=adapter.provider_id, client_id=client_id)
 
     app = None
     if provider_client_id:

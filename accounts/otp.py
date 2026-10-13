@@ -59,7 +59,8 @@ class RedisOTP:
                 ttl_func = getattr(cache, "ttl", None)
                 remaining_ttl = ttl_func(self.key) if callable(ttl_func) else None
                 if not remaining_ttl or remaining_ttl <= 0:
-                    remaining_ttl = self.TTL_SECONDS
-                cache.set(self.key, payload, timeout=remaining_ttl)
+                    cache.delete(self.key)
+                else:
+                    cache.set(self.key, payload, timeout=remaining_ttl)
 
         return matched

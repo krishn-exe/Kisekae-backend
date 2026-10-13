@@ -17,6 +17,7 @@ from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 
 from .otp import RedisOTP
+from .models import UserSettings
 from .responses import error_response, success_response
 from .serializers import (
     ChangePasswordSerializer,
@@ -28,6 +29,8 @@ from .serializers import (
     OTPVerifySerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
+    UserSettingsSerializer,
+    UserUpdateSerializer,
 )
 from .social import process_social_login
 from .tasks import send_otp_email_task
@@ -90,6 +93,7 @@ class RegisterView(APIView):
                 },
             ),
             400: COMMON_ERROR_SCHEMA,
+            409: COMMON_ERROR_SCHEMA,
             429: COMMON_ERROR_SCHEMA,
             503: COMMON_ERROR_SCHEMA,
         },
@@ -129,12 +133,26 @@ class RegisterView(APIView):
                     "error": {
                         "code": "VALIDATION_ERROR",
                         "details": {
-                            "email": ["An account with this email already exists."],
+                            "email": ["Enter a valid email address."],
                         },
                     },
                 },
                 response_only=True,
                 status_codes=["400"],
+            ),
+            OpenApiExample(
+                name="RegisterPendingExample",
+                summary="Registration Already Pending (409 Conflict)",
+                value={
+                    "success": False,
+                    "message": "A registration is already pending for this email. Please wait 850 seconds or verify the code sent.",
+                    "error": {
+                        "code": "REGISTRATION_PENDING",
+                        "details": {"ttl": 850},
+                    },
+                },
+                response_only=True,
+                status_codes=["409"],
             ),
         ],
     )
@@ -148,6 +166,17 @@ class RegisterView(APIView):
         password = data.get("password")
         is_seller = data.get("is_seller", False)
 
+        if User.objects.filter(email__iexact=email).exists():
+            return success_response(
+                message="User registered successfully. A verification code has been sent to your email.",
+                data={
+                    "name": name,
+                    "email": email,
+                    "is_seller": is_seller,
+                },
+                status_code=status.HTTP_201_CREATED,
+            )
+
         hashed_password = make_password(password) if password else None
         pending_data = {
             "name": name,
@@ -155,7 +184,18 @@ class RegisterView(APIView):
             "password": hashed_password,
             "is_seller": is_seller,
         }
-        cache.set(f"pending_registration:{email}", pending_data, timeout=900)
+        
+        cache_key = f"pending_registration:{email}"
+        if not cache.add(cache_key, pending_data, timeout=900):
+            ttl_func = getattr(cache, "ttl", None)
+            ttl = ttl_func(cache_key) if callable(ttl_func) else None
+            ttl = max(ttl or 900, 1)
+            return error_response(
+                message=f"A registration is already pending for this email. Please wait {ttl} seconds or verify the code sent.",
+                code="REGISTRATION_PENDING",
+                details={"ttl": ttl},
+                status_code=status.HTTP_409_CONFLICT,
+            )
 
         otp = RedisOTP(email=email, purpose="verify_email")
         can_send, wait_secs = otp.can_issue()
@@ -398,7 +438,7 @@ class OTPRequestView(APIView):
                 )
 
         return success_response(
-            message="If an account exists, a code has been sent.",
+            message="A code has been sent.",
             data=None,
             status_code=status.HTTP_200_OK,
         )
@@ -1533,3 +1573,84 @@ class UserDetailView(APIView):
             },
             status_code=status.HTTP_200_OK,
         )
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Update user profile name",
+        request=UserUpdateSerializer,
+        responses={200: inline_serializer(name="UserUpdateResponse", fields={"id": serializers.IntegerField(), "name": serializers.CharField(), "email": serializers.EmailField()}), 400: COMMON_ERROR_SCHEMA},
+    )
+    def patch(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = UserUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user.name = serializer.validated_data["name"]
+        user.save(update_fields=["name"])
+        return success_response(
+            message="User profile updated successfully.",
+            data={
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "is_email_verified": user.is_email_verified,
+                "is_seller": user.is_seller,
+            },
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Delete / deactivate user account",
+        responses={200: inline_serializer(name="UserDeleteResponse", fields={"message": serializers.CharField()})},
+    )
+    def delete(self, request):
+        user = request.user
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        response = success_response(
+            message="Account has been deactivated successfully.",
+            data=None,
+            status_code=status.HTTP_200_OK,
+        )
+        response.delete_cookie(key="refresh_token", path="/")
+        return response
+
+
+class UserSettingsView(APIView):
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Get user notification and app settings",
+        responses={200: UserSettingsSerializer},
+    )
+    def get(self, request):
+        settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
+        return success_response(
+            message="Settings fetched successfully.",
+            data=UserSettingsSerializer(settings_obj).data,
+        )
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Update user notification and app settings",
+        request=UserSettingsSerializer,
+        responses={200: UserSettingsSerializer, 400: COMMON_ERROR_SCHEMA},
+    )
+    def patch(self, request):
+        settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
+        serializer = UserSettingsSerializer(settings_obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return success_response(
+            message="Settings updated successfully.",
+            data=serializer.data,
+        )
+

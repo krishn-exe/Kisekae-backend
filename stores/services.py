@@ -267,7 +267,6 @@ class StoreService:
         return invitation
 
     @staticmethod
-    @transaction.atomic
     def accept_invitation(invitation, user):
         if not getattr(user, "is_active", False):
             raise ValidationError("User account is inactive.")
@@ -290,7 +289,10 @@ class StoreService:
         if invitation.status != InvitationStatus.PENDING:
             raise ValidationError(f"This invitation is no longer valid (currently {invitation.status.lower()}).")
 
-        store = Store.objects.select_for_update().get(pk=invitation.store_id)
+        store = Store.objects.filter(pk=invitation.store_id).first()
+        if not store:
+            raise ValidationError("Store not found.")
+
         if store.status == StoreStatus.SUSPENDED:
             invitation.status = InvitationStatus.REVOKED
             invitation.responded_at = timezone.now()
@@ -308,20 +310,27 @@ class StoreService:
                 f"Cannot change memberships while the store is {store.status.lower()}."
             )
 
-        existing_membership = StoreMembership.objects.filter(store=store, user=user).first()
-        if existing_membership:
-            invitation.status = InvitationStatus.ACCEPTED
-            invitation.responded_at = timezone.now()
-            invitation.invitee = user
-            invitation.save(update_fields=["status", "responded_at", "invitee"])
-            return existing_membership
+        with transaction.atomic():
+            store = Store.objects.select_for_update().get(pk=invitation.store_id)
+            if store.status != StoreStatus.ACTIVE:
+                raise ValidationError(
+                    f"Cannot change memberships while the store is {store.status.lower()}."
+                )
 
-        membership = StoreMembership.objects.create(
-            store=store,
-            user=user,
-            role=StoreRole.MANAGER,
-            invitation=invitation,
-        )
+            existing_membership = StoreMembership.objects.filter(store=store, user=user).first()
+            if existing_membership:
+                invitation.status = InvitationStatus.ACCEPTED
+                invitation.responded_at = timezone.now()
+                invitation.invitee = user
+                invitation.save(update_fields=["status", "responded_at", "invitee"])
+                return existing_membership
+
+            membership = StoreMembership.objects.create(
+                store=store,
+                user=user,
+                role=StoreRole.MANAGER,
+                invitation=invitation,
+            )
 
         invitation.status = InvitationStatus.ACCEPTED
         invitation.responded_at = timezone.now()

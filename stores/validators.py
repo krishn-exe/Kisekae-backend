@@ -1,5 +1,26 @@
+import re
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from PIL import Image
+
+PAN_REGEX = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$", re.IGNORECASE)
+GST_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$", re.IGNORECASE)
+PHONE_REGEX = re.compile(r"^\+?[0-9\s\-]{10,15}$")
+
+pan_validator = RegexValidator(
+    regex=PAN_REGEX,
+    message="Enter a valid 10-character PAN number (e.g. ABCDE1234F).",
+)
+
+gst_validator = RegexValidator(
+    regex=GST_REGEX,
+    message="Enter a valid 15-character GSTIN (e.g. 22AAAAA0000A1Z5).",
+)
+
+phone_validator = RegexValidator(
+    regex=PHONE_REGEX,
+    message="Enter a valid phone number (10-15 digits).",
+)
 
 ALLOWED_IMAGE_TYPES = ["JPEG", "PNG", "WEBP"]
 MAX_LOGO_SIZE = 2 * 1024 * 1024       # 2MB

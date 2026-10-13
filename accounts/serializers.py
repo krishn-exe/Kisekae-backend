@@ -5,6 +5,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .models import UserSettings
 from .utils import (
     email_validator,
     name_validator,
@@ -69,8 +70,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             attrs["name"] = name.strip()
 
         email = email.strip().lower()
-        if User.objects.filter(email__iexact=email).exists():
-            raise serializers.ValidationError({"email": "An account with this email already exists."})
         attrs["email"] = email
 
         password = attrs.get("password")
@@ -337,3 +336,29 @@ class GoogleOAuthSerializer(OAuthLoginSerializer):
 
 class GitHubOAuthSerializer(OAuthLoginSerializer):
     pass
+
+
+class UserUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        max_length=150,
+        required=True,
+        validators=[name_validator],
+    )
+
+    def validate_name(self, value):
+        val = value.strip()
+        name_validator(val)
+        return val
+
+
+class UserSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserSettings
+        fields = [
+            "email_notifications",
+            "order_alerts",
+            "stock_alerts",
+            "language",
+            "timezone",
+            "updated_at",
+        ]

@@ -9,6 +9,8 @@ scrape_configs:
 
   - job_name: 'django'
     metrics_path: '/metrics'
+    bearer_token_file: '/run/secrets/prometheus_token'
     scrape_interval: 5s
     static_configs:
       - targets: ['web:8000']
+

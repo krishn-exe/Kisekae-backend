@@ -33,8 +33,9 @@ class ProductService:
             # Re-generate slug if name changed
             if "name" in update_fields:
                 product.slug = ""  # Will be auto-generated in save()
+                update_fields.append("slug")
             update_fields.append("updated_at")
-            product.save()
+            product.save(update_fields=update_fields)
         return product
 
     @staticmethod

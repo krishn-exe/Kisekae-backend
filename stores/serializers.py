@@ -2,7 +2,16 @@ from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .models import Store, StoreInvitation, StoreMembership, StoreRole, StoreStatus
+from .models import (
+    BusinessVerification,
+    Store,
+    StoreInvitation,
+    StoreMembership,
+    StoreRole,
+    StoreStatus,
+    VerificationStatus,
+)
+from .validators import gst_validator, pan_validator, phone_validator
 
 User = get_user_model()
 
@@ -40,6 +49,7 @@ class AddMemberSerializer(serializers.Serializer):
 class StoreSerializer(serializers.ModelSerializer):
     my_role = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    is_business_verified = serializers.BooleanField(read_only=True)
     logo_url = serializers.CharField(read_only=True, allow_null=True)
     banner_url = serializers.CharField(read_only=True, allow_null=True)
 
@@ -55,6 +65,7 @@ class StoreSerializer(serializers.ModelSerializer):
             "contact_email",
             "contact_phone",
             "status",
+            "is_business_verified",
             "my_role",
             "member_count",
             "created_at",
@@ -156,3 +167,68 @@ class AcceptTokenSerializer(serializers.Serializer):
 
 class ImageUploadSerializer(serializers.Serializer):
     file = serializers.ImageField(help_text="Image file (JPEG, PNG, WEBP).")
+
+
+class BusinessVerificationSerializer(serializers.ModelSerializer):
+    store_id = serializers.IntegerField(source="store.id", read_only=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
+
+    class Meta:
+        model = BusinessVerification
+        fields = [
+            "id",
+            "store_id",
+            "store_name",
+            "pan_number",
+            "gst_number",
+            "business_address",
+            "business_phone",
+            "business_email",
+            "status",
+            "rejection_reason",
+            "submitted_at",
+            "updated_at",
+        ]
+
+
+class BusinessVerificationSubmitSerializer(serializers.Serializer):
+    pan_number = serializers.CharField(
+        max_length=10,
+        validators=[pan_validator],
+        help_text="10-character PAN number (e.g. ABCDE1234F).",
+    )
+    gst_number = serializers.CharField(
+        max_length=15,
+        validators=[gst_validator],
+        help_text="15-character GSTIN (e.g. 22AAAAA0000A1Z5).",
+    )
+    business_address = serializers.CharField(
+        min_length=5,
+        help_text="Registered business address.",
+    )
+    business_phone = serializers.CharField(
+        max_length=20,
+        validators=[phone_validator],
+        help_text="Contact phone number (10-15 digits).",
+    )
+    business_email = serializers.EmailField(
+        help_text="Contact business email address.",
+    )
+
+    def validate_pan_number(self, value):
+        return value.strip().upper()
+
+    def validate_gst_number(self, value):
+        return value.strip().upper()
+
+    def validate_business_address(self, value):
+        val = value.strip()
+        if len(val) < 5:
+            raise serializers.ValidationError("Business address must be at least 5 characters.")
+        return val
+
+    def validate_business_phone(self, value):
+        return value.strip()
+
+    def validate_business_email(self, value):
+        return value.strip().lower()

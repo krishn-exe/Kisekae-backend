@@ -161,7 +161,14 @@ def process_google_pkce_login(
     if not effective_client_id:
         raise ValueError("No Google client ID configured on the server.")
 
+    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
+    if allowed_client_ids and effective_client_id not in allowed_client_ids:
+        raise ValueError("Untrusted or invalid Google client ID.")
+
     redirect_uri = callback_url or getattr(settings, "GOOGLE_ANDROID_CALLBACK_URL", "kisekae://auth/google/callback")
+    allowed_uris = getattr(settings, "GOOGLE_ALLOWED_REDIRECT_URIS", [])
+    if allowed_uris and redirect_uri not in allowed_uris:
+        raise ValueError("Untrusted or invalid redirect URI.")
 
     token_data = exchange_google_pkce_tokens(
         code=code,
@@ -244,7 +251,6 @@ def process_social_login(
         raw_request.session = {}
 
     adapter = adapter_class(raw_request)
-    provider = adapter.get_provider()
 
     # If code_verifier is present, route to PKCE flow (mobile clients without client secret)
     if code_verifier and code:
@@ -257,7 +263,13 @@ def process_social_login(
                 client_id=client_id,
             )
         else:
-            raise ValueError(f"PKCE flow is not supported for {provider.name}.")
+            raise ValueError(f"PKCE flow is not supported for {adapter.provider_id}.")
+
+    try:
+        provider = adapter.get_provider()
+    except Exception:
+        from allauth.socialaccount.adapter import get_adapter
+        provider = get_adapter(raw_request).get_provider(raw_request, provider=adapter.provider_id, client_id=client_id)
 
     app = None
     if client_id:

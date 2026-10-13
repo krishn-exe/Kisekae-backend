@@ -1,19 +1,21 @@
-from django.http import HttpResponse, HttpResponseForbidden
+import hmac
+import os
 from django.contrib import admin
-from django.urls import include, path
+from django.http import HttpResponse, HttpResponseForbidden
+from django.urls import include, path, re_path
+from django_prometheus import exports
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-import os
-from django_prometheus import exports
 
 def secured_metrics_view(request):
-    token = os.getenv("PROMETHEUS_METRICS_TOKEN")
+    token = os.getenv("PROMETHEUS_METRICS_TOKEN", "").strip()
     if token:
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        if auth_header == f"Bearer {token}":
+        expected_header = f"Bearer {token}"
+        if hmac.compare_digest(auth_header, expected_header):
             return exports.ExportToDjangoView(request)
         return HttpResponseForbidden("Invalid or missing token.")
     
@@ -30,7 +32,7 @@ def google_to_app(request):
     )
 
 urlpatterns = [
-    path('metrics', secured_metrics_view, name='prometheus-django-metrics'),
+    re_path(r'^metrics/?$', secured_metrics_view, name='prometheus-django-metrics'),
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('stores/', include('stores.urls')),

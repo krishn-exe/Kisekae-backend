@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from .views import (
+    BusinessVerificationView,
     InviteeInvitationAcceptView,
     InviteeInvitationDeclineView,
     InviteeInvitationListView,
@@ -29,8 +30,9 @@ urlpatterns = [
     path("invitations/<int:inv_id>/accept/", InviteeInvitationAcceptView.as_view(), name="invitee-invitation-accept"),
     path("invitations/<int:inv_id>/decline/", InviteeInvitationDeclineView.as_view(), name="invitee-invitation-decline"),
 
-    # Store Detail, Restore, Transfer
+    # Store Detail, Restore, Transfer, Verification
     path("<int:pk>/", StoreDetailView.as_view(), name="store-detail"),
+    path("<int:pk>/verification/", BusinessVerificationView.as_view(), name="store-verification"),
     path("<int:pk>/restore/", StoreRestoreView.as_view(), name="store-restore"),
     path("<int:pk>/transfer-ownership/", StoreTransferOwnershipView.as_view(), name="store-transfer-ownership"),
 
@@ -50,4 +52,13 @@ urlpatterns = [
 
     # Store Products
     path("<int:pk>/products/", include("products.urls")),
+
+    # Store Inventory & Stock Management
+    path("<int:pk>/", include("inventory.urls")),
+
+    # Store Orders & Returns Management
+    path("<int:pk>/", include("orders.urls")),
+
+    # Store Analytics & Reporting
+    path("<int:pk>/", include("analytics.urls")),
 ]

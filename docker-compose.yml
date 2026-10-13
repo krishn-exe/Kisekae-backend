@@ -86,6 +86,8 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    secrets:
+      - prometheus_token
     depends_on:
       - web
     restart: unless-stopped
@@ -111,3 +113,7 @@ volumes:
   db_data:
   prometheus_data:
   grafana_data:
+
+secrets:
+  prometheus_token:
+    environment: PROMETHEUS_METRICS_TOKEN

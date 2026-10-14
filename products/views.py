@@ -3,7 +3,7 @@ from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
@@ -19,6 +19,7 @@ from .serializers import (
     ProductListingStatusSerializer,
     ProductSerializer,
     ProductUpdateSerializer,
+    PublicProductSerializer,
 )
 from .services import ProductService
 
@@ -520,5 +521,248 @@ class ProductBulkUpdateView(APIView):
                 "updated_ids": updated_ids,
                 "errors": errors,
             },
+        )
+
+
+class PublicProductListView(APIView):
+    """
+    Public API: Fetch all available products across all active stores.
+    Excludes products from suspended, archived, or inactive stores.
+    Supports pagination, lettering (alphabetical ordering / initial letter filtering),
+    and in-stock / price filters.
+    """
+
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+    pagination_class = ProductPagination
+
+    @extend_schema(
+        tags=["Public Products"],
+        summary="Browse all available products",
+        description=(
+            "Returns all available products across active stores. "
+            "Automatically excludes products from suspended or archived stores, "
+            "as well as non-active products. Supports pagination and lettering/alphabetical sorting."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="letter",
+                description="Filter products starting with this letter (case-insensitive)",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="ordering",
+                description="Sort order: name (A-Z), -name (Z-A), price, -price, created_at, -created_at",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="in_stock",
+                description="If true, only return products with stock > 0",
+                required=False,
+                type=bool,
+            ),
+            OpenApiParameter(
+                name="search",
+                description="Basic text search on product name and description",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(name="page", type=int, required=False),
+            OpenApiParameter(name="page_size", type=int, required=False),
+        ],
+        responses={200: PublicProductSerializer(many=True)},
+    )
+    def get(self, request):
+        queryset = Product.objects.filter(
+            status=ProductStatus.ACTIVE,
+            store__status=StoreStatus.ACTIVE,
+            store__archived_at__isnull=True,
+        ).select_related("store")
+
+        # Lettering filter (e.g. ?letter=A)
+        letter = request.query_params.get("letter", "").strip()
+        if letter:
+            queryset = queryset.filter(name__istartswith=letter[0])
+
+        # Optional search
+        search_query = request.query_params.get("search") or request.query_params.get("q")
+        if search_query:
+            q_str = search_query.strip()
+            queryset = queryset.filter(
+                Q(name__icontains=q_str) | Q(description__icontains=q_str)
+            )
+
+        # In-stock filter
+        in_stock = request.query_params.get("in_stock")
+        if in_stock is not None and str(in_stock).lower() in ("true", "1", "yes"):
+            queryset = queryset.filter(stock__gt=0)
+
+        # Ordering / Lettering (defaults to alphabetical name ascending)
+        ordering = request.query_params.get("ordering", "name").strip().lower()
+        valid_orderings = {
+            "name": "name",
+            "-name": "-name",
+            "a-z": "name",
+            "z-a": "-name",
+            "price": "price",
+            "-price": "-price",
+            "created_at": "created_at",
+            "-created_at": "-created_at",
+            "newest": "-created_at",
+            "oldest": "created_at",
+        }
+        order_field = valid_orderings.get(ordering, "name")
+        queryset = queryset.order_by(order_field)
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset.distinct(), request)
+        serializer = PublicProductSerializer(page, many=True)
+
+        return success_response(
+            message="Products fetched successfully.",
+            data={
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
+        )
+
+
+class ProductSearchView(APIView):
+    """
+    Public API: Search products by title (name) and description using a database scan.
+    Excludes products from suspended, archived, or inactive stores.
+    Supports pagination and lettering/alphabetical sorting.
+    """
+
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+    pagination_class = ProductPagination
+
+    @extend_schema(
+        tags=["Public Products"],
+        summary="Search products (basic DB scan)",
+        description=(
+            "Performs a case-insensitive database scan across product title (`name`) "
+            "and `description`. Excludes products from suspended or archived stores. "
+            "Supports pagination and ordering."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                description="Search query string (scanned against name and description)",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="letter",
+                description="Optional starting letter filter",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="ordering",
+                description="Sort order (name, -name, price, -price, created_at, -created_at)",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(name="page", type=int, required=False),
+            OpenApiParameter(name="page_size", type=int, required=False),
+        ],
+        responses={200: PublicProductSerializer(many=True)},
+    )
+    def get(self, request):
+        query = (
+            request.query_params.get("q")
+            or request.query_params.get("query")
+            or request.query_params.get("search", "")
+        ).strip()
+
+        queryset = Product.objects.filter(
+            status=ProductStatus.ACTIVE,
+            store__status=StoreStatus.ACTIVE,
+            store__archived_at__isnull=True,
+        ).select_related("store")
+
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) | Q(description__icontains=query)
+            )
+
+        # Letter filter
+        letter = request.query_params.get("letter", "").strip()
+        if letter:
+            queryset = queryset.filter(name__istartswith=letter[0])
+
+        # Ordering
+        ordering = request.query_params.get("ordering", "name").strip().lower()
+        valid_orderings = {
+            "name": "name",
+            "-name": "-name",
+            "a-z": "name",
+            "z-a": "-name",
+            "price": "price",
+            "-price": "-price",
+            "created_at": "created_at",
+            "-created_at": "-created_at",
+        }
+        order_field = valid_orderings.get(ordering, "name")
+        queryset = queryset.order_by(order_field)
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset.distinct(), request)
+        serializer = PublicProductSerializer(page, many=True)
+
+        return success_response(
+            message=f"Search results for '{query}'" if query else "Products fetched successfully.",
+            data={
+                "query": query,
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
+        )
+
+
+class PublicProductDetailView(APIView):
+    """
+    Public API: View details of a single product.
+    Excludes products from suspended, archived, or inactive stores.
+    """
+
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["Public Products"],
+        summary="Get public product detail",
+        description="Returns details for an active product belonging to an active store.",
+        responses={200: PublicProductSerializer, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def get(self, request, product_pk):
+        product = (
+            Product.objects.filter(
+                pk=product_pk,
+                status=ProductStatus.ACTIVE,
+                store__status=StoreStatus.ACTIVE,
+                store__archived_at__isnull=True,
+            )
+            .select_related("store")
+            .first()
+        )
+        if not product:
+            return error_response(
+                message="Product not found or unavailable.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        return success_response(
+            message="Product details fetched successfully.",
+            data=PublicProductSerializer(product).data,
         )
 

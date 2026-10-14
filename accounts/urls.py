@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    BecomeSellerView,
     ChangePasswordView,
     GitHubOAuthView,
     GoogleOAuthView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("logout/", LogoutView.as_view(), name="logout"),
     path("password/change/", ChangePasswordView.as_view(), name="password-change"),
     path("password/reset/", ResetPasswordView.as_view(), name="password-reset"),
+    path("become-seller/", BecomeSellerView.as_view(), name="become-seller"),
     path("me/", UserDetailView.as_view(), name="me"),
     path("me/settings/", UserSettingsView.as_view(), name="me-settings"),
 ]

@@ -276,10 +276,10 @@ def process_social_login(
         provider = get_adapter(raw_request).get_provider(raw_request, provider=adapter.provider_id, client_id=client_id)
 
     app = None
-    if provider_client_id:
+    if client_id:
         try:
             for a in provider.get_apps(raw_request):
-                if a.client_id == provider_client_id:
+                if a.client_id == client_id:
                     app = a
                     break
         except Exception:

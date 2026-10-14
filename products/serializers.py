@@ -28,6 +28,33 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
 
+class PublicProductSerializer(serializers.ModelSerializer):
+    image_url = serializers.CharField(read_only=True, allow_null=True)
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    store_slug = serializers.CharField(source="store.slug", read_only=True)
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "store",
+            "store_name",
+            "store_slug",
+            "name",
+            "slug",
+            "description",
+            "image_url",
+            "price",
+            "compare_at_price",
+            "currency",
+            "sku",
+            "stock",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class ProductCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default="")

@@ -1485,6 +1485,85 @@ class GitHubOAuthView(BaseOAuthView):
         return super().post(request)
 
 
+class BecomeSellerView(APIView):
+    """Upgrade the authenticated user's account to a seller account."""
+
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Accounts"],
+        summary="Become a seller",
+        description=(
+            "Upgrades the authenticated user's account to a seller account by setting `is_seller=True`. "
+            "The user must have a verified email address. If the user is already a seller, "
+            "a 200 response is returned with no changes."
+        ),
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="BecomeSellerResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="BecomeSellerData",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                            "email": serializers.EmailField(),
+                            "is_seller": serializers.BooleanField(),
+                        },
+                    ),
+                },
+            ),
+            403: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request):
+        user = request.user
+
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not user.is_email_verified:
+            return error_response(
+                message="Email must be verified before becoming a seller.",
+                code="EMAIL_NOT_VERIFIED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        if user.is_seller:
+            return success_response(
+                message="You are already a seller.",
+                data={
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "is_seller": user.is_seller,
+                },
+                status_code=status.HTTP_200_OK,
+            )
+
+        user.is_seller = True
+        user.save(update_fields=["is_seller"])
+
+        return success_response(
+            message="Congratulations! Your account has been upgraded to a seller account.",
+            data={
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "is_seller": user.is_seller,
+            },
+            status_code=status.HTTP_200_OK,
+        )
+
+
 class UserDetailView(APIView):
     throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]

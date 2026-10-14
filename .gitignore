@@ -6,4 +6,5 @@ __pycache__/
 accounts/tests.py
 stores/tests.py
 staticfiles/
+test.py
 tests.py

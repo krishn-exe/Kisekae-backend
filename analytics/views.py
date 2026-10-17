@@ -1,6 +1,6 @@
 from django.http import HttpResponse
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -11,9 +11,13 @@ from stores.permissions import IsBusinessVerified, IsSeller, get_store_membershi
 
 from .serializers import (
     AnalyticsDateFilterSerializer,
+    DashboardMetricsResponseSerializer,
+    OrderMetricsResponseSerializer,
     ProductPerformanceQuerySerializer,
+    ProductPerformanceResponseSerializer,
     ReportDownloadQuerySerializer,
     RevenueAnalyticsQuerySerializer,
+    RevenueAnalyticsResponseSerializer,
 )
 from .services import AnalyticsService
 
@@ -69,11 +73,63 @@ class AnalyticsDashboardView(BaseAnalyticsView):
     @extend_schema(
         tags=["Store Analytics"],
         summary="Store dashboard KPI metrics",
+        description=(
+            "Calculates high-level key performance metrics for a store, including total revenue, "
+            "order breakdown by lifecycle state (delivered, pending, shipped, cancelled, returned), "
+            "total units sold, average order value, cancellation and return rates, and low stock count."
+        ),
         parameters=[
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
         ],
-        responses={200: inline_serializer(name="DashboardMetricsEnvelope", fields={"success": serializers.BooleanField(), "data": serializers.JSONField()})},
+        responses={
+            200: DashboardMetricsResponseSerializer,
+            400: ANALYTICS_ERROR_SCHEMA,
+            403: ANALYTICS_ERROR_SCHEMA,
+            404: ANALYTICS_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="DashboardMetricsSuccessExample",
+                summary="Complete Store Dashboard Metrics (200 OK)",
+                description="Lists all 13 returned KPI metric fields calculated from non-cancelled and total orders.",
+                value={
+                    "success": True,
+                    "message": "Dashboard metrics retrieved successfully.",
+                    "data": {
+                        "total_revenue": 145250.75,
+                        "currency": "INR",
+                        "total_orders": 350,
+                        "delivered_orders": 295,
+                        "pending_orders": 28,
+                        "shipped_orders": 15,
+                        "cancelled_orders": 8,
+                        "returned_orders": 4,
+                        "total_units_sold": 540,
+                        "average_order_value": 424.71,
+                        "return_rate": 1.14,
+                        "cancellation_rate": 2.29,
+                        "low_stock_products_count": 5,
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                name="DashboardMetricsErrorExample",
+                summary="Validation Error (400 Bad Request)",
+                value={
+                    "success": False,
+                    "message": "Invalid date filters.",
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "details": {"from_date": ["from_date cannot be later than to_date."]},
+                    },
+                },
+                response_only=True,
+                status_codes=["400"],
+            ),
+        ],
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk)
@@ -104,12 +160,58 @@ class RevenueAnalyticsView(BaseAnalyticsView):
     @extend_schema(
         tags=["Store Analytics"],
         summary="Store revenue analytics over time",
+        description=(
+            "Aggregates revenue and order counts into chronological time series buckets (daily, weekly, or monthly). "
+            "Returns total period revenue, order volume, average revenue per order, and array of time-series points."
+        ),
         parameters=[
             OpenApiParameter(name="period", description="Aggregation period (daily, weekly, monthly)", required=False, type=str),
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
         ],
-        responses={200: inline_serializer(name="RevenueAnalyticsEnvelope", fields={"success": serializers.BooleanField(), "data": serializers.JSONField()})},
+        responses={
+            200: RevenueAnalyticsResponseSerializer,
+            400: ANALYTICS_ERROR_SCHEMA,
+            403: ANALYTICS_ERROR_SCHEMA,
+            404: ANALYTICS_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="RevenueAnalyticsSuccessExample",
+                summary="Complete Store Revenue Analytics (200 OK)",
+                description="Lists all summary fields (period, currency, total_revenue, total_orders, average_revenue_per_order) and time_series items (date, revenue, orders_count).",
+                value={
+                    "success": True,
+                    "message": "Revenue analytics retrieved successfully.",
+                    "data": {
+                        "period": "daily",
+                        "currency": "INR",
+                        "total_revenue": 45890.00,
+                        "total_orders": 120,
+                        "average_revenue_per_order": 382.42,
+                        "time_series": [
+                            {
+                                "date": "2026-10-14",
+                                "revenue": 14200.00,
+                                "orders_count": 38,
+                            },
+                            {
+                                "date": "2026-10-15",
+                                "revenue": 16800.00,
+                                "orders_count": 44,
+                            },
+                            {
+                                "date": "2026-10-16",
+                                "revenue": 14890.00,
+                                "orders_count": 38,
+                            },
+                        ],
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk)
@@ -141,13 +243,59 @@ class ProductPerformanceView(BaseAnalyticsView):
     @extend_schema(
         tags=["Store Analytics"],
         summary="Store product sales and return performance",
+        description=(
+            "Calculates ranked product performance based on gross revenue, units sold, or return frequency. "
+            "Returns product_id, product_name, sku, units_sold, gross_revenue, return_count, and return_rate."
+        ),
         parameters=[
             OpenApiParameter(name="sort_by", description="Sort products by: revenue, units_sold, returns", required=False, type=str),
-            OpenApiParameter(name="limit", description="Max number of products to return", required=False, type=int),
+            OpenApiParameter(name="limit", description="Max number of products to return (1-100)", required=False, type=int),
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
         ],
-        responses={200: inline_serializer(name="ProductPerformanceEnvelope", fields={"success": serializers.BooleanField(), "data": serializers.JSONField()})},
+        responses={
+            200: ProductPerformanceResponseSerializer,
+            400: ANALYTICS_ERROR_SCHEMA,
+            403: ANALYTICS_ERROR_SCHEMA,
+            404: ANALYTICS_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="ProductPerformanceSuccessExample",
+                summary="Complete Product Performance Ranking (200 OK)",
+                description="Lists all performance fields for each ranked product: product_id, product_name, sku, units_sold, gross_revenue, return_count, return_rate.",
+                value={
+                    "success": True,
+                    "message": "Product performance retrieved successfully.",
+                    "data": {
+                        "sort_by": "revenue",
+                        "total_products_sold": 2,
+                        "products": [
+                            {
+                                "product_id": 101,
+                                "product_name": "Premium Cotton Oversized T-Shirt",
+                                "sku": "TSH-OVR-001",
+                                "units_sold": 220,
+                                "gross_revenue": 109780.00,
+                                "return_count": 3,
+                                "return_rate": 1.36,
+                            },
+                            {
+                                "product_id": 102,
+                                "product_name": "Minimalist Linen Trousers",
+                                "sku": "TRS-LIN-002",
+                                "units_sold": 85,
+                                "gross_revenue": 67915.00,
+                                "return_count": 1,
+                                "return_rate": 1.18,
+                            },
+                        ],
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk)
@@ -180,11 +328,50 @@ class OrderMetricsView(BaseAnalyticsView):
     @extend_schema(
         tags=["Store Analytics"],
         summary="Store order metrics & fulfillment velocity",
+        description=(
+            "Aggregates order counts across all 8 lifecycle statuses (PENDING, CONFIRMED, PROCESSING, SHIPPED, "
+            "DELIVERED, CANCELLED, RETURN_REQUESTED, RETURNED), calculates cancellation and return percentages, "
+            "and measures average fulfillment duration in hours for delivered orders."
+        ),
         parameters=[
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
         ],
-        responses={200: inline_serializer(name="OrderMetricsEnvelope", fields={"success": serializers.BooleanField(), "data": serializers.JSONField()})},
+        responses={
+            200: OrderMetricsResponseSerializer,
+            400: ANALYTICS_ERROR_SCHEMA,
+            403: ANALYTICS_ERROR_SCHEMA,
+            404: ANALYTICS_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="OrderMetricsSuccessExample",
+                summary="Complete Order Metrics Breakdown (200 OK)",
+                description="Lists all status_breakdown keys (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURN_REQUESTED, RETURNED), rates, and average_fulfillment_hours.",
+                value={
+                    "success": True,
+                    "message": "Order metrics retrieved successfully.",
+                    "data": {
+                        "total_orders": 350,
+                        "status_breakdown": {
+                            "PENDING": 12,
+                            "CONFIRMED": 10,
+                            "PROCESSING": 6,
+                            "SHIPPED": 15,
+                            "DELIVERED": 295,
+                            "CANCELLED": 8,
+                            "RETURN_REQUESTED": 2,
+                            "RETURNED": 2,
+                        },
+                        "cancellation_rate": 2.29,
+                        "return_rate": 1.14,
+                        "average_fulfillment_hours": 21.4,
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk)
@@ -207,6 +394,7 @@ class OrderMetricsView(BaseAnalyticsView):
             to_date=validated.get("to_date"),
         )
         return success_response(data=metrics, message="Order metrics retrieved successfully.")
+
 
 
 class ReportDownloadView(BaseAnalyticsView):

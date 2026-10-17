@@ -5,7 +5,9 @@ from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import UserSettings
+from .models import Address, AddressTitle, UserSettings, WishlistItem
+from products.models import Product, ProductStatus
+from stores.models import StoreStatus
 from .utils import (
     email_validator,
     name_validator,
@@ -361,4 +363,205 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             "language",
             "timezone",
             "updated_at",
-        ]
+        ]
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    addresses_count = serializers.SerializerMethodField()
+    wishlist_items_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "name",
+            "email",
+            "is_email_verified",
+            "is_seller",
+            "date_joined",
+            "addresses_count",
+            "wishlist_items_count",
+        ]
+        read_only_fields = fields
+
+    def get_addresses_count(self, obj):
+        return obj.addresses.count() if hasattr(obj, "addresses") else 0
+
+    def get_wishlist_items_count(self, obj):
+        return obj.wishlist_items.count() if hasattr(obj, "wishlist_items") else 0
+
+
+class AddressSerializer(serializers.ModelSerializer):
+    pin_code = serializers.CharField(
+        write_only=True,
+        required=False,
+        help_text="Alias for postal_code.",
+    )
+    pincode = serializers.CharField(
+        write_only=True,
+        required=False,
+        help_text="Alias for postal_code.",
+    )
+
+    class Meta:
+        model = Address
+        fields = [
+            "id",
+            "title",
+            "recipient_name",
+            "phone",
+            "address_line_1",
+            "address_line_2",
+            "city",
+            "state",
+            "postal_code",
+            "pin_code",
+            "pincode",
+            "country",
+            "latitude",
+            "longitude",
+            "is_default",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+        extra_kwargs = {
+            "postal_code": {"required": False},
+            "address_line_1": {"required": True},
+            "state": {"required": True},
+        }
+
+    def to_internal_value(self, data):
+        data = data.copy() if hasattr(data, "copy") else dict(data)
+        pin = data.get("pin_code") or data.get("pincode")
+        if pin and not data.get("postal_code"):
+            data["postal_code"] = pin
+        return super().to_internal_value(data)
+
+    def validate_postal_code(self, value):
+        val = str(value).strip()
+        if not val:
+            raise serializers.ValidationError("Postal code / PIN code is required.")
+        if len(val) < 3 or len(val) > 20:
+            raise serializers.ValidationError("Postal code must be between 3 and 20 characters.")
+        return val
+
+    def validate_latitude(self, value):
+        if value is not None and (value < -90 or value > 90):
+            raise serializers.ValidationError("Latitude must be between -90.0 and 90.0 degrees.")
+        return value
+
+    def validate_longitude(self, value):
+        if value is not None and (value < -180 or value > 180):
+            raise serializers.ValidationError("Longitude must be between -180.0 and 180.0 degrees.")
+        return value
+
+    def validate_address_line_1(self, value):
+        val = str(value).strip()
+        if not val:
+            raise serializers.ValidationError("Address line 1 is required.")
+        return val
+
+    def validate_state(self, value):
+        val = str(value).strip()
+        if not val:
+            raise serializers.ValidationError("State is required.")
+        return val
+
+    def validate(self, attrs):
+        if not attrs.get("postal_code") and not self.instance:
+            raise serializers.ValidationError({"postal_code": "Postal code / PIN code is required."})
+        return attrs
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret["pin_code"] = instance.postal_code
+        return ret
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        validated_data.pop("pin_code", None)
+        validated_data.pop("pincode", None)
+        return Address.objects.create(user=user, **validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("pin_code", None)
+        validated_data.pop("pincode", None)
+        return super().update(instance, validated_data)
+
+
+class WishlistStoreSummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    slug = serializers.CharField()
+
+
+class WishlistProductSerializer(serializers.ModelSerializer):
+    store = WishlistStoreSummarySerializer(read_only=True)
+    is_in_stock = serializers.BooleanField(read_only=True)
+    image_url = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "price",
+            "compare_at_price",
+            "currency",
+            "image_url",
+            "sku",
+            "stock",
+            "is_in_stock",
+            "status",
+            "store",
+        ]
+
+
+class WishlistItemSerializer(serializers.ModelSerializer):
+    product = WishlistProductSerializer(read_only=True)
+
+    class Meta:
+        model = WishlistItem
+        fields = [
+            "id",
+            "product",
+            "note",
+            "created_at",
+        ]
+        read_only_fields = ["id", "product", "created_at"]
+
+
+class AddWishlistSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(
+        required=True,
+        help_text="ID of the product to add to wishlist.",
+    )
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=255,
+        help_text="Optional note for this wishlisted product.",
+    )
+
+    def validate_product_id(self, value):
+        product = Product.objects.select_related("store").filter(pk=value).first()
+        if not product:
+            raise serializers.ValidationError("Product not found.")
+        if product.status != ProductStatus.ACTIVE:
+            raise serializers.ValidationError("This product is inactive and cannot be added to wishlist.")
+        if product.store.status != StoreStatus.ACTIVE or product.store.archived_at is not None:
+            raise serializers.ValidationError("The store offering this product is not active.")
+        return value
+
+
+class UpdateWishlistNoteSerializer(serializers.Serializer):
+    note = serializers.CharField(
+        required=True,
+        allow_blank=True,
+        max_length=255,
+        help_text="Updated note or remark for this wishlisted item.",
+    )
+

@@ -1,6 +1,8 @@
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db import connection
+from django.db.models import Case, FloatField, Q, Value, When
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from pgvector.django import CosineDistance
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -21,6 +23,7 @@ from .serializers import (
     ProductUpdateSerializer,
     PublicProductSerializer,
 )
+from .embedding_service import EmbeddingService
 from .services import ProductService
 
 PRODUCT_ERROR_SCHEMA = inline_serializer(
@@ -632,30 +635,31 @@ class PublicProductListView(APIView):
 
 
 class ProductSearchView(APIView):
-    """
-    Public API: Search products by title (name) and description using a database scan.
-    Excludes products from suspended, archived, or inactive stores.
-    Supports pagination and lettering/alphabetical sorting.
-    """
-
     throttle_scope = "store_read"
     permission_classes = [AllowAny]
     pagination_class = ProductPagination
 
     @extend_schema(
         tags=["Public Products"],
-        summary="Search products (basic DB scan)",
+        summary="Search products (hybrid search)",
         description=(
-            "Performs a case-insensitive database scan across product title (`name`) "
-            "and `description`. Excludes products from suspended or archived stores. "
-            "Supports pagination and ordering."
+            "Searches active products across name and description using hybrid search "
+            "(exact keyword matching combined with semantic vector embeddings). "
+            "Excludes products from suspended or archived stores. "
+            "Supports pagination, letter filtering, and ordering."
         ),
         parameters=[
             OpenApiParameter(
                 name="q",
-                description="Search query string (scanned against name and description)",
+                description="Search query string",
                 required=False,
                 type=str,
+            ),
+            OpenApiParameter(
+                name="similarity_threshold",
+                description="Cosine distance threshold for semantic matching (default: 0.82; lower = stricter)",
+                required=False,
+                type=float,
             ),
             OpenApiParameter(
                 name="letter",
@@ -665,7 +669,7 @@ class ProductSearchView(APIView):
             ),
             OpenApiParameter(
                 name="ordering",
-                description="Sort order (name, -name, price, -price, created_at, -created_at)",
+                description="Sort order: 'relevance' (default when query provided), 'name', '-name', 'price', '-price', 'created_at', '-created_at', 'newest'",
                 required=False,
                 type=str,
             ),
@@ -681,39 +685,106 @@ class ProductSearchView(APIView):
             or request.query_params.get("search", "")
         ).strip()
 
+        raw_threshold = request.query_params.get("similarity_threshold")
+        try:
+            threshold = float(raw_threshold) if raw_threshold is not None else 0.82
+        except (ValueError, TypeError):
+            threshold = 0.82
+
         queryset = Product.objects.filter(
             status=ProductStatus.ACTIVE,
             store__status=StoreStatus.ACTIVE,
             store__archived_at__isnull=True,
         ).select_related("store")
 
-        if query:
-            queryset = queryset.filter(
-                Q(name__icontains=query) | Q(description__icontains=query)
-            )
+        has_vector_search = False
+        supports_pgvector = (connection.vendor == "postgresql")
 
-        # Letter filter
+        if query:
+            if not supports_pgvector:
+                queryset = queryset.filter(
+                    Q(name__icontains=query) | Q(description__icontains=query)
+                )
+            else:
+                try:
+                    embedding_service = EmbeddingService.get_instance()
+                    query_vector = embedding_service.embed_query_cached(query)
+                except Exception:
+                    query_vector = None
+
+                if query_vector:
+                    try:
+                        queryset = queryset.annotate(
+                            distance=CosineDistance("embedding_record__embedding", query_vector)
+                        ).filter(
+                            Q(name__icontains=query)
+                            | Q(description__icontains=query)
+                            | (Q(embedding_record__isnull=False) & Q(distance__lte=threshold))
+                        )
+                        has_vector_search = True
+                    except Exception:
+                        queryset = queryset.filter(
+                            Q(name__icontains=query) | Q(description__icontains=query)
+                        )
+                else:
+                    queryset = queryset.filter(
+                        Q(name__icontains=query) | Q(description__icontains=query)
+                    )
+
         letter = request.query_params.get("letter", "").strip()
         if letter:
             queryset = queryset.filter(name__istartswith=letter[0])
 
-        # Ordering
-        ordering = request.query_params.get("ordering", "name").strip().lower()
+        default_ordering = "relevance" if (query and has_vector_search) else "name"
+        ordering = request.query_params.get("ordering", default_ordering).strip().lower()
+
         valid_orderings = {
-            "name": "name",
-            "-name": "-name",
-            "a-z": "name",
-            "z-a": "-name",
-            "price": "price",
-            "-price": "-price",
-            "created_at": "created_at",
-            "-created_at": "-created_at",
+            "name": ("name",),
+            "-name": ("-name",),
+            "a-z": ("name",),
+            "z-a": ("-name",),
+            "price": ("price",),
+            "-price": ("-price",),
+            "created_at": ("created_at",),
+            "-created_at": ("-created_at",),
+            "newest": ("-created_at",),
         }
-        order_field = valid_orderings.get(ordering, "name")
-        queryset = queryset.order_by(order_field)
+
+        if ordering == "relevance" and has_vector_search:
+            queryset = queryset.order_by(
+                Case(
+                    When(name__iexact=query, then=Value(0.0)),
+                    When(name__istartswith=query, then=Value(0.1)),
+                    When(name__icontains=query, then=Value(0.2)),
+                    default=Value(1.0),
+                    output_field=FloatField(),
+                ),
+                "distance",
+                "-created_at",
+            )
+        elif ordering in valid_orderings:
+            queryset = queryset.order_by(*valid_orderings[ordering])
+        else:
+            queryset = queryset.order_by("name")
 
         paginator = self.pagination_class()
-        page = paginator.paginate_queryset(queryset.distinct(), request)
+        try:
+            page = paginator.paginate_queryset(queryset.distinct(), request)
+        except Exception:
+            fallback_qs = Product.objects.filter(
+                status=ProductStatus.ACTIVE,
+                store__status=StoreStatus.ACTIVE,
+                store__archived_at__isnull=True,
+            ).select_related("store")
+            if query:
+                fallback_qs = fallback_qs.filter(
+                    Q(name__icontains=query) | Q(description__icontains=query)
+                )
+            if letter:
+                fallback_qs = fallback_qs.filter(name__istartswith=letter[0])
+            fallback_qs = fallback_qs.order_by("name")
+            page = paginator.paginate_queryset(fallback_qs.distinct(), request)
+
         serializer = PublicProductSerializer(page, many=True)
 
         return success_response(

@@ -4,6 +4,7 @@ from django.db import transaction
 from stores.models import StoreStatus
 
 from .models import Product, ProductStatus
+from .tasks import generate_product_embedding_task
 
 
 class ProductService:
@@ -20,6 +21,7 @@ class ProductService:
             created_by=user,
             **data,
         )
+        transaction.on_commit(lambda: generate_product_embedding_task.delay(product.id))
         return product
 
     @staticmethod
@@ -36,6 +38,9 @@ class ProductService:
                 update_fields.append("slug")
             update_fields.append("updated_at")
             product.save(update_fields=update_fields)
+
+            if "name" in update_fields or "description" in update_fields:
+                transaction.on_commit(lambda: generate_product_embedding_task.delay(product.id))
         return product
 
     @staticmethod

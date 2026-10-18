@@ -336,10 +336,12 @@ class BusinessVerification(models.Model):
     )
     pan_number = models.CharField(
         max_length=10,
+        unique=True,
         validators=[pan_validator],
     )
     gst_number = models.CharField(
         max_length=15,
+        unique=True,
         validators=[gst_validator],
     )
     business_address = models.TextField()
@@ -351,7 +353,7 @@ class BusinessVerification(models.Model):
     status = models.CharField(
         max_length=20,
         choices=VerificationStatus.choices,
-        default=VerificationStatus.APPROVED,
+        default=VerificationStatus.PENDING,
         db_index=True,
     )
     rejection_reason = models.TextField(blank=True, default="")

@@ -1034,7 +1034,7 @@ class BusinessVerificationView(APIView):
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = BusinessVerificationSubmitSerializer(data=request.data)
+        serializer = BusinessVerificationSubmitSerializer(data=request.data, context={"store": store})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
@@ -1046,14 +1046,14 @@ class BusinessVerificationView(APIView):
                 "business_address": data["business_address"],
                 "business_phone": data["business_phone"],
                 "business_email": data["business_email"],
-                "status": VerificationStatus.APPROVED,
+                "status": VerificationStatus.PENDING,
                 "submitted_by": request.user,
                 "rejection_reason": "",
             },
         )
 
         return success_response(
-            message="Business verification form submitted successfully. Your store is verified.",
+            message="Business verification form submitted successfully. It is now pending admin review.",
             data=BusinessVerificationSerializer(verification).data,
             status_code=status.HTTP_200_OK,
         )

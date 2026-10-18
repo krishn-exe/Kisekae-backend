@@ -216,10 +216,24 @@ class BusinessVerificationSubmitSerializer(serializers.Serializer):
     )
 
     def validate_pan_number(self, value):
-        return value.strip().upper()
+        val = value.strip().upper()
+        store = self.context.get("store")
+        qs = BusinessVerification.objects.filter(pan_number__iexact=val)
+        if store:
+            qs = qs.exclude(store=store)
+        if qs.exists():
+            raise serializers.ValidationError("This PAN number is already registered with another store.")
+        return val
 
     def validate_gst_number(self, value):
-        return value.strip().upper()
+        val = value.strip().upper()
+        store = self.context.get("store")
+        qs = BusinessVerification.objects.filter(gst_number__iexact=val)
+        if store:
+            qs = qs.exclude(store=store)
+        if qs.exists():
+            raise serializers.ValidationError("This GSTIN is already registered with another store.")
+        return val
 
     def validate_business_address(self, value):
         val = value.strip()

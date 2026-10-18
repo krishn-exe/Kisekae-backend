@@ -6,3 +6,4 @@ __pycache__/
 staticfiles/
 test.py
 tests.py
+stores/tests/**

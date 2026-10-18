@@ -13,13 +13,20 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as SimpleJWTTokenRefreshView
 
+from django.core.exceptions import ValidationError
+from django.db.models import Q
+
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+from cart.services import CartService
+from products.models import Product, ProductStatus
 
 from .otp import RedisOTP
-from .models import UserSettings
+from .models import Address, AddressTitle, UserSettings, WishlistItem
 from .responses import error_response, success_response
 from .serializers import (
+    AddressSerializer,
+    AddWishlistSerializer,
     ChangePasswordSerializer,
     GitHubOAuthSerializer,
     GoogleOAuthSerializer,
@@ -29,8 +36,12 @@ from .serializers import (
     OTPVerifySerializer,
     RegisterSerializer,
     ResetPasswordSerializer,
+    UpdateWishlistNoteSerializer,
+    UserProfileSerializer,
     UserSettingsSerializer,
     UserUpdateSerializer,
+    WishlistItemSerializer,
+    WishlistProductSerializer,
 )
 from .social import process_social_login
 from .tasks import send_otp_email_task
@@ -1569,9 +1580,9 @@ class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Accounts"],
-        summary="Get current user details",
-        description="Returns the authenticated user's details.",
+        tags=["Customer Profile"],
+        summary="Get customer profile details",
+        description="Returns the authenticated user's profile details including name, email, verification status, and summary stats (address and wishlist counts).",
         responses={
             200: inline_serializer(
                 name="UserDetailResponse",
@@ -1586,6 +1597,9 @@ class UserDetailView(APIView):
                             "email": serializers.EmailField(allow_null=True),
                             "is_email_verified": serializers.BooleanField(),
                             "is_seller": serializers.BooleanField(),
+                            "date_joined": serializers.DateTimeField(allow_null=True),
+                            "addresses_count": serializers.IntegerField(),
+                            "wishlist_items_count": serializers.IntegerField(),
                         },
                     ),
                 },
@@ -1596,16 +1610,19 @@ class UserDetailView(APIView):
         examples=[
             OpenApiExample(
                 name="UserDetailSuccessExample",
-                summary="Current User Profile (200 OK)",
+                summary="Current Customer Profile (200 OK)",
                 value={
                     "success": True,
-                    "message": "User profile fetched successfully",
+                    "message": "User profile fetched successfully.",
                     "data": {
                         "id": 123,
                         "name": "Krishn Sharma",
                         "email": "user@example.com",
                         "is_email_verified": True,
                         "is_seller": False,
+                        "date_joined": "2026-10-01T12:00:00Z",
+                        "addresses_count": 2,
+                        "wishlist_items_count": 5,
                     },
                 },
                 response_only=True,
@@ -1642,22 +1659,72 @@ class UserDetailView(APIView):
                 status_code=status.HTTP_403_FORBIDDEN,
             )
         return success_response(
-            message="User profile fetched successfully",
+            message="User profile fetched successfully.",
             data={
                 "id": user.id,
                 "name": user.name,
                 "email": user.email,
                 "is_email_verified": user.is_email_verified,
                 "is_seller": user.is_seller,
+                "date_joined": user.date_joined.isoformat() if user.date_joined else None,
+                "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
+                "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
             },
             status_code=status.HTTP_200_OK,
         )
 
     @extend_schema(
-        tags=["Accounts"],
-        summary="Update user profile name",
+        tags=["Customer Profile"],
+        summary="Update customer profile name",
+        description="Updates the authenticated user's name on their customer profile.",
         request=UserUpdateSerializer,
-        responses={200: inline_serializer(name="UserUpdateResponse", fields={"id": serializers.IntegerField(), "name": serializers.CharField(), "email": serializers.EmailField()}), 400: COMMON_ERROR_SCHEMA},
+        responses={
+            200: inline_serializer(
+                name="UserUpdateResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="UserUpdateData",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                            "email": serializers.EmailField(),
+                            "is_email_verified": serializers.BooleanField(),
+                            "is_seller": serializers.BooleanField(),
+                            "date_joined": serializers.DateTimeField(allow_null=True),
+                            "addresses_count": serializers.IntegerField(),
+                            "wishlist_items_count": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="UserUpdateSuccessExample",
+                summary="Customer Name Updated (200 OK)",
+                value={
+                    "success": True,
+                    "message": "User profile updated successfully.",
+                    "data": {
+                        "id": 123,
+                        "name": "Jane Sharma",
+                        "email": "user@example.com",
+                        "is_email_verified": True,
+                        "is_seller": False,
+                        "date_joined": "2026-10-01T12:00:00Z",
+                        "addresses_count": 2,
+                        "wishlist_items_count": 5,
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def patch(self, request):
         user = request.user
@@ -1679,13 +1746,51 @@ class UserDetailView(APIView):
                 "email": user.email,
                 "is_email_verified": user.is_email_verified,
                 "is_seller": user.is_seller,
+                "date_joined": user.date_joined.isoformat() if user.date_joined else None,
+                "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
+                "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
             },
             status_code=status.HTTP_200_OK,
         )
 
     @extend_schema(
-        tags=["Accounts"],
-        summary="Delete / deactivate user account",
+        tags=["Customer Profile"],
+        summary="Replace customer profile name",
+        description="Replaces the authenticated user's name on their customer profile.",
+        request=UserUpdateSerializer,
+        responses={
+            200: inline_serializer(
+                name="UserUpdatePutResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="UserUpdatePutData",
+                        fields={
+                            "id": serializers.IntegerField(),
+                            "name": serializers.CharField(),
+                            "email": serializers.EmailField(),
+                            "is_email_verified": serializers.BooleanField(),
+                            "is_seller": serializers.BooleanField(),
+                            "date_joined": serializers.DateTimeField(allow_null=True),
+                            "addresses_count": serializers.IntegerField(),
+                            "wishlist_items_count": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def put(self, request):
+        return self.patch(request)
+
+    @extend_schema(
+        tags=["Customer Profile"],
+        summary="Delete / deactivate customer account",
+        description="Deactivates the authenticated user's account and clears refresh token cookies.",
         responses={200: inline_serializer(name="UserDeleteResponse", fields={"message": serializers.CharField()})},
     )
     def delete(self, request):
@@ -1732,4 +1837,844 @@ class UserSettingsView(APIView):
             message="Settings updated successfully.",
             data=serializer.data,
         )
+
+
+# ============================================================================
+# CUSTOMER ADDRESS VIEWS
+# ============================================================================
+
+class AddressListCreateView(APIView):
+    """
+    CRUD endpoint to list all addresses for the authenticated user, or create a new address.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="customer_address_list",
+        tags=["Customer Addresses"],
+        summary="List customer delivery addresses",
+        description="Returns all saved addresses for the authenticated customer. Addresses are sorted with the default address first.",
+        responses={
+            200: inline_serializer(
+                name="AddressListResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": serializers.ListSerializer(child=AddressSerializer()),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="AddressListSuccessExample",
+                summary="List Customer Addresses (200 OK)",
+                value={
+                    "success": True,
+                    "message": "Addresses retrieved successfully.",
+                    "data": [
+                        {
+                            "id": 1,
+                            "title": "Home",
+                            "recipient_name": "Krishn Sharma",
+                            "phone": "+919876543210",
+                            "address_line_1": "Flat 402, Sunshine Heights",
+                            "address_line_2": "Near Metro Station, Indiranagar",
+                            "city": "Bengaluru",
+                            "state": "Karnataka",
+                            "postal_code": "560038",
+                            "pin_code": "560038",
+                            "country": "India",
+                            "latitude": "12.978369",
+                            "longitude": "77.640835",
+                            "is_default": True,
+                            "created_at": "2026-10-15T10:00:00Z",
+                            "updated_at": "2026-10-15T10:00:00Z",
+                        },
+                        {
+                            "id": 2,
+                            "title": "Office",
+                            "recipient_name": "Krishn Sharma",
+                            "phone": "+919876543210",
+                            "address_line_1": "Tower B, 5th Floor, Cyber Tech Park",
+                            "address_line_2": "Outer Ring Road",
+                            "city": "Bengaluru",
+                            "state": "Karnataka",
+                            "postal_code": "560103",
+                            "pin_code": "560103",
+                            "country": "India",
+                            "latitude": "12.925007",
+                            "longitude": "77.684128",
+                            "is_default": False,
+                            "created_at": "2026-10-16T08:30:00Z",
+                            "updated_at": "2026-10-16T08:30:00Z",
+                        },
+                    ],
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        addresses = user.addresses.all()
+        serializer = AddressSerializer(addresses, many=True)
+        return success_response(
+            message="Addresses retrieved successfully.",
+            data=serializer.data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_address_create",
+        tags=["Customer Addresses"],
+        summary="Create a delivery address",
+        description=(
+            "Adds a new delivery address for the authenticated user. "
+            "Address requires address_line_1, state, and postal_code (or pin_code). "
+            "Optionally accepts title (Home/Office/Other), recipient_name, phone, address_line_2, city, latitude, and longitude. "
+            "If is_default is true, or if this is the user's first address, it automatically becomes the default address."
+        ),
+        request=AddressSerializer,
+        responses={
+            201: inline_serializer(
+                name="AddressCreateResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": AddressSerializer(),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="AddressCreateSuccessExample",
+                summary="Address Created (201 Created)",
+                value={
+                    "success": True,
+                    "message": "Address added successfully.",
+                    "data": {
+                        "id": 3,
+                        "title": "Home",
+                        "recipient_name": "Krishn Sharma",
+                        "phone": "+919876543210",
+                        "address_line_1": "Flat 402, Sunshine Heights",
+                        "address_line_2": "Near Metro Station, Indiranagar",
+                        "city": "Bengaluru",
+                        "state": "Karnataka",
+                        "postal_code": "560038",
+                        "pin_code": "560038",
+                        "country": "India",
+                        "latitude": "12.978369",
+                        "longitude": "77.640835",
+                        "is_default": True,
+                        "created_at": "2026-10-16T15:30:00Z",
+                        "updated_at": "2026-10-16T15:30:00Z",
+                    },
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+        ],
+    )
+    def post(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = AddressSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        address = serializer.save()
+        return success_response(
+            message="Address added successfully.",
+            data=AddressSerializer(address).data,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class AddressDetailView(APIView):
+    """
+    CRUD endpoint to retrieve, update (PUT/PATCH), or delete a specific address.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    def _get_address(self, user, address_id):
+        if not user.is_active:
+            return None, error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        address = user.addresses.filter(pk=address_id).first()
+        if not address:
+            return None, error_response(
+                message="Address not found.",
+                code="ADDRESS_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        return address, None
+
+    @extend_schema(
+        operation_id="customer_address_retrieve",
+        tags=["Customer Addresses"],
+        summary="Get address details",
+        description="Retrieves a specific delivery address by ID belonging to the authenticated customer.",
+        responses={
+            200: inline_serializer(
+                name="AddressDetailResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": AddressSerializer(),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="AddressDetailSuccessExample",
+                summary="Address Retrieved (200 OK)",
+                value={
+                    "success": True,
+                    "message": "Address retrieved successfully.",
+                    "data": {
+                        "id": 1,
+                        "title": "Home",
+                        "recipient_name": "Krishn Sharma",
+                        "phone": "+919876543210",
+                        "address_line_1": "Flat 402, Sunshine Heights",
+                        "address_line_2": "Near Metro Station, Indiranagar",
+                        "city": "Bengaluru",
+                        "state": "Karnataka",
+                        "postal_code": "560038",
+                        "pin_code": "560038",
+                        "country": "India",
+                        "latitude": "12.978369",
+                        "longitude": "77.640835",
+                        "is_default": True,
+                        "created_at": "2026-10-15T10:00:00Z",
+                        "updated_at": "2026-10-15T10:00:00Z",
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request, address_id):
+        address, err = self._get_address(request.user, address_id)
+        if err:
+            return err
+        return success_response(
+            message="Address retrieved successfully.",
+            data=AddressSerializer(address).data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_address_replace",
+        tags=["Customer Addresses"],
+        summary="Update address (full)",
+        description="Replaces all fields of an existing delivery address.",
+        request=AddressSerializer,
+        responses={
+            200: inline_serializer(
+                name="AddressUpdateResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": AddressSerializer(),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def put(self, request, address_id):
+        address, err = self._get_address(request.user, address_id)
+        if err:
+            return err
+        serializer = AddressSerializer(address, data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        updated = serializer.save()
+        return success_response(
+            message="Address updated successfully.",
+            data=AddressSerializer(updated).data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_address_update",
+        tags=["Customer Addresses"],
+        summary="Update address (partial)",
+        description="Updates one or more fields of an existing delivery address.",
+        request=AddressSerializer,
+        responses={
+            200: inline_serializer(
+                name="AddressPatchResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": AddressSerializer(),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def patch(self, request, address_id):
+        address, err = self._get_address(request.user, address_id)
+        if err:
+            return err
+        serializer = AddressSerializer(address, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        updated = serializer.save()
+        return success_response(
+            message="Address updated successfully.",
+            data=AddressSerializer(updated).data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_address_destroy",
+        tags=["Customer Addresses"],
+        summary="Delete address",
+        description="Deletes a saved delivery address. If the deleted address was marked as default, the most recent remaining address is promoted to default.",
+        responses={
+            200: inline_serializer(
+                name="AddressDeleteResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": serializers.JSONField(allow_null=True),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request, address_id):
+        address, err = self._get_address(request.user, address_id)
+        if err:
+            return err
+        was_default = address.is_default
+        address.delete()
+        if was_default:
+            next_default = request.user.addresses.first()
+            if next_default:
+                next_default.is_default = True
+                next_default.save(update_fields=["is_default", "updated_at"])
+        return success_response(
+            message="Address deleted successfully.",
+            data=None,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class AddressSetDefaultView(APIView):
+    """
+    Convenience endpoint to set an address as the default shipping address.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="customer_address_set_default",
+        tags=["Customer Addresses"],
+        summary="Set address as default",
+        description="Sets the specified address as the customer's primary default delivery address.",
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="AddressSetDefaultResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": AddressSerializer(),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request, address_id):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        address = user.addresses.filter(pk=address_id).first()
+        if not address:
+            return error_response(
+                message="Address not found.",
+                code="ADDRESS_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        address.is_default = True
+        address.save()
+        return success_response(
+            message="Default address updated successfully.",
+            data=AddressSerializer(address).data,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+# ============================================================================
+# CUSTOMER WISHLIST VIEWS
+# ============================================================================
+
+class WishlistListCreateView(APIView):
+    """
+    CRUD endpoint to view wishlist, add a product to wishlist, or clear wishlist.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="customer_wishlist_list",
+        tags=["Customer Wishlist"],
+        summary="List customer wishlist items",
+        description="Returns all products saved in the authenticated customer's wishlist with up-to-date pricing, stock, and store details.",
+        responses={
+            200: inline_serializer(
+                name="WishlistListResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": serializers.ListSerializer(child=WishlistItemSerializer()),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="WishlistListSuccessExample",
+                summary="Customer Wishlist Items (200 OK)",
+                value={
+                    "success": True,
+                    "message": "Wishlist items retrieved successfully.",
+                    "data": [
+                        {
+                            "id": 10,
+                            "note": "Gift for friend",
+                            "created_at": "2026-10-15T14:20:00Z",
+                            "product": {
+                                "id": 42,
+                                "name": "Classic Oversized Cotton Hoodie",
+                                "slug": "classic-oversized-cotton-hoodie",
+                                "price": "1899.00",
+                                "compare_at_price": "2499.00",
+                                "currency": "INR",
+                                "image_url": "https://example.com/media/products/hoodie.jpg",
+                                "sku": "HOD-COT-01",
+                                "stock": 18,
+                                "is_in_stock": True,
+                                "status": "ACTIVE",
+                                "store": {
+                                    "id": 2,
+                                    "name": "Urban Apparel",
+                                    "slug": "urban-apparel",
+                                },
+                            },
+                        }
+                    ],
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    def get(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        items = user.wishlist_items.select_related("product", "product__store").all()
+        serializer = WishlistItemSerializer(items, many=True)
+        return success_response(
+            message="Wishlist items retrieved successfully.",
+            data=serializer.data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_wishlist_add",
+        tags=["Customer Wishlist"],
+        summary="Add product to wishlist",
+        description="Adds an active product to the authenticated customer's wishlist. If already present, updates its optional note and returns 200 OK.",
+        request=AddWishlistSerializer,
+        responses={
+            201: inline_serializer(
+                name="WishlistAddResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": WishlistItemSerializer(),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+        examples=[
+            OpenApiExample(
+                name="WishlistAddSuccessExample",
+                summary="Product Added to Wishlist (201 Created)",
+                value={
+                    "success": True,
+                    "message": "Product added to wishlist successfully.",
+                    "data": {
+                        "id": 11,
+                        "note": "Buy on payday",
+                        "created_at": "2026-10-16T10:00:00Z",
+                        "product": {
+                            "id": 42,
+                            "name": "Classic Oversized Cotton Hoodie",
+                            "slug": "classic-oversized-cotton-hoodie",
+                            "price": "1899.00",
+                            "compare_at_price": "2499.00",
+                            "currency": "INR",
+                            "image_url": "https://example.com/media/products/hoodie.jpg",
+                            "sku": "HOD-COT-01",
+                            "stock": 18,
+                            "is_in_stock": True,
+                            "status": "ACTIVE",
+                            "store": {
+                                "id": 2,
+                                "name": "Urban Apparel",
+                                "slug": "urban-apparel",
+                            },
+                        },
+                    },
+                },
+                response_only=True,
+                status_codes=["201"],
+            ),
+        ],
+    )
+    def post(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = AddWishlistSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product_id = serializer.validated_data["product_id"]
+        note = serializer.validated_data.get("note", "")
+
+        product = Product.objects.select_related("store").get(pk=product_id)
+        item, created = WishlistItem.objects.get_or_create(
+            user=user,
+            product=product,
+            defaults={"note": note},
+        )
+        if not created and note:
+            item.note = note
+            item.save(update_fields=["note"])
+
+        msg = "Product added to wishlist successfully." if created else "Product is already in your wishlist."
+        stat = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+
+        return success_response(
+            message=msg,
+            data=WishlistItemSerializer(item).data,
+            status_code=stat,
+        )
+
+    @extend_schema(
+        operation_id="customer_wishlist_clear",
+        tags=["Customer Wishlist"],
+        summary="Clear wishlist",
+        description="Removes all products from the customer's wishlist.",
+        responses={
+            200: inline_serializer(
+                name="WishlistClearResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": serializers.JSONField(allow_null=True),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        user.wishlist_items.all().delete()
+        return success_response(
+            message="Wishlist cleared successfully.",
+            data=None,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class WishlistDetailView(APIView):
+    """
+    CRUD endpoint to inspect, update note, or remove a product from the user's wishlist.
+    Accepts either product_id or wishlist item ID as the path parameter.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    def _get_item(self, user, product_id):
+        return user.wishlist_items.select_related("product", "product__store").filter(
+            Q(product_id=product_id) | Q(id=product_id)
+        ).first()
+
+    @extend_schema(
+        operation_id="customer_wishlist_check",
+        tags=["Customer Wishlist"],
+        summary="Check if product is wishlisted",
+        description="Checks whether a given product is saved in the user's wishlist and returns the wishlist item details.",
+        responses={
+            200: inline_serializer(
+                name="WishlistCheckResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="WishlistCheckData",
+                        fields={
+                            "is_in_wishlist": serializers.BooleanField(),
+                            "item": WishlistItemSerializer(allow_null=True),
+                        },
+                    ),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def get(self, request, product_id):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        item = self._get_item(user, product_id)
+        if item:
+            return success_response(
+                message="Product is in your wishlist.",
+                data={
+                    "is_in_wishlist": True,
+                    "item": WishlistItemSerializer(item).data,
+                },
+                status_code=status.HTTP_200_OK,
+            )
+        return success_response(
+            message="Product is not in your wishlist.",
+            data={
+                "is_in_wishlist": False,
+                "item": None,
+            },
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_wishlist_update_note",
+        tags=["Customer Wishlist"],
+        summary="Update wishlist item note",
+        description="Updates personal note or remark for this wishlisted item.",
+        request=UpdateWishlistNoteSerializer,
+        responses={
+            200: inline_serializer(
+                name="WishlistNoteUpdateResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": WishlistItemSerializer(),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def patch(self, request, product_id):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        item = self._get_item(user, product_id)
+        if not item:
+            return error_response(
+                message="Product not found in your wishlist.",
+                code="WISHLIST_ITEM_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = UpdateWishlistNoteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        item.note = serializer.validated_data["note"]
+        item.save(update_fields=["note"])
+        return success_response(
+            message="Wishlist item note updated successfully.",
+            data=WishlistItemSerializer(item).data,
+            status_code=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        operation_id="customer_wishlist_remove",
+        tags=["Customer Wishlist"],
+        summary="Remove product from wishlist",
+        description="Deletes a product from the customer's wishlist by product ID or item ID.",
+        responses={
+            200: inline_serializer(
+                name="WishlistRemoveResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": serializers.JSONField(allow_null=True),
+                },
+            ),
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request, product_id):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        item = self._get_item(user, product_id)
+        if not item:
+            return error_response(
+                message="Product not found in your wishlist.",
+                code="WISHLIST_ITEM_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        item.delete()
+        return success_response(
+            message="Product removed from wishlist successfully.",
+            data=None,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class WishlistMoveToCartView(APIView):
+    """
+    Convenience endpoint to move a wishlisted product into the shopping cart.
+    Adds the product to the active cart and removes it from the wishlist.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="customer_wishlist_move_to_cart",
+        tags=["Customer Wishlist"],
+        summary="Move wishlisted product to cart",
+        description="Transfers a wishlisted item into the user's active shopping cart and automatically deletes it from the wishlist.",
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="WishlistMoveToCartResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="WishlistMoveToCartData",
+                        fields={
+                            "product_id": serializers.IntegerField(),
+                            "cart_item_id": serializers.IntegerField(),
+                            "cart_id": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
+            404: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request, product_id):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        item = user.wishlist_items.select_related("product", "product__store").filter(
+            Q(product_id=product_id) | Q(id=product_id)
+        ).first()
+        if not item:
+            return error_response(
+                message="Product not found in your wishlist.",
+                code="WISHLIST_ITEM_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        product = item.product
+        try:
+            cart = CartService.get_or_create_cart(user=user)
+            cart_item = CartService.add_item(cart, product.id, quantity=1)
+            item.delete()
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(
+                message=msg,
+                code="CART_ADDITION_FAILED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return success_response(
+            message=f"'{product.name}' moved to cart successfully.",
+            data={
+                "product_id": product.id,
+                "cart_item_id": cart_item.id,
+                "cart_id": cart.id,
+            },
+            status_code=status.HTTP_200_OK,
+        )
+
 

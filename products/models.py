@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import IntegrityError, models, transaction
 from django.utils.text import slugify
+from pgvector.django import HnswIndex, VectorField
 
 
 def product_image_upload_path(instance, filename):
@@ -132,3 +133,43 @@ class Product(models.Model):
             return super().save(*args, **kwargs)
 
         super().save(*args, **kwargs)
+ 
+ 
+class CompatibleHnswIndex(HnswIndex):
+    def create_sql(self, model, schema_editor, using="", **kwargs):
+        if schema_editor.connection.vendor != "postgresql":
+            from django.db.backends.ddl_references import Statement
+            return Statement("SELECT 1")
+        return super().create_sql(model, schema_editor, using=using, **kwargs)
+
+    def remove_sql(self, model, schema_editor, **kwargs):
+        if schema_editor.connection.vendor != "postgresql":
+            from django.db.backends.ddl_references import Statement
+            return Statement("SELECT 1")
+        return super().remove_sql(model, schema_editor, **kwargs)
+
+
+class ProductEmbedding(models.Model):
+    product = models.OneToOneField(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="embedding_record",
+    )
+    embedding = VectorField(dimensions=384)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            CompatibleHnswIndex(
+                name="product_vec_hnsw_idx",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Embedding for Product #{self.product_id} ({self.product.name})"
+
+

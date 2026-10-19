@@ -80,13 +80,22 @@ class StoreSerializer(serializers.ModelSerializer):
             return None
         if hasattr(obj, "my_membership_role"):
             return obj.my_membership_role
+        if hasattr(obj, "_prefetched_objects_cache") and "memberships" in obj._prefetched_objects_cache:
+            for m in obj.memberships.all():
+                if m.user_id == request.user.id:
+                    return m.role
+            return None
         membership = obj.memberships.filter(user=request.user).first()
         return membership.role if membership else None
 
     @extend_schema_field(serializers.IntegerField())
     def get_member_count(self, obj):
+        if hasattr(obj, "member_count"):
+            return obj.member_count
         if hasattr(obj, "annotated_member_count"):
             return obj.annotated_member_count
+        if hasattr(obj, "_prefetched_objects_cache") and "memberships" in obj._prefetched_objects_cache:
+            return len(obj.memberships.all())
         return obj.memberships.count()
 
 

@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Count
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -95,16 +96,25 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
         status_filter = request.query_params.get("status")
         role_filter = request.query_params.get("role")
 
+        user_memberships = StoreMembership.objects.filter(user=request.user)
+        if role_filter:
+            user_memberships = user_memberships.filter(role=role_filter.upper())
+        user_store_ids = user_memberships.values("store_id")
+
         if include_archived:
-            queryset = Store.objects.filter(members=request.user)
+            queryset = Store.objects.filter(id__in=user_store_ids)
         else:
-            queryset = Store.objects.for_user(request.user)
+            queryset = Store.objects.not_archived().filter(id__in=user_store_ids)
 
         if status_filter:
             queryset = queryset.filter(status=status_filter.upper())
 
-        if role_filter:
-            queryset = queryset.filter(memberships__user=request.user, memberships__role=role_filter.upper())
+        queryset = (
+            queryset.annotate(member_count=Count("memberships", distinct=True))
+            .select_related("business_verification")
+            .prefetch_related("memberships")
+            .order_by("-created_at")
+        )
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)

@@ -5,5 +5,4 @@ __pycache__/
 *$py.class
 staticfiles/
 test.py
-tests.py
-stores/tests/**
+tests.py                

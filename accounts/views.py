@@ -270,6 +270,7 @@ class LoginPasswordView(APIView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(),
+                                    "is_seller": serializers.BooleanField(),
                                 },
                             ),
                             "access": serializers.CharField(help_text="JWT access token"),
@@ -300,6 +301,7 @@ class LoginPasswordView(APIView):
                             "id": 123,
                             "name": "Krishn Sharma",
                             "email": "user@example.com",
+                            "is_seller": False,
                         },
                         "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
                     },
@@ -335,6 +337,7 @@ class LoginPasswordView(APIView):
                     "id": user.id,
                     "name": user.name,
                     "email": user.email,
+                    "is_seller": user.is_seller,
                 }
             },
             tokens=tokens_for_user(user),
@@ -2676,5 +2679,4 @@ class WishlistMoveToCartView(APIView):
             },
             status_code=status.HTTP_200_OK,
         )
-
 

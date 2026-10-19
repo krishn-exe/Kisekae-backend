@@ -5,4 +5,4 @@ __pycache__/
 *$py.class
 staticfiles/
 test.py
-tests.py
+tests.py                

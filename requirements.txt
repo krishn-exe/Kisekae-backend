@@ -25,5 +25,5 @@ whitenoise==6.12.0
 django-storages==1.14.6
 boto3==1.43.108
 pillow==12.3.0
-pgvector>=0.3.6
-sentence-transformers>=3.0.0
+pgvector==0.5.1
+sentence-transformers==6.1.0

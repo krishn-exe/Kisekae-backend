@@ -12,6 +12,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product",
             "product_name",
             "product_sku",
+            "size",
             "unit_price",
             "quantity",
             "total_price",
@@ -122,6 +123,7 @@ class OrderDeliverSerializer(serializers.Serializer):
 class OrderItemInputSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1)
     quantity = serializers.IntegerField(min_value=1, default=1)
+    size = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class OrderCreateSerializer(serializers.Serializer):
@@ -167,3 +169,27 @@ class ReturnStatusUpdateSerializer(serializers.Serializer):
         choices=[ReturnStatus.APPROVED, ReturnStatus.REJECTED, ReturnStatus.COMPLETED]
     )
     admin_notes = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class CustomerOrderTrackSerializer(serializers.ModelSerializer):
+    store_name = serializers.CharField(source="store.name", read_only=True)
+    items = OrderItemSerializer(many=True, read_only=True)
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "order_number",
+            "store_name",
+            "status",
+            "total_amount",
+            "currency",
+            "tracking_number",
+            "tracking_url",
+            "delivered_at",
+            "created_at",
+            "updated_at",
+            "items",
+            "status_history",
+        ]

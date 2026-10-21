@@ -27,6 +27,7 @@ from .responses import error_response, success_response
 from .serializers import (
     AddressSerializer,
     AddWishlistSerializer,
+    BulkMoveWishlistToCartSerializer,
     ChangePasswordSerializer,
     GitHubOAuthSerializer,
     GoogleOAuthSerializer,
@@ -2680,3 +2681,108 @@ class WishlistMoveToCartView(APIView):
             status_code=status.HTTP_200_OK,
         )
 
+
+
+class WishlistBulkMoveToCartView(APIView):
+    """
+    Move wishlisted products into the user's shopping cart in bulk.
+    If product_ids is omitted or empty, moves all items in the customer's wishlist.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="customer_wishlist_bulk_move_to_cart",
+        tags=["Customer Wishlist"],
+        summary="Bulk move wishlist items to cart",
+        description="Transfers multiple (or all) wishlisted items into the user's active shopping cart and automatically removes successfully added items from the wishlist.",
+        request=BulkMoveWishlistToCartSerializer,
+        responses={
+            200: inline_serializer(
+                name="WishlistBulkMoveToCartResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="WishlistBulkMoveToCartData",
+                        fields={
+                            "moved_count": serializers.IntegerField(),
+                            "skipped_count": serializers.IntegerField(),
+                            "moved_items": serializers.ListField(),
+                            "skipped_items": serializers.ListField(),
+                            "cart_id": serializers.IntegerField(allow_null=True),
+                            "total_cart_items": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request):
+        user = request.user
+        if not user.is_active:
+            return error_response(
+                message="This account is inactive.",
+                code="ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = BulkMoveWishlistToCartSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        product_ids = serializer.validated_data.get("product_ids", [])
+
+        queryset = user.wishlist_items.select_related("product", "product__store").prefetch_related("product__sizes")
+        if product_ids:
+            queryset = queryset.filter(Q(product_id__in=product_ids) | Q(id__in=product_ids))
+
+        wishlist_items = list(queryset)
+        if not wishlist_items:
+            return success_response(
+                message="No matching wishlist items to move.",
+                data={
+                    "moved_count": 0,
+                    "skipped_count": 0,
+                    "moved_items": [],
+                    "skipped_items": [],
+                    "cart_id": None,
+                    "total_cart_items": 0,
+                },
+            )
+
+        cart = CartService.get_or_create_cart(user=user)
+        moved_items = []
+        skipped_items = []
+
+        for item in wishlist_items:
+            product = item.product
+            try:
+                cart_item = CartService.add_item(cart, product.id, quantity=1)
+                item.delete()
+                moved_items.append({
+                    "product_id": product.id,
+                    "product_name": product.name,
+                    "cart_item_id": cart_item.id,
+                    "size": cart_item.size,
+                })
+            except ValidationError as exc:
+                msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+                skipped_items.append({
+                    "product_id": product.id,
+                    "product_name": product.name,
+                    "reason": msg,
+                })
+
+        cart.refresh_from_db()
+        return success_response(
+            message=f"{len(moved_items)} item(s) moved to cart successfully.",
+            data={
+                "moved_count": len(moved_items),
+                "skipped_count": len(skipped_items),
+                "moved_items": moved_items,
+                "skipped_items": skipped_items,
+                "cart_id": cart.id,
+                "total_cart_items": cart.total_items,
+            },
+        )

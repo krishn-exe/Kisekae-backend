@@ -38,6 +38,7 @@ urlpatterns = [
     path('stores/', include('stores.urls')),
     path('products/', include('products.public_urls')),
     path('cart/', include('cart.urls')),
+    path('orders/', include('orders.customer_urls')),
 
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),

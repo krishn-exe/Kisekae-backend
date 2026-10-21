@@ -55,19 +55,43 @@ class OrderService:
             if not product.is_active:
                 raise ValidationError(f"Product '{product.name}' is not currently active for purchase.")
 
-            if product.stock < qty:
-                raise ValidationError(
-                    f"Insufficient stock for '{product.name}'. Available: {product.stock}, requested: {qty}."
-                )
+            size = str(item_data.get("size", "")).strip().upper()
 
-            # Auto-decrement stock via InventoryService
-            InventoryService.update_stock(
-                product=product,
-                adjustment=-qty,
-                reason=StockChangeReason.ORDER_PLACED,
-                notes=f"Order {order.order_number}",
-                user=user,
-            )
+            if size and product.sizes.exists():
+                size_obj = product.sizes.select_for_update().filter(size=size).first()
+                if not size_obj:
+                    valid_sizes = list(product.sizes.values_list("size", flat=True))
+                    raise ValidationError(
+                        f"Size '{size}' not found for product '{product.name}'. Available sizes: {', '.join(valid_sizes)}."
+                    )
+                if size_obj.stock < qty:
+                    raise ValidationError(
+                        f"Insufficient stock for '{product.name}' in size '{size}'. Available: {size_obj.stock}, requested: {qty}."
+                    )
+                size_obj.stock -= qty
+                size_obj.save(update_fields=["stock", "updated_at"])
+                product.sync_total_stock()
+                # Create stock update log
+                InventoryService.update_stock(
+                    product=product,
+                    new_stock=product.stock,
+                    reason=StockChangeReason.ORDER_PLACED,
+                    notes=f"Order {order.order_number} (Size {size})",
+                    user=user,
+                )
+            else:
+                if product.stock < qty:
+                    raise ValidationError(
+                        f"Insufficient stock for '{product.name}'. Available: {product.stock}, requested: {qty}."
+                    )
+                # Auto-decrement stock via InventoryService
+                InventoryService.update_stock(
+                    product=product,
+                    adjustment=-qty,
+                    reason=StockChangeReason.ORDER_PLACED,
+                    notes=f"Order {order.order_number}",
+                    user=user,
+                )
 
             item_total = product.price * qty
             total_amount += item_total
@@ -77,6 +101,7 @@ class OrderService:
                 product=product,
                 product_name=product.name,
                 product_sku=product.sku,
+                size=size,
                 unit_price=product.price,
                 quantity=qty,
                 total_price=item_total,

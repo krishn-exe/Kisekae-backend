@@ -255,3 +255,67 @@ class CartService:
             "subtotal": float(cart.subtotal),
             "currency": cart.currency,
         }
+
+    @staticmethod
+    @transaction.atomic
+    def checkout_cart(cart, user, customer_data):
+        """
+        Converts all items in the cart into one or more confirmed orders grouped by store.
+        Skips payment gateway capture for PoC, advancing orders directly to CONFIRMED.
+        Empties the cart upon successful order placement.
+        """
+        if not user or not user.is_authenticated:
+            raise ValidationError("An authenticated user account is required to complete checkout.")
+
+        items = list(cart.items.select_related("product", "product__store").prefetch_related("product__sizes").all())
+        if not items:
+            raise ValidationError("Cannot checkout an empty cart.")
+
+        # Validate cart stock and store active status
+        report = CartService.validate_cart(cart)
+        if not report["is_valid"]:
+            issue_msgs = [f"{iss['product_name']}: {iss['issue']}" for iss in report["issues"]]
+            raise ValidationError(f"Cart cannot be checked out due to inventory issues: {'; '.join(issue_msgs)}")
+
+        # Group items by store
+        items_by_store = {}
+        for item in items:
+            store = item.product.store
+            items_by_store.setdefault(store, []).append(item)
+
+        created_orders = []
+        from orders.services import OrderService
+        from orders.models import OrderStatus
+
+        for store, store_items in items_by_store.items():
+            items_payload = [
+                {
+                    "product_id": item.product.id,
+                    "quantity": item.quantity,
+                    "size": item.size,
+                }
+                for item in store_items
+            ]
+
+            order = OrderService.create_order(
+                store=store,
+                customer_data=customer_data,
+                items_data=items_payload,
+                user=user,
+            )
+
+            # Direct confirmation for PoC (skipping payment gateway capture)
+            OrderService.update_order_status(
+                order=order,
+                new_status=OrderStatus.CONFIRMED,
+                user=user,
+                notes="Order placed and confirmed directly (PoC checkout).",
+            )
+
+            created_orders.append(order)
+
+        # Clear items from cart
+        cart.items.all().delete()
+        cart.save(update_fields=["updated_at"])
+
+        return created_orders

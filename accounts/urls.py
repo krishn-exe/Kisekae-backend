@@ -19,6 +19,7 @@ from .views import (
     UserSettingsView,
     WishlistDetailView,
     WishlistListCreateView,
+    WishlistBulkMoveToCartView,
     WishlistMoveToCartView,
 )
 
@@ -49,5 +50,7 @@ urlpatterns = [
     # Customer Wishlist
     path("wishlist/", WishlistListCreateView.as_view(), name="wishlist-list-create"),
     path("wishlist/<int:product_id>/", WishlistDetailView.as_view(), name="wishlist-detail"),
+    path("wishlist/move-to-cart/", WishlistBulkMoveToCartView.as_view(), name="wishlist-bulk-move-to-cart"),
+    path("wishlist/bulk-move-to-cart/", WishlistBulkMoveToCartView.as_view(), name="wishlist-bulk-move"),
     path("wishlist/<int:product_id>/move-to-cart/", WishlistMoveToCartView.as_view(), name="wishlist-move-to-cart"),
-]
+]

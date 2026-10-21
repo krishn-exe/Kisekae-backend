@@ -20,6 +20,7 @@ from .serializers import (
     OrderStatusUpdateSerializer,
     ReturnRequestCreateSerializer,
     ReturnRequestSerializer,
+    CustomerOrderTrackSerializer,
     ReturnStatusUpdateSerializer,
 )
 from .services import OrderService
@@ -459,4 +460,165 @@ class ReturnRequestDetailView(BaseOrderView):
         return success_response(
             message=f"Return request status updated to {resolved_req.status}.",
             data=ReturnRequestSerializer(resolved_req).data,
+        )
+
+
+# ==============================================================================
+# CUSTOMER ORDER TRACKING & HISTORY VIEWS
+# ==============================================================================
+
+class CustomerOrderListView(APIView):
+    """
+    Returns paginated list of orders placed by the authenticated customer.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+    pagination_class = StorePagination
+
+    @extend_schema(
+        tags=["Customer Orders"],
+        summary="List customer orders",
+        description="Returns orders placed by the authenticated customer. Supports filtering by status.",
+        parameters=[
+            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURNED)", required=False, type=str),
+        ],
+        responses={200: OrderListSerializer(many=True)},
+    )
+    def get(self, request):
+        queryset = Order.objects.filter(user=request.user).prefetch_related("items").order_by("-created_at")
+
+        status_param = request.query_params.get("status")
+        if status_param and status_param.upper() in OrderStatus.values:
+            queryset = queryset.filter(status=status_param.upper())
+
+        paginator = self.pagination_class()
+        paginated_orders = paginator.paginate_queryset(queryset, request)
+        serializer = OrderListSerializer(paginated_orders, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class CustomerOrderDetailView(APIView):
+    """
+    Returns full order details for an order placed by the authenticated customer.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Customer Orders"],
+        summary="Get customer order detail",
+        description="Returns detailed information for a specific order owned by the customer, including itemized products, delivery details, and status history.",
+        responses={200: OrderDetailSerializer, 404: ORDER_ERROR_SCHEMA},
+    )
+    def get(self, request, order_id):
+        order = (
+            Order.objects.filter(user=request.user, pk=order_id)
+            .select_related("store")
+            .prefetch_related("items", "status_history", "return_requests")
+            .first()
+        )
+        if not order:
+            return error_response(
+                message="Order not found.",
+                code="ORDER_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        return success_response(
+            message="Order details retrieved successfully.",
+            data=OrderDetailSerializer(order).data,
+        )
+
+
+class CustomerOrderTrackView(APIView):
+    """
+    Returns live tracking status and timeline for an order by order number or order ID.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Customer Orders"],
+        summary="Track order status & timeline",
+        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order.",
+        responses={200: CustomerOrderTrackSerializer, 404: ORDER_ERROR_SCHEMA},
+    )
+    def get(self, request, order_number=None, order_id=None):
+        queryset = (
+            Order.objects.filter(user=request.user)
+            .select_related("store")
+            .prefetch_related("items", "status_history")
+        )
+        if order_number:
+            order = queryset.filter(order_number=order_number).first()
+        elif order_id:
+            order = queryset.filter(pk=order_id).first()
+        else:
+            return error_response(
+                message="Order number or ID required.",
+                code="INVALID_REQUEST",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not order:
+            return error_response(
+                message="Order not found.",
+                code="ORDER_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        return success_response(
+            message="Order tracking details retrieved successfully.",
+            data=CustomerOrderTrackSerializer(order).data,
+        )
+
+
+class CustomerOrderCancelView(APIView):
+    """
+    Allows customer to cancel an order if it is still in PENDING or CONFIRMED status.
+    """
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Customer Orders"],
+        summary="Cancel customer order",
+        description="Cancels an order if it has not yet reached PROCESSING or SHIPPED status, restoring item inventory.",
+        request=None,
+        responses={200: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, order_id):
+        order = Order.objects.filter(user=request.user, pk=order_id).first()
+        if not order:
+            return error_response(
+                message="Order not found.",
+                code="ORDER_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if order.status not in {OrderStatus.PENDING, OrderStatus.CONFIRMED}:
+            return error_response(
+                message=f"Cannot cancel order in '{order.status}' status. Only PENDING or CONFIRMED orders can be cancelled.",
+                code="ORDER_CANNOT_BE_CANCELLED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            cancelled_order = OrderService.update_order_status(
+                order=order,
+                new_status=OrderStatus.CANCELLED,
+                user=request.user,
+                notes="Cancelled by customer.",
+            )
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(
+                message=msg,
+                code="CANCELLATION_FAILED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return success_response(
+            message=f"Order {cancelled_order.order_number} has been cancelled successfully.",
+            data=OrderDetailSerializer(cancelled_order).data,
         )

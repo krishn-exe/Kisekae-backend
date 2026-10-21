@@ -5,6 +5,7 @@ from .views import (
     CartClearView,
     CartDetailView,
     CartItemDetailView,
+    CartCheckoutView,
     CartValidateView,
 )
 
@@ -14,6 +15,9 @@ urlpatterns = [
 
     # Clear entire cart
     path("clear/", CartClearView.as_view(), name="cart-clear"),
+
+    # Checkout cart
+    path("checkout/", CartCheckoutView.as_view(), name="cart-checkout"),
 
     # Validate cart before checkout
     path("validate/", CartValidateView.as_view(), name="cart-validate"),

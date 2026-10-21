@@ -110,6 +110,12 @@ class OrderItem(models.Model):
     )
     product_name = models.CharField(max_length=255)
     product_sku = models.CharField(max_length=100, blank=True, default="")
+    size = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Selected apparel/shoe size (e.g., S, M, L, XL or 6-10).",
+    )
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)

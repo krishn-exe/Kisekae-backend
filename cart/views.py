@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
@@ -10,6 +10,8 @@ from .models import Cart
 from .serializers import (
     AddToCartSerializer,
     CartSerializer,
+    CartCheckoutResponseSerializer,
+    CartCheckoutSerializer,
     UpdateCartItemSerializer,
 )
 from .services import CartService
@@ -232,4 +234,130 @@ class CartValidateView(BaseCartView):
         return success_response(
             message="Cart validation completed.",
             data=report,
+        )
+
+
+class CartCheckoutView(APIView):
+    """
+    Converts active shopping cart into confirmed order(s).
+    Requires customer authentication.
+    Resolves shipping details from saved Address ID or provided request payload.
+    Payment gateway capture is skipped for PoC; orders are placed directly into CONFIRMED status.
+    """
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Cart & Checkout"],
+        summary="Checkout shopping cart into orders",
+        description="Converts the user's shopping cart into confirmed orders grouped by store. Accepts saved address_id or inline shipping details. Automatically decrements inventory and empties the cart.",
+        request=CartCheckoutSerializer,
+        responses={200: CartCheckoutResponseSerializer, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        user = request.user
+        serializer = CartCheckoutSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return error_response(
+                message="Invalid checkout data.",
+                code="VALIDATION_ERROR",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                details=serializer.errors,
+            )
+
+        data = serializer.validated_data
+        address_id = data.get("address_id")
+
+        customer_name = data.get("customer_name") or ""
+        customer_email = data.get("customer_email") or user.email
+        customer_phone = data.get("customer_phone") or getattr(user, "phone", "")
+        shipping_address = data.get("shipping_address") or ""
+        notes = data.get("notes") or ""
+
+        # Resolve address from saved address if provided or fallback
+        from accounts.models import Address
+        address_obj = None
+        if address_id:
+            address_obj = Address.objects.filter(user=user, pk=address_id).first()
+            if not address_obj:
+                return error_response(
+                    message=f"Saved address ID {address_id} not found on your profile.",
+                    code="ADDRESS_NOT_FOUND",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+        elif not shipping_address:
+            # Check for user default address
+            address_obj = Address.objects.filter(user=user, is_default=True).first() or Address.objects.filter(user=user).first()
+
+        if address_obj:
+            customer_name = customer_name or address_obj.recipient_name or getattr(user, "name", "") or user.email.split("@")[0]
+            customer_phone = customer_phone or address_obj.phone or getattr(user, "phone", "0000000000")
+            full_addr_parts = [
+                address_obj.address_line_1,
+                address_obj.address_line_2,
+                address_obj.city,
+                address_obj.state,
+                address_obj.postal_code,
+                address_obj.country,
+            ]
+            shipping_address = ", ".join([p for p in full_addr_parts if p])
+
+        if not customer_name:
+            customer_name = getattr(user, "name", "") or user.email.split("@")[0]
+        if not customer_phone:
+            customer_phone = getattr(user, "phone", "0000000000") or "0000000000"
+
+        if not shipping_address:
+            return error_response(
+                message="Shipping address is required. Please provide shipping_address or a valid address_id.",
+                code="SHIPPING_ADDRESS_REQUIRED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        customer_data = {
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "customer_phone": customer_phone,
+            "shipping_address": shipping_address,
+            "notes": notes,
+        }
+
+        cart = CartService.get_or_create_cart(user=user)
+
+        try:
+            orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data)
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(
+                message=msg,
+                code="CHECKOUT_FAILED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        total_amount = sum(o.total_amount for o in orders)
+        currency = orders[0].currency if orders else "INR"
+
+        orders_summary = [
+            {
+                "order_id": o.id,
+                "order_number": o.order_number,
+                "store_id": o.store.id,
+                "store_name": o.store.name,
+                "total_amount": o.total_amount,
+                "currency": o.currency,
+                "items_count": o.items.count(),
+                "status": o.status,
+            }
+            for o in orders
+        ]
+
+        return success_response(
+            message=f"Checkout completed successfully. {len(orders)} order(s) placed.",
+            data={
+                "orders": orders_summary,
+                "total_orders_placed": len(orders),
+                "total_amount": total_amount,
+                "currency": currency,
+            },
+            status_code=status.HTTP_201_CREATED,
         )

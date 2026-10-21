@@ -564,4 +564,13 @@ class UpdateWishlistNoteSerializer(serializers.Serializer):
         max_length=255,
         help_text="Updated note or remark for this wishlisted item.",
     )
-
+
+
+
+class BulkMoveWishlistToCartSerializer(serializers.Serializer):
+    product_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        default=list,
+        help_text="Optional list of product IDs to move to cart. If empty or omitted, all items currently in the user's wishlist will be moved.",
+    )

@@ -335,3 +335,75 @@ class RecommendationAndSearchHistoryTestCase(TestCase):
         self.assertEqual(order.user, self.user)
         self.assertEqual(order.items.count(), 1)
         self.assertEqual(order.items.first().product, self.hoodie)
+
+    def test_cold_start_popularity_order_and_cancellation_exclusion(self):
+        """Cold-start recommendations exclude cancelled orders from popularity and preserve rank order."""
+        cache.clear()
+
+        # Pants: 1 delivered order, 1 cancelled order -> effective sales = 1
+        order_pants_1 = Order.objects.create(
+            user=self.user,
+            store=self.store,
+            customer_name="Customer",
+            customer_email="c@test.com",
+            customer_phone="1234567890",
+            shipping_address="Tokyo",
+            status=OrderStatus.DELIVERED,
+            total_amount=Decimal("100.00"),
+        )
+        OrderItem.objects.create(
+            order=order_pants_1,
+            product=self.pants,
+            product_name=self.pants.name,
+            quantity=1,
+            unit_price=self.pants.price,
+            total_price=self.pants.price,
+        )
+
+        order_pants_2 = Order.objects.create(
+            user=self.user,
+            store=self.store,
+            customer_name="Customer",
+            customer_email="c@test.com",
+            customer_phone="1234567890",
+            shipping_address="Tokyo",
+            status=OrderStatus.CANCELLED,
+            total_amount=Decimal("100.00"),
+        )
+        OrderItem.objects.create(
+            order=order_pants_2,
+            product=self.pants,
+            product_name=self.pants.name,
+            quantity=1,
+            unit_price=self.pants.price,
+            total_price=self.pants.price,
+        )
+
+        # Shoes: 2 delivered orders -> effective sales = 2
+        for _ in range(2):
+            o = Order.objects.create(
+                user=self.user,
+                store=self.store,
+                customer_name="Customer",
+                customer_email="c@test.com",
+                customer_phone="1234567890",
+                shipping_address="Tokyo",
+                status=OrderStatus.DELIVERED,
+                total_amount=Decimal("100.00"),
+            )
+            OrderItem.objects.create(
+                order=o,
+                product=self.shoes,
+                product_name=self.shoes.name,
+                quantity=1,
+                unit_price=self.shoes.price,
+                total_price=self.shoes.price,
+            )
+
+        cold_start_products = list(RecommendationService.get_cold_start_recommendations(limit=10))
+        cold_ids = [p.id for p in cold_start_products]
+
+        # Shoes (2 sales) must come before Pants (1 sale)
+        self.assertIn(self.shoes.id, cold_ids)
+        self.assertIn(self.pants.id, cold_ids)
+        self.assertLess(cold_ids.index(self.shoes.id), cold_ids.index(self.pants.id))

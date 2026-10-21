@@ -73,29 +73,6 @@ class NotificationEmailService:
         )
 
     @staticmethod
-    def send_return_status_email(return_req):
-        """
-        Dispatches customer return request outcome updates.
-        """
-        user = return_req.order.user
-        if user and hasattr(user, "settings"):
-            if not user.settings.email_notifications:
-                logger.info("Return email skipped for user %s per notification settings", user.email)
-                return False
-
-        subject = f"Return Update for Order #{return_req.order.order_number} ({return_req.status})"
-        context = {
-            "return_req": return_req,
-        }
-
-        return NotificationEmailService.send_multipart_email(
-            to_email=return_req.order.customer_email,
-            subject=subject,
-            template_name="emails/return_status.html",
-            context=context,
-        )
-
-    @staticmethod
     def send_seller_new_order_alert(order):
         """
         Dispatches new order alert to all Store Owners and Managers who have order_alerts enabled.

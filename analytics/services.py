@@ -8,7 +8,7 @@ from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.utils import timezone
 
 from inventory.services import InventoryService
-from orders.models import Order, OrderItem, OrderStatus, OrderStatusHistory, ReturnRequest
+from orders.models import Order, OrderItem, OrderStatus, OrderStatusHistory
 from products.models import Product
 
 
@@ -185,17 +185,8 @@ class AnalyticsService:
             )
         )
 
-        # Count returns per product
-        returns_agg = (
-            ReturnRequest.objects.filter(order__store=store)
-            .values("item__product_id")
-            .annotate(count=Count("id"))
-        )
-        return_map = {
-            r["item__product_id"]: r["count"]
-            for r in returns_agg
-            if r["item__product_id"] is not None
-        }
+        # Returns feature skipped (PoC scope)
+        return_map = {}
 
         results = []
         for row in items_agg:

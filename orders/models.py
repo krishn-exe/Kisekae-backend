@@ -16,22 +16,15 @@ class OrderStatus(models.TextChoices):
     RETURNED = "RETURNED", "Returned"
 
 
-class ReturnStatus(models.TextChoices):
-    REQUESTED = "REQUESTED", "Requested"
-    APPROVED = "APPROVED", "Approved"
-    REJECTED = "REJECTED", "Rejected"
-    COMPLETED = "COMPLETED", "Completed"
-
-
 # Valid state transitions
 VALID_TRANSITIONS = {
     OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
     OrderStatus.CONFIRMED: {OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
     OrderStatus.PROCESSING: {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
-    OrderStatus.SHIPPED: {OrderStatus.DELIVERED, OrderStatus.RETURN_REQUESTED},
-    OrderStatus.DELIVERED: {OrderStatus.RETURN_REQUESTED},
-    OrderStatus.RETURN_REQUESTED: {OrderStatus.RETURNED, OrderStatus.DELIVERED},
+    OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
+    OrderStatus.DELIVERED: set(),
     OrderStatus.CANCELLED: set(),
+    OrderStatus.RETURN_REQUESTED: set(),
     OrderStatus.RETURNED: set(),
 }
 
@@ -151,42 +144,3 @@ class OrderStatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.order_number}: {self.from_status} -> {self.to_status}"
-
-
-class ReturnRequest(models.Model):
-    order = models.ForeignKey(
-        Order,
-        on_delete=models.CASCADE,
-        related_name="return_requests",
-    )
-    item = models.ForeignKey(
-        OrderItem,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="return_requests",
-    )
-    reason = models.CharField(max_length=255)
-    customer_notes = models.TextField(blank=True, default="")
-    status = models.CharField(
-        max_length=30,
-        choices=ReturnStatus.choices,
-        default=ReturnStatus.REQUESTED,
-        db_index=True,
-    )
-    admin_notes = models.TextField(blank=True, default="")
-    resolved_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="resolved_returns",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    resolved_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"Return for {self.order.order_number} ({self.status})"

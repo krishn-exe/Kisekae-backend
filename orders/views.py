@@ -10,7 +10,7 @@ from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
 
-from .models import Order, OrderStatus, ReturnRequest, ReturnStatus
+from .models import Order, OrderStatus
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
     OrderCreateSerializer,
@@ -18,10 +18,7 @@ from .serializers import (
     OrderDetailSerializer,
     OrderListSerializer,
     OrderStatusUpdateSerializer,
-    ReturnRequestCreateSerializer,
-    ReturnRequestSerializer,
     CustomerOrderTrackSerializer,
-    ReturnStatusUpdateSerializer,
 )
 from .services import OrderService
 
@@ -182,7 +179,7 @@ class OrderDetailView(BaseOrderView):
             return err
 
         order = Order.objects.filter(store=store, pk=order_id).prefetch_related(
-            "items", "status_history", "return_requests"
+            "items", "status_history"
         ).first()
 
         if not order:
@@ -342,127 +339,6 @@ class BulkOrderStatusUpdateView(BaseOrderView):
         )
 
 
-class ReturnRequestListCreateView(BaseOrderView):
-    @extend_schema(
-        tags=["Orders & Returns"],
-        summary="List return and replacement requests",
-        description="Returns all return/replacement requests for the store.",
-        responses={200: ReturnRequestSerializer(many=True)},
-    )
-    def get(self, request, pk):
-        store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
-        if err:
-            return err
-
-        returns = ReturnRequest.objects.filter(order__store=store).select_related("order", "item", "resolved_by")
-        return success_response(
-            message="Return requests fetched successfully.",
-            data=ReturnRequestSerializer(returns, many=True).data,
-        )
-
-    @extend_schema(
-        tags=["Orders & Returns"],
-        summary="Request a return or replacement for an order",
-        request=ReturnRequestCreateSerializer,
-        responses={201: ReturnRequestSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
-    )
-    def post(self, request, pk, order_id):
-        self.throttle_scope = "store_write"
-        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
-        if err:
-            return err
-
-        order = Order.objects.filter(store=store, pk=order_id).first()
-        if not order:
-            return error_response(
-                message="Order not found in this store.",
-                code="ORDER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = ReturnRequestCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        item = None
-        if data.get("item_id"):
-            item = order.items.filter(pk=data["item_id"]).first()
-            if not item:
-                return error_response(
-                    message="OrderItem not found in this order.",
-                    code="ITEM_NOT_FOUND",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
-
-        try:
-            return_req = OrderService.create_return_request(
-                order=order,
-                item=item,
-                reason=data["reason"],
-                customer_notes=data.get("customer_notes", ""),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="RETURN_REQUEST_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        return success_response(
-            message="Return request submitted successfully.",
-            data=ReturnRequestSerializer(return_req).data,
-            status_code=status.HTTP_201_CREATED,
-        )
-
-
-class ReturnRequestDetailView(BaseOrderView):
-    throttle_scope = "store_write"
-
-    @extend_schema(
-        tags=["Orders & Returns"],
-        summary="Resolve return request (Approve / Reject / Complete)",
-        request=ReturnStatusUpdateSerializer,
-        responses={200: ReturnRequestSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
-    )
-    def patch(self, request, pk, return_id):
-        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
-        if err:
-            return err
-
-        return_req = ReturnRequest.objects.filter(order__store=store, pk=return_id).first()
-        if not return_req:
-            return error_response(
-                message="Return request not found.",
-                code="RETURN_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = ReturnStatusUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        try:
-            resolved_req = OrderService.resolve_return_request(
-                return_request=return_req,
-                new_status=data["status"],
-                user=request.user,
-                admin_notes=data.get("admin_notes", ""),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="RETURN_RESOLUTION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        return success_response(
-            message=f"Return request status updated to {resolved_req.status}.",
-            data=ReturnRequestSerializer(resolved_req).data,
-        )
-
-
 # ==============================================================================
 # CUSTOMER ORDER TRACKING & HISTORY VIEWS
 # ==============================================================================
@@ -514,7 +390,7 @@ class CustomerOrderDetailView(APIView):
         order = (
             Order.objects.filter(user=request.user, pk=order_id)
             .select_related("store")
-            .prefetch_related("items", "status_history", "return_requests")
+            .prefetch_related("items", "status_history")
             .first()
         )
         if not order:

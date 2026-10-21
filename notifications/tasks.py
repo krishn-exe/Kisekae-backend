@@ -26,26 +26,6 @@ def send_order_lifecycle_email_task(order_id: int, event_type: str, notes: str =
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def send_return_status_email_task(return_req_id: int):
-    """
-    Asynchronous task to deliver return request status updates.
-    """
-    from orders.models import ReturnRequest
-    from .email_service import NotificationEmailService
-
-    return_req = (
-        ReturnRequest.objects.filter(pk=return_req_id)
-        .select_related("order", "order__user", "order__store", "item")
-        .first()
-    )
-    if not return_req:
-        logger.warning("send_return_status_email_task: ReturnRequest %d not found.", return_req_id)
-        return False
-
-    return NotificationEmailService.send_return_status_email(return_req=return_req)
-
-
-@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def send_seller_new_order_alert_task(order_id: int):
     """
     Asynchronous task to deliver new order alerts to Store Owners and Managers.

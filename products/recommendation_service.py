@@ -222,10 +222,12 @@ class RecommendationService:
         cache_key = f"rec:cold_start:{category or 'all'}:{limit}"
         cached_ids = cache.get(cache_key)
         if cached_ids:
+            whens = [When(id=pk, then=pos) for pos, pk in enumerate(cached_ids)]
             return (
                 Product.objects.filter(id__in=cached_ids)
                 .select_related("store")
                 .prefetch_related("images", "sizes")
+                .order_by(Case(*whens))
             )
 
         thirty_days_ago = timezone.now() - timedelta(days=30)
@@ -239,7 +241,9 @@ class RecommendationService:
             .annotate(
                 recent_sales=Count(
                     "order_items",
-                    filter=Q(order_items__order__created_at__gte=thirty_days_ago),
+                    filter=Q(
+                        order_items__order__created_at__gte=thirty_days_ago,
+                    ) & ~Q(order_items__order__status=OrderStatus.CANCELLED),
                 )
             )
             .order_by("-recent_sales", "-created_at")
@@ -253,11 +257,15 @@ class RecommendationService:
         product_ids = list(qs.values_list("id", flat=True)[:limit])
         if product_ids:
             cache.set(cache_key, product_ids, timeout=COLD_START_CACHE_TTL)
+        else:
+            return Product.objects.none()
 
+        whens = [When(id=pk, then=pos) for pos, pk in enumerate(product_ids)]
         return (
             Product.objects.filter(id__in=product_ids)
             .select_related("store")
             .prefetch_related("images", "sizes")
+            .order_by(Case(*whens))
         )
 
     @classmethod

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 
-from .models import Order, OrderItem, OrderStatus, OrderStatusHistory, ReturnRequest, ReturnStatus
+from .models import Order, OrderItem, OrderStatus, OrderStatusHistory
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -35,28 +35,6 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
         ]
 
 
-class ReturnRequestSerializer(serializers.ModelSerializer):
-    resolved_by_name = serializers.CharField(source="resolved_by.name", read_only=True, allow_null=True)
-    item_product_name = serializers.CharField(source="item.product_name", read_only=True, allow_null=True)
-
-    class Meta:
-        model = ReturnRequest
-        fields = [
-            "id",
-            "order",
-            "item",
-            "item_product_name",
-            "reason",
-            "customer_notes",
-            "status",
-            "admin_notes",
-            "resolved_by",
-            "resolved_by_name",
-            "created_at",
-            "resolved_at",
-        ]
-
-
 class OrderListSerializer(serializers.ModelSerializer):
     items_count = serializers.IntegerField(source="items.count", read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
@@ -83,7 +61,6 @@ class OrderListSerializer(serializers.ModelSerializer):
 class OrderDetailSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
-    return_requests = ReturnRequestSerializer(many=True, read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
 
     class Meta:
@@ -105,7 +82,6 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "delivered_at",
             "items",
             "status_history",
-            "return_requests",
             "created_at",
             "updated_at",
         ]
@@ -156,19 +132,6 @@ class BulkOrderStatusUpdateSerializer(serializers.Serializer):
         child=BulkOrderItemStatusSerializer(),
         allow_empty=False,
     )
-
-
-class ReturnRequestCreateSerializer(serializers.Serializer):
-    item_id = serializers.IntegerField(required=False, allow_null=True)
-    reason = serializers.CharField(max_length=255)
-    customer_notes = serializers.CharField(required=False, allow_blank=True, default="")
-
-
-class ReturnStatusUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(
-        choices=[ReturnStatus.APPROVED, ReturnStatus.REJECTED, ReturnStatus.COMPLETED]
-    )
-    admin_notes = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class CustomerOrderTrackSerializer(serializers.ModelSerializer):

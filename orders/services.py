@@ -13,8 +13,6 @@ from .models import (
     OrderItem,
     OrderStatus,
     OrderStatusHistory,
-    ReturnRequest,
-    ReturnStatus,
 )
 
 
@@ -150,27 +148,30 @@ class OrderService:
             order.tracking_url = tracking_url
             update_fields.append("tracking_url")
 
-        # If order is cancelled, restore stock
+        # If order is cancelled, restore stock (including size-level stock if applicable)
         if new_status == OrderStatus.CANCELLED:
             for item in order.items.select_related("product").all():
                 if item.product:
+                    size_name = (item.size or "").strip().upper()
+                    if size_name and item.product.sizes.exists():
+                        size_obj = item.product.sizes.filter(size=size_name).first()
+                        if size_obj:
+                            size_obj.stock += item.quantity
+                            size_obj.save(update_fields=["stock", "updated_at"])
+                            item.product.sync_total_stock()
+                            InventoryService.update_stock(
+                                product=item.product,
+                                new_stock=item.product.stock,
+                                reason=StockChangeReason.ORDER_CANCELLED,
+                                notes=f"Restored from cancelled order {order.order_number} (Size {size_name})",
+                                user=user,
+                            )
+                            continue
                     InventoryService.update_stock(
                         product=item.product,
                         adjustment=item.quantity,
                         reason=StockChangeReason.ORDER_CANCELLED,
                         notes=f"Restored from cancelled order {order.order_number}",
-                        user=user,
-                    )
-
-        # If order is returned, restock items
-        if new_status == OrderStatus.RETURNED:
-            for item in order.items.select_related("product").all():
-                if item.product:
-                    InventoryService.update_stock(
-                        product=item.product,
-                        adjustment=item.quantity,
-                        reason=StockChangeReason.RETURN_RESTOCK,
-                        notes=f"Restocked from returned order {order.order_number}",
                         user=user,
                     )
 
@@ -203,64 +204,3 @@ class OrderService:
             user=user,
             notes=notes or "Order marked as delivered.",
         )
-
-    @staticmethod
-    @transaction.atomic
-    def create_return_request(order, item=None, reason="", customer_notes=""):
-        if order.status not in {OrderStatus.DELIVERED, OrderStatus.SHIPPED}:
-            raise ValidationError("Returns can only be requested for shipped or delivered orders.")
-
-        return_req = ReturnRequest.objects.create(
-            order=order,
-            item=item,
-            reason=reason,
-            customer_notes=customer_notes,
-            status=ReturnStatus.REQUESTED,
-        )
-
-        if order.status != OrderStatus.RETURN_REQUESTED:
-            order.status = OrderStatus.RETURN_REQUESTED
-            order.save(update_fields=["status", "updated_at"])
-
-            OrderStatusHistory.objects.create(
-                order=order,
-                from_status=OrderStatus.DELIVERED,
-                to_status=OrderStatus.RETURN_REQUESTED,
-                notes=f"Return requested: {reason}",
-            )
-
-        return return_req
-
-    @staticmethod
-    @transaction.atomic
-    def resolve_return_request(return_request, new_status, user=None, admin_notes=""):
-        return_request.status = new_status
-        return_request.admin_notes = admin_notes
-        return_request.resolved_by = user
-        return_request.resolved_at = timezone.now()
-        return_request.save(update_fields=["status", "admin_notes", "resolved_by", "resolved_at"])
-
-        from notifications.tasks import send_return_status_email_task
-        ret_req_id = return_request.id
-        transaction.on_commit(lambda: send_return_status_email_task.delay(ret_req_id))
-
-        if new_status == ReturnStatus.COMPLETED:
-            order = return_request.order
-            if return_request.item and return_request.item.product:
-                InventoryService.update_stock(
-                    product=return_request.item.product,
-                    adjustment=return_request.item.quantity,
-                    reason=StockChangeReason.RETURN_RESTOCK,
-                    notes=f"Restocked return #{return_request.id} for order {order.order_number}",
-                    user=user,
-                )
-            else:
-                # Restocking of all items is handled by update_order_status
-                OrderService.update_order_status(
-                    order=order,
-                    new_status=OrderStatus.RETURNED,
-                    user=user,
-                    notes="Return completed and items restocked.",
-                )
-
-        return return_request

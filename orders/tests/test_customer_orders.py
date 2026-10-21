@@ -144,3 +144,22 @@ class CustomerOrderTestCase(TestCase):
         # Inventory should have been restored
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock, 11)
+
+    def test_customer_cancel_order_restores_size_stock(self):
+        from products.models import ProductSize
+        size_obj = ProductSize.objects.create(
+            product=self.product,
+            size="L",
+            stock=4,
+        )
+        self.product.sync_total_stock()
+        self.assertEqual(self.product.stock, 4)
+
+        url = reverse("customer-order-cancel", kwargs={"order_id": self.order.id})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        size_obj.refresh_from_db()
+        self.assertEqual(size_obj.stock, 5)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 5)

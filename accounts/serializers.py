@@ -118,7 +118,7 @@ class LoginPasswordSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    email = serializers.EmailField(validators=[email_validator])
+    email = serializers.EmailField(validators=[email_validator], help_text="Target email address to receive the 6-digit OTP code.")
     purpose = serializers.ChoiceField(
         choices=["login", "password_reset", "verify_email"],
         default="login",
@@ -133,8 +133,8 @@ class OTPRequestSerializer(serializers.Serializer):
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    email = serializers.EmailField(validators=[email_validator])
-    code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator])
+    email = serializers.EmailField(validators=[email_validator], help_text="Registered email address to which the OTP code was sent.")
+    code = serializers.CharField(max_length=6, min_length=6, validators=[otp_code_validator], help_text="6-digit numerical OTP code received via email.")
     purpose = serializers.ChoiceField(
         choices=["login", "verify_email", "password_reset"],
         required=False,

@@ -255,7 +255,7 @@ class ProductUpdateSerializer(serializers.Serializer):
         help_text="Updated list of sizes and stock counts.",
     )
     status = serializers.ChoiceField(
-        choices=[ProductStatus.DRAFT, ProductStatus.ACTIVE, ProductStatus.INACTIVE],
+        choices=ProductStatus.choices,
         required=False,
     )
 
@@ -285,7 +285,7 @@ class ProductUpdateSerializer(serializers.Serializer):
 class BulkProductItemUpdateSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1)
     status = serializers.ChoiceField(
-        choices=[ProductStatus.DRAFT, ProductStatus.ACTIVE, ProductStatus.INACTIVE],
+        choices=ProductStatus.choices,
         required=False,
     )
     category = serializers.ChoiceField(choices=ProductCategory.choices, required=False)
@@ -313,9 +313,20 @@ class ProductListingStatusSerializer(serializers.Serializer):
 
 
 class CategoryItemSerializer(serializers.Serializer):
-    code = serializers.CharField()
-    name = serializers.CharField()
-    products_count = serializers.IntegerField()
+    code = serializers.ChoiceField(
+        choices=ProductCategory.choices,
+        help_text=(
+            "Unique category enum code (e.g. 'ONE_PIECE', 'TOP', 'BOTTOM', 'FOOTWEAR', "
+            "'HEADWEAR', 'EYEWEAR', 'OUTERWEAR', 'ACCESSORIES'). "
+            "Pass this code to public product list endpoints via query param `?category=<code>` or `?type=<code>`."
+        ),
+    )
+    name = serializers.CharField(
+        help_text="Human-readable category display title (e.g. 'One-Piece', 'Top', 'Bottom', 'Footwear')."
+    )
+    products_count = serializers.IntegerField(
+        help_text="Total number of active, non-archived products currently cataloged under this category."
+    )
 
 
 class SearchHistorySerializer(serializers.ModelSerializer):

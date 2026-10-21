@@ -30,9 +30,58 @@ ORDER_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="OrderErrorDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. ORDER_NOT_FOUND, STATUS_TRANSITION_FAILED)."),
                 "details": serializers.JSONField(allow_null=True),
             },
+        ),
+    },
+)
+
+ORDER_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="OrderDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": OrderDetailSerializer(),
+    },
+)
+
+ORDER_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="OrderListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": OrderListSerializer(many=True),
+    },
+)
+
+CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
+    name="CustomerOrderPaginatedResponse",
+    fields={
+        "count": serializers.IntegerField(help_text="Total customer orders count placed."),
+        "next": serializers.CharField(allow_null=True, help_text="Next page URL."),
+        "previous": serializers.CharField(allow_null=True, help_text="Previous page URL."),
+        "results": OrderListSerializer(many=True),
+    },
+)
+
+CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = inline_serializer(
+    name="CustomerOrderTrackResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": CustomerOrderTrackSerializer(),
+    },
+)
+
+BULK_ORDER_UPDATE_RESPONSE_SCHEMA = inline_serializer(
+    name="BulkOrderUpdateResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="BulkOrderUpdateData",
+            fields={"updated_count": serializers.IntegerField()},
         ),
     },
 )
@@ -79,6 +128,7 @@ class OrderListCreateView(BaseOrderView):
     pagination_class = StorePagination
 
     @extend_schema(
+        operation_id="seller_store_orders_list",
         tags=["Orders"],
         summary="List orders for store",
         description="Returns paginated orders for the store. Filterable by status and customer search.",
@@ -86,7 +136,7 @@ class OrderListCreateView(BaseOrderView):
             OpenApiParameter(name="status", description="Filter by OrderStatus", required=False, type=str),
             OpenApiParameter(name="search", description="Search by customer name, email, or order number", required=False, type=str),
         ],
-        responses={200: OrderListSerializer(many=True)},
+        responses={200: ORDER_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -122,11 +172,12 @@ class OrderListCreateView(BaseOrderView):
         )
 
     @extend_schema(
+        operation_id="seller_store_order_create",
         tags=["Orders"],
         summary="Create a new order",
         description="Creates a new customer order and reserves inventory.",
         request=OrderCreateSerializer,
-        responses={201: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+        responses={201: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         self.throttle_scope = "store_write"
@@ -168,10 +219,11 @@ class OrderListCreateView(BaseOrderView):
 
 class OrderDetailView(BaseOrderView):
     @extend_schema(
+        operation_id="seller_store_order_detail",
         tags=["Orders"],
         summary="Get order details",
         description="Returns detailed information for a specific order including items and history.",
-        responses={200: OrderDetailSerializer, 404: ORDER_ERROR_SCHEMA},
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def get(self, request, pk, order_id):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -203,7 +255,7 @@ class OrderStatusUpdateView(BaseOrderView):
         summary="Update order status",
         description="Advances or transitions an order status according to the lifecycle state machine.",
         request=OrderStatusUpdateSerializer,
-        responses={200: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def patch(self, request, pk, order_id):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -255,7 +307,7 @@ class OrderDeliverView(BaseOrderView):
         summary="Mark order as delivered",
         description="Seller endpoint to mark an order as DELIVERED. Updates status, records delivered_at timestamp, and logs status history.",
         request=OrderDeliverSerializer,
-        responses={200: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def post(self, request, pk, order_id):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -301,7 +353,7 @@ class BulkOrderStatusUpdateView(BaseOrderView):
         summary="Bulk update order statuses",
         description="Updates status for multiple orders simultaneously.",
         request=BulkOrderStatusUpdateSerializer,
-        responses={200: inline_serializer(name="BulkOrderResponse", fields={"updated_count": serializers.IntegerField()}), 400: ORDER_ERROR_SCHEMA},
+        responses={200: BULK_ORDER_UPDATE_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -352,13 +404,14 @@ class CustomerOrderListView(APIView):
     pagination_class = StorePagination
 
     @extend_schema(
+        operation_id="customer_order_list",
         tags=["Customer Orders"],
         summary="List customer orders",
         description="Returns orders placed by the authenticated customer. Supports filtering by status.",
         parameters=[
-            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURNED)", required=False, type=str),
+            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED)", required=False, type=str),
         ],
-        responses={200: OrderListSerializer(many=True)},
+        responses={200: ORDER_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
         queryset = Order.objects.filter(user=request.user).prefetch_related("items").order_by("-created_at")
@@ -381,10 +434,11 @@ class CustomerOrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        operation_id="customer_order_detail",
         tags=["Customer Orders"],
         summary="Get customer order detail",
         description="Returns detailed information for a specific order owned by the customer, including itemized products, delivery details, and status history.",
-        responses={200: OrderDetailSerializer, 404: ORDER_ERROR_SCHEMA},
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def get(self, request, order_id):
         order = (
@@ -408,16 +462,20 @@ class CustomerOrderDetailView(APIView):
 
 class CustomerOrderTrackView(APIView):
     """
-    Returns live tracking status and timeline for an order by order number or order ID.
+    Returns live tracking status and timeline for an order by internal order ID.
     """
     throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        operation_id="customer_orders_track_by_id",
         tags=["Customer Orders"],
-        summary="Track order status & timeline",
-        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order.",
-        responses={200: CustomerOrderTrackSerializer, 404: ORDER_ERROR_SCHEMA},
+        summary="Track order status by order ID",
+        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by internal database order ID.",
+        parameters=[
+            OpenApiParameter(name="order_id", description="Internal integer database ID of the order", required=True, type=int, location=OpenApiParameter.PATH),
+        ],
+        responses={200: CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def get(self, request, order_number=None, order_id=None):
         queryset = (
@@ -461,7 +519,7 @@ class CustomerOrderCancelView(APIView):
         summary="Cancel customer order",
         description="Cancels an order if it has not yet reached PROCESSING or SHIPPED status, restoring item inventory.",
         request=None,
-        responses={200: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def post(self, request, order_id):
         order = Order.objects.filter(user=request.user, pk=order_id).first()
@@ -498,3 +556,52 @@ class CustomerOrderCancelView(APIView):
             message=f"Order {cancelled_order.order_number} has been cancelled successfully.",
             data=OrderDetailSerializer(cancelled_order).data,
         )
+
+class CustomerOrderTrackByNumberView(CustomerOrderTrackView):
+    """
+    Returns live tracking status and timeline for an order by public order number.
+    """
+    @extend_schema(
+        operation_id="customer_orders_track_by_order_number",
+        tags=["Customer Orders"],
+        summary="Track order status by order number",
+        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by order number (e.g. ORD-20261022-A1B2C3).",
+        parameters=[
+            OpenApiParameter(name="order_number", description="Public order number string (e.g. ORD-20261022-A1B2C3)", required=True, type=str, location=OpenApiParameter.PATH),
+        ],
+        responses={200: CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def get(self, request, order_number=None, order_id=None):
+        return super().get(request, order_number=order_number, order_id=order_id)
+
+
+class OrderMarkDeliveredAliasView(OrderDeliverView):
+    """Alias for marking order as delivered."""
+    @extend_schema(
+        operation_id="seller_order_mark_delivered_alias",
+        deprecated=True,
+        tags=["Orders"],
+        summary="Mark order as delivered (alias)",
+        description="Alias for POST /stores/{pk}/orders/{order_id}/deliver/. Marks order as delivered.",
+        request=OrderDeliverSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, order_id):
+        return super().post(request, pk, order_id)
+
+
+class CustomerMyOrdersAliasView(CustomerOrderListView):
+    """Alias endpoint for listing customer orders."""
+    @extend_schema(
+        operation_id="customer_my_orders_alias",
+        deprecated=True,
+        tags=["Customer Orders"],
+        summary="List customer orders (alias)",
+        description="Alias for GET /orders/. Returns paginated list of orders placed by the authenticated customer.",
+        parameters=[
+            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED)", required=False, type=str),
+        ],
+        responses={200: CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA},
+    )
+    def get(self, request):
+        return super().get(request)

@@ -78,7 +78,7 @@ class RecommendationService:
                     order__user=user,
                     product__isnull=False,
                 )
-                .exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.RETURNED])
+                .exclude(order__status__in=[OrderStatus.CANCELLED])
                 .select_related("product__embedding_record")
                 .order_by("-order__created_at")[:40]
             )
@@ -313,7 +313,7 @@ class RecommendationService:
         purchased_ids = OrderItem.objects.filter(
             order__user=user,
             product__isnull=False,
-        ).exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.RETURNED]).values_list("product_id", flat=True)
+        ).exclude(order__status__in=[OrderStatus.CANCELLED]).values_list("product_id", flat=True)
 
         if purchased_ids:
             qs = qs.exclude(id__in=purchased_ids)

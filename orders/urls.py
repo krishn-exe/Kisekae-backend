@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     BulkOrderStatusUpdateView,
     OrderDeliverView,
+    OrderMarkDeliveredAliasView,
     OrderDetailView,
     OrderListCreateView,
     OrderStatusUpdateView,
@@ -19,5 +20,5 @@ urlpatterns = [
     path("orders/<int:order_id>/", OrderDetailView.as_view(), name="order-detail"),
     path("orders/<int:order_id>/status/", OrderStatusUpdateView.as_view(), name="order-status-update"),
     path("orders/<int:order_id>/deliver/", OrderDeliverView.as_view(), name="order-deliver"),
-    path("orders/<int:order_id>/mark-delivered/", OrderDeliverView.as_view(), name="order-mark-delivered"),
+    path("orders/<int:order_id>/mark-delivered/", OrderMarkDeliveredAliasView.as_view(), name="order-mark-delivered"),
 ]

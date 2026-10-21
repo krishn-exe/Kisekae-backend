@@ -64,10 +64,19 @@ COMMON_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="ErrorEnvelopeDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Standardized error code identifying failure (e.g. VALIDATION_ERROR, INVALID_CREDENTIALS, NOT_FOUND)."),
                 "details": serializers.JSONField(allow_null=True),
             },
         ),
+    },
+)
+
+USER_SETTINGS_RESPONSE_SCHEMA = inline_serializer(
+    name="UserSettingsResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": UserSettingsSerializer(),
     },
 )
 
@@ -1817,7 +1826,8 @@ class UserSettingsView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Get user notification and app settings",
-        responses={200: UserSettingsSerializer},
+        description="Retrieves the authenticated user's notification preferences and application settings.",
+        responses={200: USER_SETTINGS_RESPONSE_SCHEMA},
     )
     def get(self, request):
         settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
@@ -1829,8 +1839,9 @@ class UserSettingsView(APIView):
     @extend_schema(
         tags=["Accounts"],
         summary="Update user notification and app settings",
+        description="Updates the authenticated user's notification preferences and application settings (partial update supported).",
         request=UserSettingsSerializer,
-        responses={200: UserSettingsSerializer, 400: COMMON_ERROR_SCHEMA},
+        responses={200: USER_SETTINGS_RESPONSE_SCHEMA, 400: COMMON_ERROR_SCHEMA},
     )
     def patch(self, request):
         settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
@@ -2684,6 +2695,7 @@ class WishlistMoveToCartView(APIView):
 
 
 class WishlistBulkMoveToCartView(APIView):
+
     """
     Move wishlisted products into the user's shopping cart in bulk.
     If product_ids is omitted or empty, moves all items in the customer's wishlist.
@@ -2786,3 +2798,39 @@ class WishlistBulkMoveToCartView(APIView):
                 "total_cart_items": cart.total_items,
             },
         )
+
+
+class WishlistBulkMoveToCartAliasView(WishlistBulkMoveToCartView):
+    """Alias for bulk moving wishlist items to cart."""
+    @extend_schema(
+        operation_id="customer_wishlist_bulk_move_to_cart_alias",
+        deprecated=True,
+        tags=["Customer Wishlist"],
+        summary="Bulk move wishlist items to cart (alias)",
+        description="Alias for POST /accounts/wishlist/move-to-cart/. Transfers multiple or all wishlisted items into active cart.",
+        request=BulkMoveWishlistToCartSerializer,
+        responses={
+            200: inline_serializer(
+                name="WishlistBulkMoveToCartAliasResponse",
+                fields={
+                    "success": serializers.BooleanField(),
+                    "message": serializers.CharField(),
+                    "data": inline_serializer(
+                        name="WishlistBulkMoveToCartAliasData",
+                        fields={
+                            "moved_count": serializers.IntegerField(),
+                            "skipped_count": serializers.IntegerField(),
+                            "moved_items": serializers.ListField(),
+                            "skipped_items": serializers.ListField(),
+                            "cart_id": serializers.IntegerField(allow_null=True),
+                            "total_cart_items": serializers.IntegerField(),
+                        },
+                    ),
+                },
+            ),
+            400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request):
+        return super().post(request)

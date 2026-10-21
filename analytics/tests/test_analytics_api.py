@@ -94,10 +94,8 @@ class AnalyticsEndpointsTestCase(TestCase):
             "pending_orders",
             "shipped_orders",
             "cancelled_orders",
-            "returned_orders",
             "total_units_sold",
             "average_order_value",
-            "return_rate",
             "cancellation_rate",
             "low_stock_products_count",
         ]
@@ -137,7 +135,7 @@ class AnalyticsEndpointsTestCase(TestCase):
         self.assertIsInstance(data["products"], list)
         self.assertEqual(len(data["products"]), 1)
         p_item = data["products"][0]
-        for pf in ["product_id", "product_name", "sku", "units_sold", "gross_revenue", "return_count", "return_rate"]:
+        for pf in ["product_id", "product_name", "sku", "units_sold", "gross_revenue"]:
             self.assertIn(pf, p_item, f"Product performance item missing '{pf}'")
 
     def test_analytics_order_metrics_fields(self):
@@ -147,9 +145,9 @@ class AnalyticsEndpointsTestCase(TestCase):
         self.assertTrue(resp.data["success"])
 
         data = resp.data["data"]
-        for f in ["total_orders", "status_breakdown", "cancellation_rate", "return_rate", "average_fulfillment_hours"]:
+        for f in ["total_orders", "status_breakdown", "cancellation_rate", "average_fulfillment_hours"]:
             self.assertIn(f, data, f"Field '{f}' missing from order metrics data")
 
         breakdown = data["status_breakdown"]
-        for s in ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "RETURN_REQUESTED", "RETURNED"]:
+        for s in ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"]:
             self.assertIn(s, breakdown, f"Status '{s}' missing from status_breakdown")

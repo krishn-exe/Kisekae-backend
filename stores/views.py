@@ -45,10 +45,82 @@ STORE_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="StoreErrorDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Machine-readable error code identifying failure reason (e.g. STORE_NOT_FOUND, INSUFFICIENT_PERMISSIONS)."),
                 "details": serializers.JSONField(allow_null=True),
             },
         ),
+    },
+)
+
+STORE_ACTION_SUCCESS_SCHEMA = inline_serializer(
+    name="StoreActionSuccessResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": serializers.JSONField(default=None, allow_null=True),
+    },
+)
+
+STORE_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreSerializer(),
+    },
+)
+
+STORE_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreSerializer(many=True),
+    },
+)
+
+STORE_MEMBER_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreMemberDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreMemberSerializer(),
+    },
+)
+
+STORE_MEMBER_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreMemberListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreMemberSerializer(many=True),
+    },
+)
+
+STORE_INVITATION_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreInvitationDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreInvitationSerializer(),
+    },
+)
+
+STORE_INVITATION_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreInvitationListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StoreInvitationSerializer(many=True),
+    },
+)
+
+BUSINESS_VERIFICATION_RESPONSE_SCHEMA = inline_serializer(
+    name="BusinessVerificationResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": BusinessVerificationSerializer(),
     },
 )
 
@@ -66,6 +138,7 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
     pagination_class = StorePagination
 
     @extend_schema(
+        operation_id="seller_store_list",
         tags=["Stores"],
         summary="List user's stores",
         description="Returns all stores the authenticated seller is a member of. By default excludes archived stores.",
@@ -89,7 +162,7 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
                 type=bool,
             ),
         ],
-        responses={200: StoreSerializer(many=True), 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
+        responses={200: STORE_LIST_RESPONSE_SCHEMA, 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
     )
     def get(self, request):
         include_archived = request.query_params.get("include_archived", "").lower() == "true"
@@ -131,11 +204,12 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
+        operation_id="seller_store_create",
         tags=["Stores"],
         summary="Create a new store",
         description="Creates a new store and designates the authenticated seller as the OWNER atomically.",
         request=StoreCreateSerializer,
-        responses={201: StoreSerializer, 400: STORE_ERROR_SCHEMA, 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
+        responses={201: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
     )
     def post(self, request):
         serializer = StoreCreateSerializer(data=request.data)
@@ -158,10 +232,11 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
+        operation_id="seller_store_detail",
         tags=["Stores"],
         summary="Get store details",
         description="Returns details of a specific store. User must be a member of the store.",
-        responses={200: StoreSerializer, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -182,7 +257,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
         summary="Update store details",
         description="Updates details of a store (name, description, contact details, or active status). Managers and Owner can update.",
         request=StoreUpdateSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def patch(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -219,7 +294,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
         tags=["Stores"],
         summary="Archive (soft-delete) store",
         description="Soft-archives a store. Only the store OWNER can archive the store. Revokes pending invitations.",
-        responses={200: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_ACTION_SUCCESS_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk):
         store, membership = get_store_membership(request.user, pk)
@@ -260,7 +335,7 @@ class StoreRestoreView(APIView):
         summary="Restore an archived store",
         description="Restores a soft-archived store back to ACTIVE status. Only the store OWNER can restore.",
         request=None,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, membership = get_store_membership(request.user, pk)
@@ -301,7 +376,7 @@ class StoreTransferOwnershipView(APIView):
         summary="Transfer store ownership",
         description="Transfers store ownership from current owner to an existing member. Only the current OWNER can perform this.",
         request=TransferOwnershipSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, membership = get_store_membership(request.user, pk)
@@ -350,7 +425,7 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
         tags=["Stores"],
         summary="List store members",
         description="Lists all members of the store. Accessible by Owner and Managers.",
-        responses={200: StoreMemberSerializer(many=True), 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_MEMBER_LIST_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -372,7 +447,7 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
         summary="Add a seller directly as a store manager",
         description="Adds an existing seller account as a manager to the store directly. Accessible by Owner and Managers.",
         request=AddMemberSerializer,
-        responses={201: StoreMemberSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={201: STORE_MEMBER_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -416,7 +491,7 @@ class StoreMemberDeleteView(APIView):
         tags=["Stores"],
         summary="Remove a member from the store",
         description="Removes a manager from the store. Cannot remove the owner or yourself (use leave instead).",
-        responses={200: STORE_ERROR_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk, member_id):
         store, _ = get_store_membership(request.user, pk)
@@ -456,7 +531,7 @@ class StoreLeaveView(APIView):
         summary="Leave a store",
         description="Allows a manager to leave the store. The store owner cannot leave without transferring ownership first.",
         request=None,
-        responses={200: STORE_ERROR_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -503,7 +578,7 @@ class StoreInvitationListCreateView(APIView):
                 type=str,
             ),
         ],
-        responses={200: StoreInvitationSerializer(many=True), 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_INVITATION_LIST_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -529,7 +604,7 @@ class StoreInvitationListCreateView(APIView):
         summary="Invite a seller to manage the store",
         description="Sends an email invitation to manage this store as a Manager. Can be initiated by Owner or Managers.",
         request=CreateInvitationSerializer,
-        responses={201: StoreInvitationSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={201: STORE_INVITATION_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -573,7 +648,7 @@ class StoreInvitationRevokeView(APIView):
         tags=["Store Invitations"],
         summary="Revoke an invitation",
         description="Revokes a pending invitation for this store.",
-        responses={200: STORE_ERROR_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk, inv_id):
         store, _ = get_store_membership(request.user, pk)
@@ -617,7 +692,7 @@ class StoreInvitationResendView(APIView):
         summary="Resend an invitation",
         description="Generates a new token and resets the 7-day expiration for a pending or expired invitation.",
         request=None,
-        responses={200: StoreInvitationSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_INVITATION_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk, inv_id):
         store, _ = get_store_membership(request.user, pk)
@@ -661,7 +736,7 @@ class InviteeInvitationListView(APIView):
         tags=["Seller Invitations"],
         summary="List my pending store invitations",
         description="Lists all pending invitations addressed to the authenticated seller's email address.",
-        responses={200: StoreInvitationSerializer(many=True)},
+        responses={200: STORE_INVITATION_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
         user_email = (getattr(request.user, "email", None) or "").strip().lower()
@@ -694,7 +769,7 @@ class InviteeInvitationAcceptView(APIView):
         summary="Accept a store invitation",
         description="Accepts an invitation addressed to the authenticated seller's email and grants Manager membership.",
         request=None,
-        responses={200: StoreMemberSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_MEMBER_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, inv_id):
         invitation = StoreInvitation.objects.select_related("store").filter(id=inv_id).first()
@@ -730,7 +805,7 @@ class InviteeInvitationDeclineView(APIView):
         summary="Decline a store invitation",
         description="Declines an invitation addressed to the authenticated seller's email.",
         request=None,
-        responses={200: STORE_ERROR_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, inv_id):
         invitation = StoreInvitation.objects.select_related("store").filter(id=inv_id).first()
@@ -766,7 +841,7 @@ class InviteeInvitationTokenAcceptView(APIView):
         summary="Accept an invitation using secret token",
         description="Accepts an invitation using the secret token received in the invitation email or deep link.",
         request=AcceptTokenSerializer,
-        responses={200: StoreMemberSerializer, 400: STORE_ERROR_SCHEMA},
+        responses={200: STORE_MEMBER_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA},
     )
     def post(self, request):
         serializer = AcceptTokenSerializer(data=request.data)
@@ -802,7 +877,7 @@ class StoreLogoView(APIView):
         summary="Upload store logo",
         description="Uploads or replaces the store logo (JPEG, PNG, WEBP; max 2MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def put(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -851,7 +926,7 @@ class StoreLogoView(APIView):
         summary="Remove store logo",
         description="Removes the store logo. Accessible by Owner and Managers.",
         request=None,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -892,7 +967,7 @@ class StoreBannerView(APIView):
         summary="Upload store banner",
         description="Uploads or replaces the store banner (JPEG, PNG, WEBP; max 5MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def put(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -941,7 +1016,7 @@ class StoreBannerView(APIView):
         summary="Remove store banner",
         description="Removes the store banner. Accessible by Owner and Managers.",
         request=None,
-        responses={200: StoreSerializer, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def delete(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -983,7 +1058,7 @@ class BusinessVerificationView(APIView):
         tags=["Store Verification"],
         summary="Get business verification details",
         description="Returns the business verification status and submitted details for the store.",
-        responses={200: BusinessVerificationSerializer, 404: STORE_ERROR_SCHEMA},
+        responses={200: BUSINESS_VERIFICATION_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -1020,7 +1095,7 @@ class BusinessVerificationView(APIView):
         description="Submits the required business verification form (PAN, GSTIN, business address, phone, email). "
                     "Completing this e-collection enables access to seller dashboard operations.",
         request=BusinessVerificationSubmitSerializer,
-        responses={200: BusinessVerificationSerializer, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        responses={200: BUSINESS_VERIFICATION_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, membership = get_store_membership(request.user, pk)

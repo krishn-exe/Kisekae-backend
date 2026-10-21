@@ -12,8 +12,6 @@ class OrderStatus(models.TextChoices):
     SHIPPED = "SHIPPED", "Shipped"
     DELIVERED = "DELIVERED", "Delivered"
     CANCELLED = "CANCELLED", "Cancelled"
-    RETURN_REQUESTED = "RETURN_REQUESTED", "Return Requested"
-    RETURNED = "RETURNED", "Returned"
 
 
 # Valid state transitions
@@ -24,8 +22,6 @@ VALID_TRANSITIONS = {
     OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
     OrderStatus.DELIVERED: set(),
     OrderStatus.CANCELLED: set(),
-    OrderStatus.RETURN_REQUESTED: set(),
-    OrderStatus.RETURNED: set(),
 }
 
 

@@ -30,10 +30,87 @@ INVENTORY_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="InventoryErrorDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Machine-readable error code identifying failure reason (e.g. INSUFFICIENT_STOCK, PRODUCT_NOT_FOUND)."),
                 "details": serializers.JSONField(allow_null=True),
             },
         ),
+    },
+)
+
+STOCK_ADJUST_RESPONSE_SCHEMA = inline_serializer(
+    name="StockAdjustResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="StockAdjustData",
+            fields={
+                "product": ProductSerializer(),
+                "update": StockUpdateSerializer(),
+            },
+        ),
+    },
+)
+
+BULK_STOCK_UPDATE_RESPONSE_SCHEMA = inline_serializer(
+    name="BulkStockUpdateResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StockUpdateSerializer(many=True),
+    },
+)
+
+STOCK_UPDATE_HISTORY_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
+    name="StockUpdateHistoryPaginatedResponse",
+    fields={
+        "count": serializers.IntegerField(help_text="Total stock history audit entries count."),
+        "next": serializers.CharField(allow_null=True),
+        "previous": serializers.CharField(allow_null=True),
+        "results": StockUpdateSerializer(many=True),
+    },
+)
+
+PRODUCT_STOCK_ALERT_GET_RESPONSE_SCHEMA = inline_serializer(
+    name="ProductStockAlertGetResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="ProductStockAlertGetData",
+            fields={
+                "configured": serializers.BooleanField(help_text="True if a custom alert threshold is configured for this product."),
+                "default_threshold": serializers.IntegerField(required=False, help_text="Default system threshold (5) if unconfigured."),
+                "alert": StockAlertSerializer(allow_null=True),
+            },
+        ),
+    },
+)
+
+STOCK_ALERT_RESPONSE_SCHEMA = inline_serializer(
+    name="StockAlertResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StockAlertSerializer(),
+    },
+)
+
+STOCK_ALERT_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="StockAlertListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": StockAlertSerializer(many=True),
+    },
+)
+
+LOW_STOCK_PRODUCTS_RESPONSE_SCHEMA = inline_serializer(
+    name="LowStockProductsResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": LowStockProductSerializer(many=True),
     },
 )
 
@@ -83,7 +160,7 @@ class ProductStockView(BaseInventoryView):
         summary="Adjust product stock level",
         description="Updates stock for a product directly or by delta, recording an audit entry.",
         request=StockAdjustSerializer,
-        responses={200: StockUpdateSerializer, 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
+        responses={200: STOCK_ADJUST_RESPONSE_SCHEMA, 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
     )
     def patch(self, request, pk, product_pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -136,7 +213,7 @@ class BulkStockUpdateView(BaseInventoryView):
         summary="Bulk update stock for multiple products",
         description="Atomically updates stock levels across multiple products in the store.",
         request=BulkStockUpdateSerializer,
-        responses={200: StockUpdateSerializer(many=True), 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
+        responses={200: BULK_STOCK_UPDATE_RESPONSE_SCHEMA, 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
     )
     def post(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -184,7 +261,7 @@ class StockUpdateHistoryView(BaseInventoryView):
                 type=int,
             ),
         ],
-        responses={200: StockUpdateSerializer(many=True)},
+        responses={200: STOCK_UPDATE_HISTORY_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -218,7 +295,8 @@ class ProductStockAlertView(BaseInventoryView):
     @extend_schema(
         tags=["Inventory Alerts"],
         summary="Get stock alert setting for a product",
-        responses={200: StockAlertSerializer, 404: INVENTORY_ERROR_SCHEMA},
+        description="Retrieves current low-stock alert configuration for a product. Returns default threshold (5) if unconfigured.",
+        responses={200: PRODUCT_STOCK_ALERT_GET_RESPONSE_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
     )
     def get(self, request, pk, product_pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -255,8 +333,9 @@ class ProductStockAlertView(BaseInventoryView):
     @extend_schema(
         tags=["Inventory Alerts"],
         summary="Set or update stock alert threshold for a product",
+        description="Configures or updates the low-stock alert threshold count for this product.",
         request=SetStockAlertSerializer,
-        responses={200: StockAlertSerializer, 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
+        responses={200: STOCK_ALERT_RESPONSE_SCHEMA, 400: INVENTORY_ERROR_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
     )
     def put(self, request, pk, product_pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
@@ -289,7 +368,8 @@ class StockAlertListView(BaseInventoryView):
     @extend_schema(
         tags=["Inventory Alerts"],
         summary="List all configured stock alerts for store",
-        responses={200: StockAlertSerializer(many=True)},
+        description="Lists all configured stock alert thresholds for products in the store.",
+        responses={200: STOCK_ALERT_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -310,7 +390,7 @@ class LowStockProductsView(BaseInventoryView):
         tags=["Inventory"],
         summary="List products with low or zero stock",
         description="Returns all products currently at or below their configured or default alert threshold.",
-        responses={200: LowStockProductSerializer(many=True)},
+        responses={200: LOW_STOCK_PRODUCTS_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)

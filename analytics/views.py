@@ -1,6 +1,7 @@
 from django.http import HttpResponse
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -75,8 +76,8 @@ class AnalyticsDashboardView(BaseAnalyticsView):
         summary="Store dashboard KPI metrics",
         description=(
             "Calculates high-level key performance metrics for a store, including total revenue, "
-            "order breakdown by lifecycle state (delivered, pending, shipped, cancelled, returned), "
-            "total units sold, average order value, cancellation and return rates, and low stock count."
+            "order breakdown by lifecycle state (delivered, pending, shipped, cancelled), "
+            "total units sold, average order value, cancellation rate, and low stock count."
         ),
         parameters=[
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
@@ -92,7 +93,7 @@ class AnalyticsDashboardView(BaseAnalyticsView):
             OpenApiExample(
                 name="DashboardMetricsSuccessExample",
                 summary="Complete Store Dashboard Metrics (200 OK)",
-                description="Lists all 13 returned KPI metric fields calculated from non-cancelled and total orders.",
+                description="Lists all 11 KPI metric fields calculated from non-cancelled and total orders.",
                 value={
                     "success": True,
                     "message": "Dashboard metrics retrieved successfully.",
@@ -104,10 +105,8 @@ class AnalyticsDashboardView(BaseAnalyticsView):
                         "pending_orders": 28,
                         "shipped_orders": 15,
                         "cancelled_orders": 8,
-                        "returned_orders": 4,
                         "total_units_sold": 540,
                         "average_order_value": 424.71,
-                        "return_rate": 1.14,
                         "cancellation_rate": 2.29,
                         "low_stock_products_count": 5,
                     },
@@ -238,17 +237,17 @@ class RevenueAnalyticsView(BaseAnalyticsView):
 
 
 class ProductPerformanceView(BaseAnalyticsView):
-    """Retrieve product sales rankings and return rate analytics."""
+    """Retrieve product sales rankings and performance analytics."""
 
     @extend_schema(
         tags=["Store Analytics"],
-        summary="Store product sales and return performance",
+        summary="Store product sales performance ranking",
         description=(
-            "Calculates ranked product performance based on gross revenue, units sold, or return frequency. "
-            "Returns product_id, product_name, sku, units_sold, gross_revenue, return_count, and return_rate."
+            "Calculates ranked product performance based on gross revenue or units sold. "
+            "Returns product_id, product_name, sku, units_sold, and gross_revenue."
         ),
         parameters=[
-            OpenApiParameter(name="sort_by", description="Sort products by: revenue, units_sold, returns", required=False, type=str),
+            OpenApiParameter(name="sort_by", description="Sort products by: revenue, units_sold (default: revenue)", required=False, type=str),
             OpenApiParameter(name="limit", description="Max number of products to return (1-100)", required=False, type=int),
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
@@ -263,7 +262,7 @@ class ProductPerformanceView(BaseAnalyticsView):
             OpenApiExample(
                 name="ProductPerformanceSuccessExample",
                 summary="Complete Product Performance Ranking (200 OK)",
-                description="Lists all performance fields for each ranked product: product_id, product_name, sku, units_sold, gross_revenue, return_count, return_rate.",
+                description="Lists performance metrics for each ranked product: product_id, product_name, sku, units_sold, gross_revenue.",
                 value={
                     "success": True,
                     "message": "Product performance retrieved successfully.",
@@ -277,8 +276,6 @@ class ProductPerformanceView(BaseAnalyticsView):
                                 "sku": "TSH-OVR-001",
                                 "units_sold": 220,
                                 "gross_revenue": 109780.00,
-                                "return_count": 3,
-                                "return_rate": 1.36,
                             },
                             {
                                 "product_id": 102,
@@ -286,8 +283,6 @@ class ProductPerformanceView(BaseAnalyticsView):
                                 "sku": "TRS-LIN-002",
                                 "units_sold": 85,
                                 "gross_revenue": 67915.00,
-                                "return_count": 1,
-                                "return_rate": 1.18,
                             },
                         ],
                     },
@@ -329,8 +324,8 @@ class OrderMetricsView(BaseAnalyticsView):
         tags=["Store Analytics"],
         summary="Store order metrics & fulfillment velocity",
         description=(
-            "Aggregates order counts across all 8 lifecycle statuses (PENDING, CONFIRMED, PROCESSING, SHIPPED, "
-            "DELIVERED, CANCELLED, RETURN_REQUESTED, RETURNED), calculates cancellation and return percentages, "
+            "Aggregates order counts across all 6 lifecycle statuses (PENDING, CONFIRMED, PROCESSING, SHIPPED, "
+            "DELIVERED, CANCELLED), calculates cancellation percentage, "
             "and measures average fulfillment duration in hours for delivered orders."
         ),
         parameters=[
@@ -347,7 +342,7 @@ class OrderMetricsView(BaseAnalyticsView):
             OpenApiExample(
                 name="OrderMetricsSuccessExample",
                 summary="Complete Order Metrics Breakdown (200 OK)",
-                description="Lists all status_breakdown keys (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURN_REQUESTED, RETURNED), rates, and average_fulfillment_hours.",
+                description="Lists all status_breakdown keys (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED), cancellation_rate, and average_fulfillment_hours.",
                 value={
                     "success": True,
                     "message": "Order metrics retrieved successfully.",
@@ -360,11 +355,8 @@ class OrderMetricsView(BaseAnalyticsView):
                             "SHIPPED": 15,
                             "DELIVERED": 295,
                             "CANCELLED": 8,
-                            "RETURN_REQUESTED": 2,
-                            "RETURNED": 2,
                         },
                         "cancellation_rate": 2.29,
-                        "return_rate": 1.14,
                         "average_fulfillment_hours": 21.4,
                     },
                 },
@@ -403,12 +395,21 @@ class ReportDownloadView(BaseAnalyticsView):
     @extend_schema(
         tags=["Store Analytics"],
         summary="Download CSV reports",
+        description="Generates and streams a CSV report for sales, inventory, or orders within the optional date filter range.",
         parameters=[
-            OpenApiParameter(name="report_type", description="Type of report (sales, inventory, orders)", required=False, type=str),
+            OpenApiParameter(name="report_type", description="Type of report: 'sales', 'inventory', or 'orders' (default: 'sales')", required=False, type=str),
             OpenApiParameter(name="from_date", description="Filter from date (YYYY-MM-DD)", required=False, type=str),
             OpenApiParameter(name="to_date", description="Filter to date (YYYY-MM-DD)", required=False, type=str),
         ],
-        responses={200: inline_serializer(name="CSVFileDownload", fields={})},
+        responses={
+            (200, "text/csv"): OpenApiResponse(
+                description="CSV file spreadsheet download.",
+                response=OpenApiTypes.BINARY,
+            ),
+            400: ANALYTICS_ERROR_SCHEMA,
+            403: ANALYTICS_ERROR_SCHEMA,
+            404: ANALYTICS_ERROR_SCHEMA,
+        },
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk)

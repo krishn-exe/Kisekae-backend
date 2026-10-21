@@ -197,10 +197,44 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'KiseKae API',
-    'DESCRIPTION': 'RESTful API documentation for KiseKae accounts and services',
+    'DESCRIPTION': 'RESTful API documentation for KiseKae e-commerce multi-store platform, accounts, product catalog, search, cart, checkout, inventory, and analytics.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
+    'ENUM_NAME_OVERRIDES': {
+        'StoreStatusEnum': 'stores.models.StoreStatus.choices',
+        'OrderStatusEnum': 'orders.models.OrderStatus.choices',
+        'ProductStatusEnum': 'products.models.ProductStatus.choices',
+        'ProductCategoryEnum': 'products.models.ProductCategory.choices',
+    },
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'filter': True,
+        'docExpansion': 'none',
+        'defaultModelsExpandDepth': 2,
+        'defaultModelExpandDepth': 2,
+    },
+    'TAGS': [
+        {'name': 'Accounts', 'description': 'Customer and seller authentication, registration, OTP verification, OAuth, and password operations.'},
+        {'name': 'Customer Profile', 'description': 'Customer profile details, name updates, account deactivation, and preferences.'},
+        {'name': 'Customer Addresses', 'description': 'Customer shipping address book management and default address selection.'},
+        {'name': 'Customer Wishlist', 'description': 'Customer product wishlist, individual and bulk transfers to the shopping cart.'},
+        {'name': 'Stores', 'description': 'Seller store creation, settings, branding (logo & banner), memberships, and ownership transfer.'},
+        {'name': 'Store Verification', 'description': 'Seller store business identity verification and document submission.'},
+        {'name': 'Store Invitations', 'description': 'Inviting sellers and managers to collaborate on a store.'},
+        {'name': 'Seller Invitations', 'description': 'Invitee endpoints to review, accept, or decline store management invitations.'},
+        {'name': 'Products', 'description': 'Seller product catalog management, sizes, pricing, and multi-image galleries.'},
+        {'name': 'Public Products', 'description': 'Customer-facing product catalog, category listings with active counts, search, and details.'},
+        {'name': 'Recommendations', 'description': 'Personalized AI/ML recommendation feed tailored to customer browsing and interaction history.'},
+        {'name': 'Inventory', 'description': 'Store stock management, bulk stock updates, low-stock monitoring, and audit log history.'},
+        {'name': 'Inventory Alerts', 'description': 'Configuring and retrieving low-stock alert thresholds for store products.'},
+        {'name': 'Orders', 'description': 'Seller order processing, state lifecycle transitions, bulk updates, and delivery fulfillment.'},
+        {'name': 'Customer Orders', 'description': 'Customer order tracking, order cancellation, and detailed order history.'},
+        {'name': 'Cart', 'description': 'Customer shopping cart items, size selections, and quantity updates.'},
+        {'name': 'Cart & Checkout', 'description': 'Multi-store order checkout and validation.'},
+        {'name': 'Store Analytics', 'description': 'Store performance KPI metrics, revenue aggregations, product rankings, and CSV export.'},
+    ],
 }
 
 SIMPLE_JWT = {

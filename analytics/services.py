@@ -46,7 +46,6 @@ class AnalyticsService:
         ).count()
         shipped_orders = orders.filter(status=OrderStatus.SHIPPED).count()
         cancelled_orders = orders.filter(status=OrderStatus.CANCELLED).count()
-        returned_orders = orders.filter(status=OrderStatus.RETURNED).count()
 
         non_cancelled = orders.exclude(status=OrderStatus.CANCELLED)
         revenue_agg = non_cancelled.aggregate(total=Sum("total_amount"))["total"]
@@ -64,11 +63,6 @@ class AnalyticsService:
         )["total"]
         total_units_sold = units_agg or 0
 
-        return_rate = (
-            round((returned_orders / total_orders) * 100, 2)
-            if total_orders > 0
-            else 0.0
-        )
         cancellation_rate = (
             round((cancelled_orders / total_orders) * 100, 2)
             if total_orders > 0
@@ -85,10 +79,8 @@ class AnalyticsService:
             "pending_orders": pending_orders,
             "shipped_orders": shipped_orders,
             "cancelled_orders": cancelled_orders,
-            "returned_orders": returned_orders,
             "total_units_sold": total_units_sold,
             "average_order_value": average_order_value,
-            "return_rate": return_rate,
             "cancellation_rate": cancellation_rate,
             "low_stock_products_count": low_stock_count,
         }
@@ -185,16 +177,11 @@ class AnalyticsService:
             )
         )
 
-        # Returns feature skipped (PoC scope)
-        return_map = {}
-
         results = []
         for row in items_agg:
             pid = row["product_id"]
             sold = row["units_sold"] or 0
             rev = Decimal(str(row["gross_revenue"] or "0.00"))
-            ret_count = return_map.get(pid, 0)
-            ret_rate = round((ret_count / sold) * 100, 2) if sold > 0 else 0.0
 
             results.append({
                 "product_id": pid,
@@ -202,16 +189,12 @@ class AnalyticsService:
                 "sku": row["product_sku"] or "",
                 "units_sold": sold,
                 "gross_revenue": float(rev),
-                "return_count": ret_count,
-                "return_rate": ret_rate,
             })
 
         # Sorting
         sort_by = (sort_by or "revenue").lower()
         if sort_by == "units_sold":
             results.sort(key=lambda x: x["units_sold"], reverse=True)
-        elif sort_by == "returns":
-            results.sort(key=lambda x: x["return_count"], reverse=True)
         else:
             results.sort(key=lambda x: x["gross_revenue"], reverse=True)
 
@@ -250,16 +233,10 @@ class AnalyticsService:
                 status_counts[row["status"]] = row["cnt"]
 
         cancelled = status_counts.get(OrderStatus.CANCELLED, 0)
-        returned = status_counts.get(OrderStatus.RETURNED, 0)
         delivered = status_counts.get(OrderStatus.DELIVERED, 0)
 
         cancellation_rate = (
             round((cancelled / total_orders) * 100, 2)
-            if total_orders > 0
-            else 0.0
-        )
-        return_rate = (
-            round((returned / total_orders) * 100, 2)
             if total_orders > 0
             else 0.0
         )
@@ -288,7 +265,6 @@ class AnalyticsService:
             "total_orders": total_orders,
             "status_breakdown": status_counts,
             "cancellation_rate": cancellation_rate,
-            "return_rate": return_rate,
             "average_fulfillment_hours": avg_fulfillment_hours,
         }
 

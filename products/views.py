@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models import Case, Count, FloatField, Prefetch, Q, Value, When
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
 from pgvector.django import CosineDistance
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -51,8 +51,132 @@ PRODUCT_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="ProductErrorDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. PRODUCT_NOT_FOUND, STORE_ARCHIVED)."),
                 "details": serializers.JSONField(allow_null=True),
+            },
+        ),
+    },
+)
+
+PRODUCT_ACTION_SUCCESS_SCHEMA = inline_serializer(
+    name="ProductActionSuccessResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": serializers.JSONField(default=None, allow_null=True),
+    },
+)
+
+STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreProductDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ProductSerializer(),
+    },
+)
+
+STORE_PRODUCT_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="StoreProductListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ProductSerializer(many=True),
+    },
+)
+
+CATEGORY_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="CategoryListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(default="Categories fetched successfully."),
+        "data": CategoryItemSerializer(many=True),
+    },
+)
+
+PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="ProductImageListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ProductImageSerializer(many=True),
+    },
+)
+
+PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = inline_serializer(
+    name="ProductListingStatusResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ProductListingStatusSerializer(),
+    },
+)
+
+PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
+    name="ProductListPaginatedResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="ProductListPaginatedData",
+            fields={
+                "count": serializers.IntegerField(help_text="Total active matching products count."),
+                "next": serializers.CharField(allow_null=True, help_text="URL for next page of products."),
+                "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of products."),
+                "results": ProductCardSerializer(many=True),
+            },
+        ),
+    },
+)
+
+PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
+    name="ProductSearchPaginatedResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="ProductSearchPaginatedData",
+            fields={
+                "query": serializers.CharField(allow_null=True, help_text="Search query string executed."),
+                "count": serializers.IntegerField(help_text="Total search results count."),
+                "next": serializers.CharField(allow_null=True, help_text="URL for next page of search results."),
+                "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of search results."),
+                "results": ProductCardSerializer(many=True),
+            },
+        ),
+    },
+)
+
+PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="PublicProductDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": PublicProductDetailSerializer(),
+    },
+)
+
+SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="SearchHistoryListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": SearchHistorySerializer(many=True),
+    },
+)
+
+RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
+    name="RecommendationFeedPaginatedResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="RecommendationFeedPaginatedData",
+            fields={
+                "count": serializers.IntegerField(help_text="Total recommended products count."),
+                "next": serializers.CharField(allow_null=True),
+                "previous": serializers.CharField(allow_null=True),
+                "results": ProductCardSerializer(many=True),
             },
         ),
     },
@@ -165,8 +289,35 @@ class CategoryListView(APIView):
     @extend_schema(
         tags=["Public Products"],
         summary="List all product categories",
-        description="Returns list of all available fashion categories (One-Piece, Top, Bottom, Footwear, Headwear, Eyewear, Outerwear, Accessories) with counts of active products.",
-        responses={200: CategoryItemSerializer(many=True)},
+        description=(
+            "Returns list of all available fashion categories with active product counts. "
+            "The 'code' field corresponds to the ProductCategory enum value (ONE_PIECE, TOP, BOTTOM, FOOTWEAR, "
+            "HEADWEAR, EYEWEAR, OUTERWEAR, ACCESSORIES) and is used for filtering products via '?category=<code>' or '?type=<code>'."
+        ),
+        responses={200: CATEGORY_LIST_RESPONSE_SCHEMA},
+        examples=[
+            OpenApiExample(
+                name="CategoryListSuccessExample",
+                summary="Product Categories with Active Product Counts",
+                description="List of fashion categories with category code enum and active inventory product count.",
+                value={
+                    "success": True,
+                    "message": "Categories fetched successfully.",
+                    "data": [
+                        {"code": "ONE_PIECE", "name": "One-Piece", "products_count": 5},
+                        {"code": "TOP", "name": "Top", "products_count": 24},
+                        {"code": "BOTTOM", "name": "Bottom", "products_count": 18},
+                        {"code": "FOOTWEAR", "name": "Footwear", "products_count": 10},
+                        {"code": "HEADWEAR", "name": "Headwear", "products_count": 4},
+                        {"code": "EYEWEAR", "name": "Eyewear", "products_count": 3},
+                        {"code": "OUTERWEAR", "name": "Outerwear", "products_count": 8},
+                        {"code": "ACCESSORIES", "name": "Accessories", "products_count": 15},
+                    ],
+                },
+                response_only=True,
+                status_codes=["200"],
+            )
+        ],
     )
     def get(self, request):
         active_counts = dict(
@@ -205,6 +356,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
     pagination_class = ProductPagination
 
     @extend_schema(
+        operation_id="seller_store_product_list",
         tags=["Products"],
         summary="List products for a store",
         description="Returns all products for the specified store. Filterable by status and category.",
@@ -228,7 +380,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 type=str,
             ),
         ],
-        responses={200: ProductSerializer(many=True), 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: STORE_PRODUCT_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -277,12 +429,13 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
+        operation_id="seller_store_product_create",
         tags=["Products"],
         summary="Create a new product",
         description="Creates a new product with category, color, and size breakdown (e.g. S/M/L/XL for clothing, 6-10 for shoes).",
         request=ProductCreateSerializer,
         responses={
-            201: ProductSerializer,
+            201: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA,
             400: PRODUCT_ERROR_SCHEMA,
             403: PRODUCT_ERROR_SCHEMA,
             404: PRODUCT_ERROR_SCHEMA,
@@ -361,10 +514,11 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
         return store, membership, product
 
     @extend_schema(
+        operation_id="seller_store_product_detail",
         tags=["Products"],
         summary="Get product details",
         description="Returns details of a specific product with its images and size stocks.",
-        responses={200: ProductSerializer, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def get(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
@@ -447,7 +601,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
         tags=["Products"],
         summary="Delete a product",
         description="Permanently deletes a product and cleans up gallery images.",
-        responses={200: PRODUCT_ERROR_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def delete(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
@@ -514,7 +668,7 @@ class ProductMultipleImageView(APIView):
         tags=["Products"],
         summary="List all product images",
         description="Returns list of all images for this product (up to 10 images).",
-        responses={200: ProductImageSerializer(many=True), 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def get(self, request, pk, product_pk):
         product, err = self._get_product(request.user, pk, product_pk)
@@ -534,7 +688,7 @@ class ProductMultipleImageView(APIView):
             name="ProductMultiImageUpload",
             fields={"images": serializers.ListField(child=serializers.ImageField(), required=False), "file": serializers.ImageField(required=False)},
         ),
-        responses={200: ProductImageSerializer(many=True), 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def post(self, request, pk, product_pk):
         product, err = self._get_product(request.user, pk, product_pk)
@@ -619,7 +773,7 @@ class ProductImageView(APIView):
             name="ProductImageUpload",
             fields={"file": serializers.ImageField()},
         ),
-        responses={200: ProductSerializer, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def put(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
@@ -654,7 +808,7 @@ class ProductImageView(APIView):
         tags=["Products"],
         summary="Remove primary product image",
         description="Removes the primary product image.",
-        responses={200: PRODUCT_ERROR_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def delete(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
@@ -676,7 +830,7 @@ class ProductListingStatusView(APIView):
         tags=["Products"],
         summary="Get catalog listing status overview",
         description="Returns breakdown of product counts by status (ACTIVE, DRAFT, INACTIVE) and stock health.",
-        responses={200: ProductListingStatusSerializer, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -706,8 +860,19 @@ class ProductBulkUpdateView(APIView):
     @extend_schema(
         tags=["Products"],
         summary="Bulk update products status and price",
+        description="Updates status, category, color, price, and compare-at price in bulk across multiple store products.",
         request=BulkProductUpdateSerializer,
-        responses={200: inline_serializer(name="BulkProductUpdateResponse", fields={"updated_count": serializers.IntegerField()}), 400: PRODUCT_ERROR_SCHEMA},
+        responses={200: inline_serializer(
+            name="BulkProductUpdateResponse",
+            fields={
+                "success": serializers.BooleanField(default=True),
+                "message": serializers.CharField(),
+                "data": inline_serializer(
+                    name="BulkProductUpdateData",
+                    fields={"updated_count": serializers.IntegerField()},
+                ),
+            },
+        ), 400: PRODUCT_ERROR_SCHEMA},
     )
     def patch(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
@@ -761,6 +926,7 @@ class PublicProductListView(APIView):
     pagination_class = ProductPagination
 
     @extend_schema(
+        operation_id="public_product_list",
         tags=["Public Products"],
         summary="Browse all available products",
         description="Returns all active products with filters for category/type, size, color, price range, and in-stock status. Optimized to return full product cards without N+1 query overhead.",
@@ -778,7 +944,7 @@ class PublicProductListView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: ProductCardSerializer(many=True)},
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request):
         queryset = get_optimized_product_queryset()
@@ -860,7 +1026,7 @@ class ProductSearchView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: ProductCardSerializer(many=True)},
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request):
         query = (
@@ -994,10 +1160,11 @@ class PublicProductDetailView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
+        operation_id="public_product_detail",
         tags=["Public Products"],
         summary="Get public product detail",
         description="Returns full details for an active product, including all gallery images (up to 10), category, color, and size breakdown.",
-        responses={200: PublicProductDetailSerializer, 404: PRODUCT_ERROR_SCHEMA},
+        responses={200: PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
     )
     def get(self, request, product_pk):
         product = (
@@ -1047,7 +1214,7 @@ class SearchHistoryListView(APIView):
         tags=["Search History"],
         summary="List user's search history",
         description="Returns the user's recent search queries. These queries feed directly into the recommendation ML taste profile.",
-        responses={200: SearchHistorySerializer(many=True)},
+        responses={200: SEARCH_HISTORY_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
         history = SearchHistory.objects.filter(user=request.user).order_by("-last_searched_at")[:30]
@@ -1123,7 +1290,7 @@ class RecommendedFeedView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: ProductCardSerializer(many=True)},
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request):
         exclude_cart_param = request.query_params.get("exclude_cart", "true").strip().lower()

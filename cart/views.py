@@ -24,8 +24,42 @@ CART_ERROR_SCHEMA = inline_serializer(
         "error": inline_serializer(
             name="CartErrorDetail",
             fields={
-                "code": serializers.CharField(),
+                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. INSUFFICIENT_STOCK, CART_EMPTY, PRODUCT_NOT_FOUND)."),
                 "details": serializers.JSONField(allow_null=True),
+            },
+        ),
+    },
+)
+
+CART_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="CartDetailResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": CartSerializer(),
+    },
+)
+
+CART_CHECKOUT_RESPONSE_SCHEMA = inline_serializer(
+    name="CartCheckoutSuccessResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": CartCheckoutResponseSerializer(),
+    },
+)
+
+CART_VALIDATE_RESPONSE_SCHEMA = inline_serializer(
+    name="CartValidateResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="CartValidateData",
+            fields={
+                "is_valid": serializers.BooleanField(help_text="Whether all cart items are currently available and purchasable."),
+                "issues_count": serializers.IntegerField(help_text="Number of stock or status issues discovered in the cart."),
+                "issues": serializers.ListField(help_text="List of issues with product names and reason descriptions."),
             },
         ),
     },
@@ -72,7 +106,7 @@ class CartDetailView(BaseCartView):
                 location=OpenApiParameter.HEADER,
             ),
         ],
-        responses={200: CartSerializer},
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA},
     )
     def get(self, request):
         cart = self._get_cart(request)
@@ -94,7 +128,7 @@ class AddToCartView(BaseCartView):
         summary="Add item to cart",
         description="Adds a product to the cart with an optional size. Validates product status, store availability, and size-specific stock.",
         request=AddToCartSerializer,
-        responses={200: CartSerializer, 400: CART_ERROR_SCHEMA},
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA},
     )
     def post(self, request):
         serializer = AddToCartSerializer(data=request.data)
@@ -139,7 +173,7 @@ class CartItemDetailView(BaseCartView):
         summary="Update item quantity in cart",
         description="Updates the quantity of an existing cart item. Setting quantity to 0 removes the item.",
         request=UpdateCartItemSerializer,
-        responses={200: CartSerializer, 400: CART_ERROR_SCHEMA, 404: CART_ERROR_SCHEMA},
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 404: CART_ERROR_SCHEMA},
     )
     def patch(self, request, item_id):
         serializer = UpdateCartItemSerializer(data=request.data)
@@ -174,7 +208,7 @@ class CartItemDetailView(BaseCartView):
         tags=["Cart"],
         summary="Remove item from cart",
         description="Removes an item completely from the cart.",
-        responses={200: CartSerializer, 400: CART_ERROR_SCHEMA, 404: CART_ERROR_SCHEMA},
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 404: CART_ERROR_SCHEMA},
     )
     def delete(self, request, item_id):
         cart = self._get_cart(request)
@@ -205,7 +239,7 @@ class CartClearView(BaseCartView):
         tags=["Cart"],
         summary="Clear all items from cart",
         description="Empties the current cart of all items.",
-        responses={200: CartSerializer},
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA},
     )
     def delete(self, request):
         cart = self._get_cart(request)
@@ -226,7 +260,7 @@ class CartValidateView(BaseCartView):
         tags=["Cart"],
         summary="Validate cart before checkout",
         description="Checks all items in the cart for store availability and size-specific stock. Returns issues if any items are invalid.",
-        responses={200: inline_serializer(name="CartValidateResponse", fields={"is_valid": serializers.BooleanField(), "issues_count": serializers.IntegerField(), "issues": serializers.ListField()})},
+        responses={200: CART_VALIDATE_RESPONSE_SCHEMA},
     )
     def get(self, request):
         cart = self._get_cart(request)
@@ -252,7 +286,7 @@ class CartCheckoutView(APIView):
         summary="Checkout shopping cart into orders",
         description="Converts the user's shopping cart into confirmed orders grouped by store. Accepts saved address_id or inline shipping details. Automatically decrements inventory and empties the cart.",
         request=CartCheckoutSerializer,
-        responses={200: CartCheckoutResponseSerializer, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
+        responses={200: CART_CHECKOUT_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
     )
     def post(self, request):
         user = request.user

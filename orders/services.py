@@ -109,6 +109,10 @@ class OrderService:
         old_status = order.status
         update_fields = ["status", "updated_at"]
 
+        if new_status == OrderStatus.DELIVERED and not order.delivered_at:
+            order.delivered_at = timezone.now()
+            update_fields.append("delivered_at")
+
         if tracking_number:
             order.tracking_number = tracking_number
             update_fields.append("tracking_number")
@@ -152,6 +156,16 @@ class OrderService:
         )
 
         return order
+
+    @staticmethod
+    @transaction.atomic
+    def mark_order_delivered(order, user=None, notes=""):
+        return OrderService.update_order_status(
+            order=order,
+            new_status=OrderStatus.DELIVERED,
+            user=user,
+            notes=notes or "Order marked as delivered.",
+        )
 
     @staticmethod
     @transaction.atomic

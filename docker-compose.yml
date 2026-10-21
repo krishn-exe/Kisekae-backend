@@ -21,7 +21,7 @@ services:
     build: .
     image: kisekae-backend:latest
     container_name: kisekae-worker
-    command: celery -A KiseKaeDjango worker -l info
+    command: celery -A KiseKaeDjango worker -l info --concurrency=2
     env_file:
       - .env
     depends_on:

@@ -14,6 +14,7 @@ from .models import Order, OrderStatus, ReturnRequest, ReturnStatus
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
     OrderCreateSerializer,
+    OrderDeliverSerializer,
     OrderDetailSerializer,
     OrderListSerializer,
     OrderStatusUpdateSerializer,
@@ -245,6 +246,54 @@ class OrderStatusUpdateView(BaseOrderView):
             data=OrderDetailSerializer(updated_order).data,
         )
 
+
+
+
+class OrderDeliverView(BaseOrderView):
+    throttle_scope = "store_write"
+
+    @extend_schema(
+        tags=["Orders"],
+        summary="Mark order as delivered",
+        description="Seller endpoint to mark an order as DELIVERED. Updates status, records delivered_at timestamp, and logs status history.",
+        request=OrderDeliverSerializer,
+        responses={200: OrderDetailSerializer, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, order_id):
+        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
+        if err:
+            return err
+
+        order = Order.objects.filter(store=store, pk=order_id).first()
+        if not order:
+            return error_response(
+                message="Order not found in this store.",
+                code="ORDER_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = OrderDeliverSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        notes = serializer.validated_data.get("notes", "")
+
+        try:
+            delivered_order = OrderService.mark_order_delivered(
+                order=order,
+                user=request.user,
+                notes=notes,
+            )
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(
+                message=msg,
+                code="DELIVERY_FAILED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return success_response(
+            message=f"Order {delivered_order.order_number} marked as delivered.",
+            data=OrderDetailSerializer(delivered_order).data,
+        )
 
 class BulkOrderStatusUpdateView(BaseOrderView):
     throttle_scope = "store_write"

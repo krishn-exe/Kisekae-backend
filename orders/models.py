@@ -26,8 +26,8 @@ class ReturnStatus(models.TextChoices):
 # Valid state transitions
 VALID_TRANSITIONS = {
     OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
-    OrderStatus.CONFIRMED: {OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.CANCELLED},
-    OrderStatus.PROCESSING: {OrderStatus.SHIPPED, OrderStatus.CANCELLED},
+    OrderStatus.CONFIRMED: {OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
+    OrderStatus.PROCESSING: {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
     OrderStatus.SHIPPED: {OrderStatus.DELIVERED, OrderStatus.RETURN_REQUESTED},
     OrderStatus.DELIVERED: {OrderStatus.RETURN_REQUESTED},
     OrderStatus.RETURN_REQUESTED: {OrderStatus.RETURNED, OrderStatus.DELIVERED},
@@ -76,6 +76,11 @@ class Order(models.Model):
     tracking_number = models.CharField(max_length=100, blank=True, default="")
     tracking_url = models.URLField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    delivered_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when order was delivered to the customer.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

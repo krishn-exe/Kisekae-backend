@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     BulkOrderStatusUpdateView,
+    OrderDeliverView,
     OrderDetailView,
     OrderListCreateView,
     OrderStatusUpdateView,
@@ -19,6 +20,8 @@ urlpatterns = [
     # Order Detail & Status Transition
     path("orders/<int:order_id>/", OrderDetailView.as_view(), name="order-detail"),
     path("orders/<int:order_id>/status/", OrderStatusUpdateView.as_view(), name="order-status-update"),
+    path("orders/<int:order_id>/deliver/", OrderDeliverView.as_view(), name="order-deliver"),
+    path("orders/<int:order_id>/mark-delivered/", OrderDeliverView.as_view(), name="order-mark-delivered"),
 
     # Returns & Replacements
     path("returns/", ReturnRequestListCreateView.as_view(), name="store-returns-list"),

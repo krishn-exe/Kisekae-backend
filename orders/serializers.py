@@ -73,6 +73,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             "total_amount",
             "currency",
             "items_count",
+            "delivered_at",
             "created_at",
             "updated_at",
         ]
@@ -100,12 +101,22 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "tracking_number",
             "tracking_url",
             "notes",
+            "delivered_at",
             "items",
             "status_history",
             "return_requests",
             "created_at",
             "updated_at",
         ]
+
+
+class OrderDeliverSerializer(serializers.Serializer):
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional delivery notes or confirmation details from the seller.",
+    )
 
 
 class OrderItemInputSerializer(serializers.Serializer):

@@ -2,7 +2,7 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from products.models import Product, ProductStatus
+from products.models import Product, ProductSize, ProductStatus
 from stores.models import StoreStatus
 
 from .models import Cart, CartItem
@@ -47,12 +47,18 @@ class CartService:
     @transaction.atomic
     def merge_carts(source_cart, target_cart):
         """
-        Merges items from source_cart into target_cart, then deletes source_cart.
+        Merges items from source_cart into target_cart (matching by product and size),
+        then deletes source_cart.
         """
         for item in source_cart.items.select_related("product").all():
-            existing = target_cart.items.filter(product=item.product).first()
+            existing = target_cart.items.filter(product=item.product, size=item.size).first()
+            max_qty = item.product.stock
+            if item.size and item.product.sizes.exists():
+                size_obj = item.product.sizes.filter(size=item.size).first()
+                if size_obj:
+                    max_qty = size_obj.stock
+
             if existing:
-                max_qty = item.product.stock
                 combined_qty = min(existing.quantity + item.quantity, max_qty)
                 existing.quantity = max(combined_qty, 1)
                 existing.save(update_fields=["quantity", "updated_at"])
@@ -60,21 +66,22 @@ class CartService:
                 CartItem.objects.create(
                     cart=target_cart,
                     product=item.product,
-                    quantity=min(item.quantity, item.product.stock),
+                    size=item.size,
+                    quantity=min(item.quantity, max_qty),
                 )
         source_cart.delete()
         target_cart.save()
 
     @staticmethod
     @transaction.atomic
-    def add_item(cart, product_id, quantity=1):
+    def add_item(cart, product_id, quantity=1, size=""):
         """
-        Adds a product to the cart or increments its quantity.
+        Adds a product (and optional size) to the cart or increments its quantity.
         """
         if quantity <= 0:
             raise ValidationError("Quantity must be greater than zero.")
 
-        product = Product.objects.select_related("store").filter(pk=product_id).first()
+        product = Product.objects.select_related("store").prefetch_related("sizes").filter(pk=product_id).first()
         if not product:
             raise ValidationError("Product not found.")
 
@@ -84,16 +91,41 @@ class CartService:
         if product.store.status != StoreStatus.ACTIVE or product.store.archived_at is not None:
             raise ValidationError("This store is currently unavailable.")
 
-        if product.stock <= 0:
+        clean_size = str(size or "").strip().upper()
+
+        # Handle size selection and stock
+        available_stock = product.stock
+        if product.sizes.exists():
+            if not clean_size:
+                # If sizes exist but user didn't specify, default to first in-stock size if available
+                first_avail = product.sizes.filter(stock__gt=0).first()
+                if first_avail:
+                    clean_size = first_avail.size
+                    available_stock = first_avail.stock
+                else:
+                    raise ValidationError("This product is currently out of stock in all sizes.")
+            else:
+                size_obj = product.sizes.filter(size=clean_size).first()
+                if not size_obj:
+                    valid_sizes = list(product.sizes.values_list("size", flat=True))
+                    raise ValidationError(
+                        f"Size '{clean_size}' is not valid for this product. Available sizes: {', '.join(valid_sizes)}."
+                    )
+                if size_obj.stock <= 0:
+                    raise ValidationError(f"Size '{clean_size}' is currently out of stock.")
+                available_stock = size_obj.stock
+
+        if available_stock <= 0:
             raise ValidationError("This product is currently out of stock.")
 
-        cart_item = cart.items.filter(product=product).first()
+        cart_item = cart.items.filter(product=product, size=clean_size).first()
         current_quantity = cart_item.quantity if cart_item else 0
         target_quantity = current_quantity + quantity
 
-        if target_quantity > product.stock:
+        if target_quantity > available_stock:
+            size_note = f" in size '{clean_size}'" if clean_size else ""
             raise ValidationError(
-                f"Cannot add {quantity} item(s). Only {product.stock - current_quantity} more item(s) available in stock."
+                f"Cannot add {quantity} item(s). Only {available_stock - current_quantity} more item(s) available{size_note}."
             )
 
         if cart_item:
@@ -103,6 +135,7 @@ class CartService:
             cart_item = CartItem.objects.create(
                 cart=cart,
                 product=product,
+                size=clean_size,
                 quantity=target_quantity,
             )
 
@@ -116,7 +149,7 @@ class CartService:
         Updates the quantity of a cart item.
         If quantity is 0, removes the item.
         """
-        cart_item = cart.items.select_related("product").filter(pk=item_id).first()
+        cart_item = cart.items.select_related("product").prefetch_related("product__sizes").filter(pk=item_id).first()
         if not cart_item:
             raise ValidationError("Item not found in cart.")
 
@@ -126,9 +159,16 @@ class CartService:
             return None
 
         product = cart_item.product
-        if quantity > product.stock:
+        max_stock = product.stock
+        if cart_item.size and product.sizes.exists():
+            size_obj = product.sizes.filter(size=cart_item.size).first()
+            if size_obj:
+                max_stock = size_obj.stock
+
+        if quantity > max_stock:
+            size_note = f" in size '{cart_item.size}'" if cart_item.size else ""
             raise ValidationError(
-                f"Cannot set quantity to {quantity}. Only {product.stock} item(s) available in stock."
+                f"Cannot set quantity to {quantity}. Only {max_stock} item(s) available{size_note}."
             )
 
         cart_item.quantity = quantity
@@ -164,7 +204,7 @@ class CartService:
         issues = []
         is_valid = True
 
-        for item in cart.items.select_related("product", "product__store").all():
+        for item in cart.items.select_related("product", "product__store").prefetch_related("product__sizes").all():
             product = item.product
             store = product.store
 
@@ -174,6 +214,7 @@ class CartService:
                     "item_id": item.id,
                     "product_id": product.id,
                     "product_name": product.name,
+                    "size": item.size,
                     "issue": "Store is unavailable.",
                     "code": "STORE_UNAVAILABLE",
                 })
@@ -183,19 +224,28 @@ class CartService:
                     "item_id": item.id,
                     "product_id": product.id,
                     "product_name": product.name,
+                    "size": item.size,
                     "issue": "Product is no longer active.",
                     "code": "PRODUCT_INACTIVE",
                 })
-            elif product.stock < item.quantity:
-                is_valid = False
-                issues.append({
-                    "item_id": item.id,
-                    "product_id": product.id,
-                    "product_name": product.name,
-                    "issue": f"Requested {item.quantity}, but only {product.stock} available in stock.",
-                    "code": "INSUFFICIENT_STOCK",
-                    "available_stock": product.stock,
-                })
+            else:
+                max_stock = product.stock
+                if item.size and product.sizes.exists():
+                    size_obj = product.sizes.filter(size=item.size).first()
+                    max_stock = size_obj.stock if size_obj else 0
+
+                if max_stock < item.quantity:
+                    is_valid = False
+                    size_str = f" in size '{item.size}'" if item.size else ""
+                    issues.append({
+                        "item_id": item.id,
+                        "product_id": product.id,
+                        "product_name": product.name,
+                        "size": item.size,
+                        "issue": f"Requested {item.quantity}, but only {max_stock} available{size_str}.",
+                        "code": "INSUFFICIENT_STOCK",
+                        "available_stock": max_stock,
+                    })
 
         return {
             "is_valid": is_valid,

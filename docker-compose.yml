@@ -1,6 +1,7 @@
 services:
   web:
     build: .
+    image: kisekae-backend:latest
     container_name: kisekae-web
     command: gunicorn KiseKaeDjango.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -
     env_file:
@@ -18,6 +19,7 @@ services:
 
   worker:
     build: .
+    image: kisekae-backend:latest
     container_name: kisekae-worker
     command: celery -A KiseKaeDjango worker -l info
     env_file:
@@ -31,6 +33,7 @@ services:
 
   beat:
     build: .
+    image: kisekae-backend:latest
     container_name: kisekae-beat
     command: celery -A KiseKaeDjango beat -l info
     env_file:

@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
 
+from .models import Cart
 from .serializers import (
     AddToCartSerializer,
     CartSerializer,
@@ -38,6 +39,17 @@ class BaseCartView(APIView):
         user = request.user if request.user and request.user.is_authenticated else None
         return CartService.get_or_create_cart(user=user, cart_token=token)
 
+    def _load_cart_prefetched(self, cart_id):
+        return (
+            Cart.objects.filter(pk=cart_id)
+            .prefetch_related(
+                "items__product__store",
+                "items__product__images",
+                "items__product__sizes",
+            )
+            .first()
+        )
+
 
 class CartDetailView(BaseCartView):
     """
@@ -48,7 +60,7 @@ class CartDetailView(BaseCartView):
     @extend_schema(
         tags=["Cart"],
         summary="Get current cart",
-        description="Returns the contents, item count, and subtotal of the active cart.",
+        description="Returns the contents, item count, and subtotal of the active cart with item sizes and thumbnails.",
         parameters=[
             OpenApiParameter(
                 name="X-Cart-Token",
@@ -62,6 +74,7 @@ class CartDetailView(BaseCartView):
     )
     def get(self, request):
         cart = self._get_cart(request)
+        cart = self._load_cart_prefetched(cart.id) or cart
         serializer = CartSerializer(cart)
         return success_response(
             message="Cart fetched successfully.",
@@ -71,13 +84,13 @@ class CartDetailView(BaseCartView):
 
 class AddToCartView(BaseCartView):
     """
-    Add a product to the cart. If the product already exists in the cart, its quantity is incremented.
+    Add a product to the cart with optional size selection. If the product with matching size already exists, its quantity is incremented.
     """
 
     @extend_schema(
         tags=["Cart"],
         summary="Add item to cart",
-        description="Adds a product to the cart. Checks product and store active status and stock.",
+        description="Adds a product to the cart with an optional size. Validates product status, store availability, and size-specific stock.",
         request=AddToCartSerializer,
         responses={200: CartSerializer, 400: CART_ERROR_SCHEMA},
     )
@@ -94,9 +107,10 @@ class AddToCartView(BaseCartView):
         cart = self._get_cart(request)
         product_id = serializer.validated_data["product_id"]
         quantity = serializer.validated_data.get("quantity", 1)
+        size = serializer.validated_data.get("size", "")
 
         try:
-            CartService.add_item(cart=cart, product_id=product_id, quantity=quantity)
+            CartService.add_item(cart=cart, product_id=product_id, quantity=quantity, size=size)
         except ValidationError as e:
             msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
             return error_response(
@@ -105,7 +119,7 @@ class AddToCartView(BaseCartView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        cart.refresh_from_db()
+        cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
             message="Item added to cart successfully.",
             data=CartSerializer(cart).data,
@@ -148,7 +162,7 @@ class CartItemDetailView(BaseCartView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        cart.refresh_from_db()
+        cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
             message="Cart updated successfully.",
             data=CartSerializer(cart).data,
@@ -173,7 +187,7 @@ class CartItemDetailView(BaseCartView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        cart.refresh_from_db()
+        cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
             message="Item removed from cart.",
             data=CartSerializer(cart).data,
@@ -194,7 +208,7 @@ class CartClearView(BaseCartView):
     def delete(self, request):
         cart = self._get_cart(request)
         CartService.clear_cart(cart)
-        cart.refresh_from_db()
+        cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
             message="Cart cleared successfully.",
             data=CartSerializer(cart).data,
@@ -209,7 +223,7 @@ class CartValidateView(BaseCartView):
     @extend_schema(
         tags=["Cart"],
         summary="Validate cart before checkout",
-        description="Checks all items in the cart for store availability and stock. Returns issues if any items are invalid.",
+        description="Checks all items in the cart for store availability and size-specific stock. Returns issues if any items are invalid.",
         responses={200: inline_serializer(name="CartValidateResponse", fields={"is_valid": serializers.BooleanField(), "issues_count": serializers.IntegerField(), "issues": serializers.ListField()})},
     )
     def get(self, request):

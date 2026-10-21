@@ -60,6 +60,11 @@ class EmbeddingService:
 
     def build_product_text(self, product) -> str:
         parts = [product.name]
+        if hasattr(product, "category") and product.category:
+            cat_display = product.get_category_display() if hasattr(product, "get_category_display") else str(product.category)
+            parts.append(f"Category: {cat_display}")
+        if hasattr(product, "color") and product.color:
+            parts.append(f"Color: {product.color}")
         if product.description:
             parts.append(product.description)
         if hasattr(product, "store") and product.store and getattr(product.store, "name", None):

@@ -13,8 +13,10 @@ class CartItemStoreSerializer(serializers.ModelSerializer):
 
 
 class CartItemProductSerializer(serializers.ModelSerializer):
+    thumbnail = serializers.CharField(read_only=True, allow_null=True)
     image_url = serializers.CharField(read_only=True, allow_null=True)
     store = CartItemStoreSerializer(read_only=True)
+    available_sizes = serializers.ListField(child=serializers.CharField(), read_only=True)
 
     class Meta:
         model = Product
@@ -22,18 +24,23 @@ class CartItemProductSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "slug",
+            "category",
+            "color",
             "price",
             "compare_at_price",
             "currency",
+            "thumbnail",
             "image_url",
             "stock",
             "status",
+            "available_sizes",
             "store",
         ]
 
 
 class CartItemSerializer(serializers.ModelSerializer):
     product = CartItemProductSerializer(read_only=True)
+    size = serializers.CharField(read_only=True)
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     is_available = serializers.BooleanField(read_only=True)
@@ -43,6 +50,7 @@ class CartItemSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "product",
+            "size",
             "quantity",
             "unit_price",
             "total_price",
@@ -76,6 +84,13 @@ class CartSerializer(serializers.ModelSerializer):
 
 class AddToCartSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1, help_text="ID of the product to add.")
+    size = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Product size (e.g. S, M, L, XL for clothing; 6-10 for shoes).",
+    )
     quantity = serializers.IntegerField(default=1, min_value=1, help_text="Quantity to add (default: 1).")
 
 

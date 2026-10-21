@@ -1,6 +1,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils.text import slugify
 from pgvector.django import HnswIndex, VectorField
@@ -11,10 +12,41 @@ def product_image_upload_path(instance, filename):
     return f"products/{instance.store_id}/{uuid.uuid4().hex}.{ext}"
 
 
+def product_gallery_image_upload_path(instance, filename):
+    ext = filename.split(".")[-1].lower() if "." in filename else "jpg"
+    store_id = instance.product.store_id if instance.product_id else "common"
+    return f"products/{store_id}/gallery/{uuid.uuid4().hex}.{ext}"
+
+
 class ProductStatus(models.TextChoices):
     DRAFT = "DRAFT", "Draft"
     ACTIVE = "ACTIVE", "Active"
     INACTIVE = "INACTIVE", "Inactive"
+
+
+class ProductCategory(models.TextChoices):
+    ONE_PIECE = "ONE_PIECE", "One-Piece"
+    TOP = "TOP", "Top"
+    BOTTOM = "BOTTOM", "Bottom"
+    FOOTWEAR = "FOOTWEAR", "Footwear"
+    HEADWEAR = "HEADWEAR", "Headwear"
+    EYEWEAR = "EYEWEAR", "Eyewear"
+    OUTERWEAR = "OUTERWEAR", "Outerwear"
+    ACCESSORIES = "ACCESSORIES", "Accessories"
+
+
+CLOTHING_CATEGORIES = {
+    ProductCategory.TOP,
+    ProductCategory.BOTTOM,
+    ProductCategory.ONE_PIECE,
+    ProductCategory.OUTERWEAR,
+}
+FOOTWEAR_CATEGORIES = {
+    ProductCategory.FOOTWEAR,
+}
+
+CLOTHING_SIZES = ["S", "M", "L", "XL"]
+FOOTWEAR_SIZES = ["6", "7", "8", "9", "10"]
 
 
 class ProductQuerySet(models.QuerySet):
@@ -33,11 +65,26 @@ class Product(models.Model):
     )
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=300, db_index=True)
+    category = models.CharField(
+        max_length=30,
+        choices=ProductCategory.choices,
+        default=ProductCategory.TOP,
+        db_index=True,
+        help_text="Product clothing category / type.",
+    )
+    color = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Primary color of the product (e.g. Black, White, Navy Blue).",
+    )
     description = models.TextField(blank=True, default="")
     image = models.ImageField(
         upload_to=product_image_upload_path,
         null=True,
         blank=True,
+        help_text="Primary / legacy product thumbnail image.",
     )
     price = models.DecimalField(max_digits=10, decimal_places=2)
     compare_at_price = models.DecimalField(
@@ -56,7 +103,7 @@ class Product(models.Model):
     )
     stock = models.PositiveIntegerField(
         default=0,
-        help_text="Available inventory count.",
+        help_text="Available inventory count (sum across all sizes when sizes are configured).",
     )
     status = models.CharField(
         max_length=20,
@@ -97,10 +144,37 @@ class Product(models.Model):
         return self.stock > 0
 
     @property
-    def image_url(self):
+    def thumbnail(self):
+        """Returns the URL of the first image of the product (thumbnail)."""
+        if hasattr(self, "_prefetched_objects_cache") and "images" in self._prefetched_objects_cache:
+            images = list(self.images.all())
+            if images and images[0].image and hasattr(images[0].image, "url"):
+                return images[0].image.url
+        else:
+            first_img = self.images.first()
+            if first_img and first_img.image and hasattr(first_img.image, "url"):
+                return first_img.image.url
         if self.image and hasattr(self.image, "url"):
             return self.image.url
         return None
+
+    @property
+    def image_url(self):
+        return self.thumbnail
+
+    @property
+    def available_sizes(self):
+        """Returns list of sizes currently in stock."""
+        if hasattr(self, "_prefetched_objects_cache") and "sizes" in self._prefetched_objects_cache:
+            return [s.size for s in self.sizes.all() if s.stock > 0]
+        return list(self.sizes.filter(stock__gt=0).values_list("size", flat=True))
+
+    def sync_total_stock(self):
+        """Updates product.stock to match the sum of its size stocks if sizes exist."""
+        if self.sizes.exists():
+            total = self.sizes.aggregate(total=models.Sum("stock"))["total"] or 0
+            self.stock = total
+            self.save(update_fields=["stock", "updated_at"])
 
     def _generate_candidate_slug(self, start_counter=0):
         base_slug = slugify(self.name) or "product"
@@ -133,8 +207,95 @@ class Product(models.Model):
             return super().save(*args, **kwargs)
 
         super().save(*args, **kwargs)
- 
- 
+
+
+class ProductSize(models.Model):
+    """
+    Inventory stock for a specific size of a product.
+    For Clothing: S, M, L, XL
+    For Footwear: 6, 7, 8, 9, 10
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="sizes",
+    )
+    size = models.CharField(
+        max_length=20,
+        db_index=True,
+        help_text="Size designation (e.g. S, M, L, XL for clothing; 6-10 for shoes).",
+    )
+    stock = models.PositiveIntegerField(
+        default=0,
+        help_text="Available inventory count for this specific size.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "size"],
+                name="unique_product_size",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - Size {self.size} ({self.stock} in stock)"
+
+    def clean(self):
+        super().clean()
+        if self.size:
+            self.size = str(self.size).strip().upper()
+        if hasattr(self, "product") and self.product and self.product.category:
+            cat = self.product.category
+            if cat in CLOTHING_CATEGORIES:
+                allowed = CLOTHING_SIZES + ["XS", "XXL", "FREE_SIZE", "ONE_SIZE"]
+                if self.size not in allowed:
+                    raise ValidationError(
+                        {"size": f"Invalid clothing size '{self.size}'. Allowed: {', '.join(CLOTHING_SIZES)}."}
+                    )
+            elif cat in FOOTWEAR_CATEGORIES:
+                if self.size not in FOOTWEAR_SIZES:
+                    raise ValidationError(
+                        {"size": f"Invalid shoe size '{self.size}'. Allowed: {', '.join(FOOTWEAR_SIZES)}."}
+                    )
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+
+class ProductImage(models.Model):
+    """
+    Multiple image support for product listings (up to 10 images per product).
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to=product_gallery_image_upload_path)
+    order = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Display order sequence (0 is thumbnail/first).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"Image #{self.id} for {self.product.name} (order {self.order})"
+
+    @property
+    def image_url(self):
+        if self.image and hasattr(self.image, "url"):
+            return self.image.url
+        return None
+
+
 class CompatibleHnswIndex(HnswIndex):
     def create_sql(self, model, schema_editor, using="", **kwargs):
         if schema_editor.connection.vendor != "postgresql":
@@ -171,5 +332,3 @@ class ProductEmbedding(models.Model):
 
     def __str__(self):
         return f"Embedding for Product #{self.product_id} ({self.product.name})"
-
-

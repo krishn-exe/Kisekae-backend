@@ -64,6 +64,12 @@ class CartItem(models.Model):
         on_delete=models.CASCADE,
         related_name="cart_items",
     )
+    size = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="Selected size for apparel or footwear (e.g. S, M, L, XL, 8).",
+    )
     quantity = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -71,11 +77,15 @@ class CartItem(models.Model):
     class Meta:
         ordering = ["created_at"]
         constraints = [
-            models.UniqueConstraint(fields=["cart", "product"], name="unique_product_per_cart")
+            models.UniqueConstraint(
+                fields=["cart", "product", "size"],
+                name="unique_cart_product_size",
+            )
         ]
 
     def __str__(self):
-        return f"{self.product.name} x {self.quantity}"
+        size_label = f" ({self.size})" if self.size else ""
+        return f"{self.product.name}{size_label} x {self.quantity}"
 
     @property
     def unit_price(self):
@@ -87,9 +97,14 @@ class CartItem(models.Model):
 
     @property
     def is_available(self):
-        return (
+        base_ok = (
             self.product.status == ProductStatus.ACTIVE
             and self.product.store.status == StoreStatus.ACTIVE
             and self.product.store.archived_at is None
-            and self.product.stock >= self.quantity
         )
+        if not base_ok:
+            return False
+        if self.size and self.product.sizes.exists():
+            size_obj = self.product.sizes.filter(size=self.size).first()
+            return size_obj is not None and size_obj.stock >= self.quantity
+        return self.product.stock >= self.quantity

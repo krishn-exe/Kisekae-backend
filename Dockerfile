@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-install CPU-only PyTorch to avoid downloading heavy CUDA wheels (~1GB) and prevent network timeouts
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && rm -rf /usr/local/lib/python3.12/site-packages/torch/test \
+              /usr/local/lib/python3.12/site-packages/torch/include
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

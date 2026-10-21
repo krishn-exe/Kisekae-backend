@@ -21,5 +21,7 @@ jobs:
             git fetch origin production
             git checkout production
             git reset --hard origin/production
+            docker builder prune -f
             docker compose up --build -d
-            docker image prune -f
+            docker image prune -af
+            docker builder prune -f

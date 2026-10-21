@@ -3,9 +3,11 @@ from django.urls import path
 from .views import (
     ProductBulkUpdateView,
     ProductDetailView,
+    ProductImageDetailView,
     ProductImageView,
     ProductListCreateView,
     ProductListingStatusView,
+    ProductMultipleImageView,
 )
 
 urlpatterns = [
@@ -21,6 +23,10 @@ urlpatterns = [
     # Product Detail, Update, Archive
     path("<int:product_pk>/", ProductDetailView.as_view(), name="product-detail"),
 
-    # Product Image
+    # Single Product Primary Image (backward compatibility)
     path("<int:product_pk>/image/", ProductImageView.as_view(), name="product-image"),
+
+    # Product Gallery Images (up to 10 images)
+    path("<int:product_pk>/images/", ProductMultipleImageView.as_view(), name="product-gallery-images"),
+    path("<int:product_pk>/images/<int:image_id>/", ProductImageDetailView.as_view(), name="product-gallery-image-detail"),
 ]

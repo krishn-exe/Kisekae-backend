@@ -43,6 +43,12 @@ def generate_order_number():
 
 
 class Order(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="orders",
+        help_text="Customer user account that placed this order.",
+    )
     store = models.ForeignKey(
         "stores.Store",
         on_delete=models.CASCADE,
@@ -133,7 +139,7 @@ class OrderStatusHistory(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.order.order_number}: {self.from_status} -> {self.to_status}"
+        return f"{self.order_number}: {self.from_status} -> {self.to_status}"
 
 
 class ReturnRequest(models.Model):

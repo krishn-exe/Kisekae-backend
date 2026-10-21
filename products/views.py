@@ -21,6 +21,9 @@ from .models import (
     ProductImage,
     ProductSize,
     ProductStatus,
+    ProductView,
+    SearchHistory,
+    UserTasteProfile,
 )
 from .serializers import (
     BulkProductUpdateSerializer,
@@ -33,9 +36,12 @@ from .serializers import (
     ProductUpdateSerializer,
     PublicProductDetailSerializer,
     PublicProductSerializer,
+    SearchHistorySerializer,
 )
 from .embedding_service import EmbeddingService
+from .recommendation_service import RecommendationService
 from .services import MAX_IMAGES_PER_PRODUCT, ProductService
+from .tasks import record_product_view_task, record_search_query_task
 
 PRODUCT_ERROR_SCHEMA = inline_serializer(
     name="ProductErrorEnvelope",
@@ -782,6 +788,8 @@ class PublicProductListView(APIView):
         if search_query:
             q_str = search_query.strip()
             queryset = queryset.filter(Q(name__icontains=q_str) | Q(description__icontains=q_str))
+            if request.user and request.user.is_authenticated:
+                record_search_query_task.delay(request.user.id, q_str)
 
         # Apply category, size, color, price range, in-stock, letter filters
         queryset = apply_product_filters(queryset, request)
@@ -873,6 +881,8 @@ class ProductSearchView(APIView):
         supports_pgvector = (connection.vendor == "postgresql")
 
         if query:
+            if request.user and request.user.is_authenticated:
+                record_search_query_task.delay(request.user.id, query)
             if not supports_pgvector:
                 queryset = queryset.filter(
                     Q(name__icontains=query)
@@ -1011,7 +1021,133 @@ class PublicProductDetailView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
+        if request.user and request.user.is_authenticated:
+            record_product_view_task.delay(request.user.id, product.id)
+
         return success_response(
             message="Product details fetched successfully.",
             data=PublicProductDetailSerializer(product).data,
+        )
+
+
+
+# ============================================================================
+# SEARCH HISTORY & RECOMMENDATIONS VIEWS
+# ============================================================================
+
+class SearchHistoryListView(APIView):
+    """
+    User Search History: List user's recent searches or clear entire search history.
+    Searches are embedded and used as direct signals in the ML recommendation model.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Search History"],
+        summary="List user's search history",
+        description="Returns the user's recent search queries. These queries feed directly into the recommendation ML taste profile.",
+        responses={200: SearchHistorySerializer(many=True)},
+    )
+    def get(self, request):
+        history = SearchHistory.objects.filter(user=request.user).order_by("-last_searched_at")[:30]
+        return success_response(
+            message="Search history fetched successfully.",
+            data=SearchHistorySerializer(history, many=True).data,
+        )
+
+    @extend_schema(
+        operation_id="clear_all_search_history",
+        tags=["Search History"],
+        summary="Clear user's search history",
+        description="Clears all stored search queries for the authenticated user and excludes them from future ML taste profile refreshes.",
+        responses={200: inline_serializer(name="SearchHistoryClearResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()})},
+    )
+    def delete(self, request):
+        SearchHistory.objects.filter(user=request.user).delete()
+        return success_response(
+            message="Search history cleared successfully.",
+        )
+
+
+class SearchHistoryDetailView(APIView):
+    """
+    User Search History: Delete a specific search entry.
+    """
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="delete_search_history_entry",
+        tags=["Search History"],
+        summary="Delete a search history entry",
+        description="Removes a specific search query from the user's history.",
+        responses={200: inline_serializer(name="SearchHistoryDeleteResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()}), 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def delete(self, request, history_id):
+        deleted, _ = SearchHistory.objects.filter(user=request.user, pk=history_id).delete()
+        if not deleted:
+            return error_response(
+                message="Search history entry not found.",
+                code="NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        return success_response(
+            message="Search history entry removed successfully.",
+        )
+
+
+class RecommendedFeedView(APIView):
+    """
+    Public & Authenticated API: Curated and personalized product recommendation feed.
+    - Authenticated users with >= 3 signals receive personalized recommendations
+      driven by their 384-dimensional taste profile vector via pgvector cosine distance search.
+    - Cold-start users and guests receive trending products (highest recent 30-day sales).
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+    pagination_class = ProductPagination
+
+    @extend_schema(
+        tags=["Recommendations"],
+        summary="Get curated / recommended product feed",
+        description=(
+            "Returns a curated feed of recommended products for the user. "
+            "Utilizes pgvector cosine similarity matching against a multi-signal taste profile "
+            "(purchases, cart, wishlist, search history, views). "
+            "Cold-start users and guests receive cached trending products."
+        ),
+        parameters=[
+            OpenApiParameter(name="category", description="Optional category filter for recommendations", required=False, type=str),
+            OpenApiParameter(name="exclude_cart", description="Whether to exclude items currently in user's cart (default: true)", required=False, type=bool),
+            OpenApiParameter(name="page", type=int, required=False),
+            OpenApiParameter(name="page_size", type=int, required=False),
+        ],
+        responses={200: ProductCardSerializer(many=True)},
+    )
+    def get(self, request):
+        exclude_cart_param = request.query_params.get("exclude_cart", "true").strip().lower()
+        exclude_cart = exclude_cart_param in ("true", "1", "yes")
+        category = request.query_params.get("category")
+
+        user = request.user if request.user.is_authenticated else None
+        queryset = RecommendationService.get_recommendations(
+            user=user,
+            limit=100,
+            exclude_cart=exclude_cart,
+            category=category,
+        )
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = ProductCardSerializer(page, many=True)
+
+        return success_response(
+            message="Recommended feed fetched successfully.",
+            data={
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
         )

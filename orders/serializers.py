@@ -58,11 +58,13 @@ class ReturnRequestSerializer(serializers.ModelSerializer):
 
 class OrderListSerializer(serializers.ModelSerializer):
     items_count = serializers.IntegerField(source="items.count", read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
 
     class Meta:
         model = Order
         fields = [
             "id",
+            "user_id",
             "order_number",
             "customer_name",
             "customer_email",
@@ -80,11 +82,13 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     return_requests = ReturnRequestSerializer(many=True, read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
 
     class Meta:
         model = Order
         fields = [
             "id",
+            "user_id",
             "order_number",
             "customer_name",
             "customer_email",

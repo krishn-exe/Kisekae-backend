@@ -332,3 +332,103 @@ class ProductEmbedding(models.Model):
 
     def __str__(self):
         return f"Embedding for Product #{self.product_id} ({self.product.name})"
+
+
+class SearchHistory(models.Model):
+    """
+    Stores user search queries with semantic embeddings for search history and recommendation ML.
+    Enables recommendations to reflect recent active discovery intent in the same 384-dim vector space.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="search_history",
+    )
+    query = models.CharField(max_length=255, db_index=True)
+    embedding = VectorField(dimensions=384, null=True, blank=True)
+    search_count = models.PositiveIntegerField(default=1)
+    last_searched_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-last_searched_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "query"],
+                name="unique_user_search_query",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "-last_searched_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email}: '{self.query}' (x{self.search_count})"
+
+
+class ProductView(models.Model):
+    """
+    Tracks when a user views a product detail page.
+    Supplies passive browsing interest signals to the recommendation ML engine.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="product_views",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="views",
+    )
+    view_count = models.PositiveIntegerField(default=1)
+    first_viewed_at = models.DateTimeField(auto_now_add=True)
+    last_viewed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-last_viewed_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "product"],
+                name="unique_user_product_view",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "-last_viewed_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} viewed {self.product.name} (x{self.view_count})"
+
+
+class UserTasteProfile(models.Model):
+    """
+    Precomputed taste vector for personalized recommendations.
+    Synthesizes purchase, cart, wishlist, search history, and view signals into a 384-dim vector.
+    Indexed with HNSW for sub-10ms nearest neighbor queries against the product catalog.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="taste_profile",
+    )
+    embedding = VectorField(dimensions=384)
+    interaction_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Total weighted interactions used to compute this vector.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            CompatibleHnswIndex(
+                name="user_taste_hnsw_idx",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Taste Profile for User #{self.user_id} ({self.interaction_count} signals)"

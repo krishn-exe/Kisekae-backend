@@ -22,6 +22,9 @@ class OrderService:
     @staticmethod
     @transaction.atomic
     def create_order(store, customer_data, items_data, user=None):
+        if not user:
+            raise ValidationError("A valid user account is required to place an order.")
+
         if store.status != StoreStatus.ACTIVE:
             raise ValidationError(f"Cannot place order for a store that is {store.status.lower()}.")
 
@@ -29,6 +32,7 @@ class OrderService:
             raise ValidationError("Store business verification must be approved before orders can be placed.")
 
         order = Order.objects.create(
+            user=user,
             store=store,
             customer_name=customer_data["customer_name"],
             customer_email=customer_data["customer_email"],

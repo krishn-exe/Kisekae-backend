@@ -60,6 +60,7 @@ class AnalyticsEndpointsTestCase(TestCase):
         )
 
         self.order = Order.objects.create(
+            user=self.seller,
             store=self.store,
             customer_name="Alice Smith",
             customer_email="alice@example.com",

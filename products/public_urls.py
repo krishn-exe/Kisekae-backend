@@ -5,6 +5,9 @@ from .views import (
     ProductSearchView,
     PublicProductDetailView,
     PublicProductListView,
+    RecommendedFeedView,
+    SearchHistoryDetailView,
+    SearchHistoryListView,
 )
 
 urlpatterns = [
@@ -13,6 +16,13 @@ urlpatterns = [
 
     # Category List & Choices
     path("categories/", CategoryListView.as_view(), name="public-category-list"),
+
+    # Curated / Recommended Products Feed (Personalized ML + Trending Cold-Start)
+    path("recommended/", RecommendedFeedView.as_view(), name="public-product-recommendations"),
+
+    # User Search History APIs (Feeds into Recommendation ML)
+    path("search/history/", SearchHistoryListView.as_view(), name="public-search-history-list"),
+    path("search/history/<int:history_id>/", SearchHistoryDetailView.as_view(), name="public-search-history-detail"),
 
     # Public Product Search (with semantic/lexical search, filters & pagination)
     path("search/", ProductSearchView.as_view(), name="public-product-search"),

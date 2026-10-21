@@ -10,6 +10,7 @@ from .models import (
     ProductImage,
     ProductSize,
     ProductStatus,
+    SearchHistory,
 )
 
 
@@ -37,7 +38,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 class ProductCardSerializer(serializers.ModelSerializer):
     """
-    Compact product card returned in search results and public browsing.
+    Compact product card returned in search results, public browsing, and recommendations.
     Returns thumbnail (first image), pricing, category, and available sizes.
     """
     thumbnail = serializers.CharField(read_only=True, allow_null=True)
@@ -315,3 +316,16 @@ class CategoryItemSerializer(serializers.Serializer):
     code = serializers.CharField()
     name = serializers.CharField()
     products_count = serializers.IntegerField()
+
+
+class SearchHistorySerializer(serializers.ModelSerializer):
+    """Serializer for user search history records."""
+    class Meta:
+        model = SearchHistory
+        fields = [
+            "id",
+            "query",
+            "search_count",
+            "last_searched_at",
+            "created_at",
+        ]

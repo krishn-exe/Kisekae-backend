@@ -1,0 +1,33 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Low Stock Alert - {{ product.name }} - KISEKAE Seller{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge" style="background-color: #FFFBEB; color: #92400E; border-color: #FDE68A;">LOW STOCK WARNING</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Inventory Running Low
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Stock alert for store <strong>{{ product.store.name }}</strong>.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Product Details</div>
+  <div style="font-size: 15px; font-weight: 700; color: #2D2527;">{{ product.name }}</div>
+  {% if size %}
+  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Size Variant: <strong>{{ size }}</strong></div>
+  {% endif %}
+  <div style="font-size: 14px; font-weight: 600; color: #B91C1C; margin-top: 6px;">
+    Current Stock Remaining: {{ current_stock }}
+  </div>
+  {% if threshold %}
+  <div style="font-size: 12px; color: #78716C; margin-top: 2px;">Configured Alert Threshold: &le; {{ threshold }}</div>
+  {% endif %}
+</div>
+
+<p style="font-size: 14px; color: #44403C; line-height: 1.6;">
+  To prevent stockouts and preserve your search ranking on Kisekae, please restock this item in your Kisekae Seller inventory portal.
+</p>
+{% endblock %}

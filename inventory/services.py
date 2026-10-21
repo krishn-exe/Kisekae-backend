@@ -55,6 +55,11 @@ class InventoryService:
         if alert and target_stock <= alert.threshold:
             alert.last_triggered_at = timezone.now()
             alert.save(update_fields=["last_triggered_at", "updated_at"])
+            from notifications.tasks import send_seller_low_stock_alert_task
+            prod_id_val = locked_product.id
+            curr_stock_val = target_stock
+            thresh_val = alert.threshold
+            transaction.on_commit(lambda: send_seller_low_stock_alert_task.delay(prod_id_val, current_stock=curr_stock_val, threshold=thresh_val))
 
         return locked_product, update_record
 

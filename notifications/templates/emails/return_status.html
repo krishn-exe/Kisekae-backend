@@ -1,0 +1,29 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Return Update #{{ return_req.order.order_number }} - KISEKAE{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge">RETURN {{ return_req.status }}</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Return Request Update
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Update for Order <strong>#{{ return_req.order.order_number }}</strong>
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Return Information</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Status: {{ return_req.status }}</div>
+  {% if return_req.item %}
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Item: {{ return_req.item.product_name }} ({{ return_req.item.quantity }}x)</div>
+  {% endif %}
+  <div style="font-size: 13px; color: #78716C; margin-top: 4px;">Reason: {{ return_req.reason }}</div>
+  {% if return_req.admin_notes %}
+  <div style="font-size: 13px; color: #2D2527; margin-top: 8px; padding-top: 8px; border-top: 1px solid #E7E2DA;">
+    <strong>Store Note:</strong> {{ return_req.admin_notes }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Store Team Invitation - KISEKAE Seller{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge">TEAM INVITATION</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Join {{ store_name }}
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    <strong>{{ inviter_name }}</strong> has invited you to join the team managing <strong>{{ store_name }}</strong> on Kisekae.
+  </p>
+</div>
+
+<div class="info-card" style="text-align: center;">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 8px;">Your Invitation Token</div>
+  <div style="display: inline-block; background-color: #FFFFFF; border: 1px solid #D5CDC5; border-radius: 8px; padding: 10px 18px; font-family: monospace; font-size: 18px; font-weight: 700; color: #802B3E; letter-spacing: 1px;">
+    {{ raw_token }}
+  </div>
+  <div style="font-size: 12px; color: #78716C; margin-top: 8px;">
+    Expires in {{ expires_days }} days.
+  </div>
+</div>
+
+<div style="text-align: center; margin: 24px 0;">
+  <a href="{{ accept_url }}" class="btn">Open Seller App & Accept</a>
+</div>
+
+<p style="font-size: 12px; color: #A8A29E; text-align: center;">
+  If you do not have the app installed, enter this invitation token manually after downloading Kisekae Seller. If you did not expect this invitation, you can ignore this email.
+</p>
+{% endblock %}

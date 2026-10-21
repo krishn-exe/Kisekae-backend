@@ -1,7 +1,7 @@
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import send_mail
 from django.core.management import call_command
+from notifications.email_service import NotificationEmailService
 
 
 @shared_task
@@ -14,16 +14,27 @@ def send_otp_email_task(target_email, raw_code, purpose="login"):
     if purpose == "password_reset":
         subject = "Your Kisekae password reset code"
         action_desc = "password reset"
+        heading = "Reset Your Password"
     elif purpose == "verify_email":
         subject = "Your Kisekae email verification code"
         action_desc = "email verification"
+        heading = "Verify Your Email Address"
     else:
         subject = "Your Kisekae login code"
         action_desc = "login"
+        heading = "Log In to Kisekae"
 
-    send_mail(
+    plain_message = f"Your {action_desc} code is {raw_code}. It expires in 5 minutes."
+    context = {
+        "heading": heading,
+        "action_desc": action_desc,
+        "raw_code": raw_code,
+    }
+
+    NotificationEmailService.send_multipart_email(
+        to_email=target_email,
         subject=subject,
-        message=f"Your {action_desc} code is {raw_code}. It expires in 5 minutes.",
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[target_email],
+        template_name="emails/otp_email.html",
+        context=context,
+        plain_text_fallback=plain_message,
     )

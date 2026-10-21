@@ -118,6 +118,11 @@ class OrderService:
             notes="Order placed successfully.",
         )
 
+        from notifications.tasks import send_order_lifecycle_email_task, send_seller_new_order_alert_task
+        order_id_val = order.id
+        transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "CONFIRMED"))
+        transaction.on_commit(lambda: send_seller_new_order_alert_task.delay(order_id_val))
+
         return order
 
     @staticmethod
@@ -180,6 +185,13 @@ class OrderService:
             notes=notes or f"Status changed from {old_status} to {new_status}.",
         )
 
+        if new_status in {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED}:
+            from notifications.tasks import send_order_lifecycle_email_task
+            order_id_val = order.id
+            status_val = new_status
+            notes_val = notes or ""
+            transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, status_val, notes_val))
+
         return order
 
     @staticmethod
@@ -227,6 +239,10 @@ class OrderService:
         return_request.resolved_by = user
         return_request.resolved_at = timezone.now()
         return_request.save(update_fields=["status", "admin_notes", "resolved_by", "resolved_at"])
+
+        from notifications.tasks import send_return_status_email_task
+        ret_req_id = return_request.id
+        transaction.on_commit(lambda: send_return_status_email_task.delay(ret_req_id))
 
         if new_status == ReturnStatus.COMPLETED:
             order = return_request.order

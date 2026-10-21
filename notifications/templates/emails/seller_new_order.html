@@ -1,0 +1,51 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}New Order Received #{{ order.order_number }} - KISEKAE Seller{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge">NEW ORDER</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    New Order Received!
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    A new order has been placed for your store <strong>{{ order.store.name }}</strong>.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Order Overview</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Order Number: {{ order.order_number }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Customer: {{ order.customer_name }} ({{ order.customer_email }})</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Deliver to: {{ order.shipping_address }}</div>
+  <div style="font-size: 14px; font-weight: 700; color: #802B3E; margin-top: 8px;">
+    Total: {{ order.currency }} {{ order.total_amount }}
+  </div>
+</div>
+
+<h3 style="font-size: 15px; font-weight: 600; color: #2D2527; margin: 24px 0 12px 0;">Items to Fulfill</h3>
+<table class="item-table">
+  <thead>
+    <tr>
+      <th>Product</th>
+      <th style="text-align: center;">Size</th>
+      <th style="text-align: center;">Qty</th>
+      <th style="text-align: right;">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in order.items.all %}
+    <tr>
+      <td><strong style="color: #2D2527;">{{ item.product_name }}</strong></td>
+      <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
+      <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
+      <td style="text-align: right; font-weight: 600; color: #2D2527;">{{ order.currency }} {{ item.total_price }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div style="text-align: center; margin-top: 24px;">
+  <p style="font-size: 13px; color: #78716C;">Please log into the Kisekae Seller dashboard to manage and ship this order.</p>
+</div>
+{% endblock %}

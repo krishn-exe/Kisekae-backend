@@ -1,0 +1,28 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Order Delivered #{{ order.order_number }} - KISEKAE{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge" style="background-color: #F0FDF4; color: #166534; border-color: #BBF7D0;">DELIVERED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Your Order Has Arrived!
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Order <strong>#{{ order.order_number }}</strong> has been delivered.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Delivery Summary</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Delivered to: {{ order.customer_name }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">{{ order.shipping_address }}</div>
+  {% if order.delivered_at %}
+  <div style="font-size: 13px; color: #78716C; margin-top: 4px;">Delivered at: {{ order.delivered_at|date:"M d, Y h:i A" }}</div>
+  {% endif %}
+</div>
+
+<p style="font-size: 14px; color: #44403C; line-height: 1.6;">
+  We hope you love your new outfit! You can try on your clothing in augmented reality anytime using your Kisekae profile snapshots, or request a return within the eligible return window directly from your order details page.
+</p>
+{% endblock %}

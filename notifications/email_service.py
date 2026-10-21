@@ -1,0 +1,180 @@
+import logging
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+
+from stores.models import StoreMembership, StoreRole
+
+logger = logging.getLogger(__name__)
+
+
+class NotificationEmailService:
+    @staticmethod
+    def send_multipart_email(to_email, subject, template_name, context, plain_text_fallback=None):
+        """
+        Renders responsive HTML template and sends multi-part email with plain text alternative.
+        """
+        if not to_email:
+            return False
+
+        try:
+            html_content = render_to_string(template_name, context)
+            text_content = plain_text_fallback or strip_tags(html_content).strip()
+
+            email_msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[to_email],
+            )
+            email_msg.attach_alternative(html_content, "text/html")
+            email_msg.send(fail_silently=False)
+            logger.info("Email '%s' sent successfully to %s", subject, to_email)
+            return True
+        except Exception as exc:
+            logger.error("Failed to send email '%s' to %s: %s", subject, to_email, exc, exc_info=True)
+            raise
+
+    @staticmethod
+    def send_order_lifecycle_email(order, event_type, notes=""):
+        """
+        Dispatches customer order notifications (CONFIRMED, SHIPPED, DELIVERED, CANCELLED).
+        Respects customer's notification preferences if registered user.
+        """
+        user = order.user
+        if user and hasattr(user, "settings"):
+            if not user.settings.email_notifications or not user.settings.order_alerts:
+                logger.info("Order lifecycle email skipped for user %s per notification settings", user.email)
+                return False
+
+        templates = {
+            "CONFIRMED": ("emails/order_confirmed.html", f"Order Confirmed: #{order.order_number}"),
+            "SHIPPED": ("emails/order_shipped.html", f"Your Order #{order.order_number} Has Shipped!"),
+            "DELIVERED": ("emails/order_delivered.html", f"Delivered: Your Kisekae Order #{order.order_number}"),
+            "CANCELLED": ("emails/order_cancelled.html", f"Order Cancelled: #{order.order_number}"),
+        }
+
+        template_name, subject = templates.get(
+            event_type,
+            ("emails/order_confirmed.html", f"Order Update: #{order.order_number}")
+        )
+
+        context = {
+            "order": order,
+            "notes": notes,
+        }
+
+        return NotificationEmailService.send_multipart_email(
+            to_email=order.customer_email,
+            subject=subject,
+            template_name=template_name,
+            context=context,
+        )
+
+    @staticmethod
+    def send_return_status_email(return_req):
+        """
+        Dispatches customer return request outcome updates.
+        """
+        user = return_req.order.user
+        if user and hasattr(user, "settings"):
+            if not user.settings.email_notifications:
+                logger.info("Return email skipped for user %s per notification settings", user.email)
+                return False
+
+        subject = f"Return Update for Order #{return_req.order.order_number} ({return_req.status})"
+        context = {
+            "return_req": return_req,
+        }
+
+        return NotificationEmailService.send_multipart_email(
+            to_email=return_req.order.customer_email,
+            subject=subject,
+            template_name="emails/return_status.html",
+            context=context,
+        )
+
+    @staticmethod
+    def send_seller_new_order_alert(order):
+        """
+        Dispatches new order alert to all Store Owners and Managers who have order_alerts enabled.
+        """
+        store = order.store
+        memberships = (
+            StoreMembership.objects.filter(
+                store=store,
+                role__in=[StoreRole.OWNER, StoreRole.MANAGER],
+            )
+            .select_related("user")
+        )
+
+        sent_count = 0
+        subject = f"[{store.name}] New Order Received: #{order.order_number}"
+        context = {
+            "order": order,
+        }
+
+        for membership in memberships:
+            member_user = membership.user
+            if not member_user or not member_user.email:
+                continue
+
+            if hasattr(member_user, "settings"):
+                if not member_user.settings.email_notifications or not member_user.settings.order_alerts:
+                    logger.info("Seller order alert skipped for member %s per preferences", member_user.email)
+                    continue
+
+            NotificationEmailService.send_multipart_email(
+                to_email=member_user.email,
+                subject=subject,
+                template_name="emails/seller_new_order.html",
+                context=context,
+            )
+            sent_count += 1
+
+        return sent_count
+
+    @staticmethod
+    def send_seller_low_stock_alert(product, size="", current_stock=0, threshold=5):
+        """
+        Dispatches low stock warning to Store Owners and Managers.
+        """
+        store = product.store
+        memberships = (
+            StoreMembership.objects.filter(
+                store=store,
+                role__in=[StoreRole.OWNER, StoreRole.MANAGER],
+            )
+            .select_related("user")
+        )
+
+        sent_count = 0
+        size_label = f" ({size})" if size else ""
+        subject = f"[{store.name}] Low Stock Alert: {product.name}{size_label}"
+        context = {
+            "product": product,
+            "size": size,
+            "current_stock": current_stock,
+            "threshold": threshold,
+        }
+
+        for membership in memberships:
+            member_user = membership.user
+            if not member_user or not member_user.email:
+                continue
+
+            if hasattr(member_user, "settings"):
+                if not member_user.settings.email_notifications or not member_user.settings.stock_alerts:
+                    logger.info("Seller low stock alert skipped for member %s per preferences", member_user.email)
+                    continue
+
+            NotificationEmailService.send_multipart_email(
+                to_email=member_user.email,
+                subject=subject,
+                template_name="emails/seller_low_stock.html",
+                context=context,
+            )
+            sent_count += 1
+
+        return sent_count

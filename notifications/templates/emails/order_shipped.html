@@ -1,0 +1,48 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Order Shipped #{{ order.order_number }} - KISEKAE{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge">SHIPPED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Your Package is on the Way!
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Great news! Order <strong>#{{ order.order_number }}</strong> has been shipped by <strong>{{ order.store.name }}</strong>.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Tracking Information</div>
+  {% if order.tracking_number %}
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Tracking Number: {{ order.tracking_number }}</div>
+  {% endif %}
+  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Delivering to: {{ order.shipping_address }}</div>
+  {% if order.tracking_url %}
+  <div style="text-align: center; margin-top: 14px;">
+    <a href="{{ order.tracking_url }}" class="btn">Track Your Shipment</a>
+  </div>
+  {% endif %}
+</div>
+
+<h3 style="font-size: 15px; font-weight: 600; color: #2D2527; margin: 24px 0 12px 0;">Items in this Shipment</h3>
+<table class="item-table">
+  <thead>
+    <tr>
+      <th>Product</th>
+      <th style="text-align: center;">Size</th>
+      <th style="text-align: center;">Qty</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in order.items.all %}
+    <tr>
+      <td><strong style="color: #2D2527;">{{ item.product_name }}</strong></td>
+      <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
+      <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

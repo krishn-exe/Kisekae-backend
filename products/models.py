@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -105,6 +106,18 @@ class Product(models.Model):
         default=0,
         help_text="Available inventory count (sum across all sizes when sizes are configured).",
     )
+    average_rating = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        db_index=True,
+        help_text="Average review rating from 1.00 to 5.00.",
+    )
+    review_count = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="Total number of customer reviews.",
+    )
     status = models.CharField(
         max_length=20,
         choices=ProductStatus.choices,
@@ -175,6 +188,17 @@ class Product(models.Model):
             total = self.sizes.aggregate(total=models.Sum("stock"))["total"] or 0
             self.stock = total
             self.save(update_fields=["stock", "updated_at"])
+
+    def update_rating_stats(self):
+        """Updates product.average_rating and product.review_count from related reviews."""
+        stats = self.reviews.aggregate(
+            avg_rating=models.Avg("rating"),
+            total_reviews=models.Count("id"),
+        )
+        avg = stats["avg_rating"]
+        self.average_rating = round(Decimal(str(avg)), 2) if avg is not None else Decimal("0.00")
+        self.review_count = stats["total_reviews"] or 0
+        self.save(update_fields=["average_rating", "review_count", "updated_at"])
 
     def _generate_candidate_slug(self, start_counter=0):
         base_slug = slugify(self.name) or "product"

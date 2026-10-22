@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'analytics',
     'cart',
     'notifications',
+    'reviews',
     'storages',
 
 ]
@@ -233,6 +234,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Customer Orders', 'description': 'Customer order tracking, order cancellation, and detailed order history.'},
         {'name': 'Cart', 'description': 'Customer shopping cart items, size selections, and quantity updates.'},
         {'name': 'Cart & Checkout', 'description': 'Multi-store order checkout and validation.'},
+        {'name': 'Reviews & Ratings', 'description': 'Customer product ratings (1-5 stars), review submissions, verified buyer badges, and star breakdowns.'},
         {'name': 'Store Analytics', 'description': 'Store performance KPI metrics, revenue aggregations, product rankings, and CSV export.'},
     ],
 }

@@ -9,6 +9,7 @@ from .views import (
     SearchHistoryDetailView,
     SearchHistoryListView,
 )
+from reviews.views import ProductReviewListCreateView
 
 urlpatterns = [
     # Public Product Browsing & Listing (with filters & pagination)
@@ -29,4 +30,7 @@ urlpatterns = [
 
     # Public Product Detail
     path("<int:product_pk>/", PublicProductDetailView.as_view(), name="public-product-detail"),
+
+    # Product Reviews & Ratings (List, Filter & Create)
+    path("<int:product_pk>/reviews/", ProductReviewListCreateView.as_view(), name="product-reviews-list-create"),
 ]

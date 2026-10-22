@@ -940,7 +940,7 @@ class PublicProductListView(APIView):
             OpenApiParameter(name="letter", description="Filter products starting with this letter (case-insensitive)", required=False, type=str),
             OpenApiParameter(name="in_stock", description="If true, only return products with stock > 0", required=False, type=bool),
             OpenApiParameter(name="search", description="Basic text query on product name and description", required=False, type=str),
-            OpenApiParameter(name="ordering", description="Sort order: 'price', '-price', 'newest', 'oldest', 'name', '-name'", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order: 'price', '-price', 'newest', 'oldest', 'name', '-name', 'top_rated', 'lowest_rated'", required=False, type=str),
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
@@ -975,6 +975,11 @@ class PublicProductListView(APIView):
             "oldest": "created_at",
             "-created_at": "-created_at",
             "newest": "-created_at",
+            "rating": "-average_rating",
+            "-rating": "-average_rating",
+            "top_rated": "-average_rating",
+            "highest_rated": "-average_rating",
+            "lowest_rated": "average_rating",
         }
         order_field = valid_orderings.get(ordering, "name")
         queryset = queryset.order_by(order_field)

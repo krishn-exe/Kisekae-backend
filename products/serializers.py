@@ -48,6 +48,8 @@ class ProductCardSerializer(serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     is_in_stock = serializers.BooleanField(read_only=True)
     available_sizes = serializers.ListField(child=serializers.CharField(), read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    review_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
@@ -69,6 +71,8 @@ class ProductCardSerializer(serializers.ModelSerializer):
             "stock",
             "is_in_stock",
             "available_sizes",
+            "average_rating",
+            "review_count",
             "created_at",
         ]
 
@@ -92,6 +96,8 @@ class PublicProductDetailSerializer(serializers.ModelSerializer):
     store_slug = serializers.CharField(source="store.slug", read_only=True)
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     is_in_stock = serializers.BooleanField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    review_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
@@ -112,6 +118,8 @@ class PublicProductDetailSerializer(serializers.ModelSerializer):
             "sku",
             "stock",
             "is_in_stock",
+            "average_rating",
+            "review_count",
             "thumbnail",
             "image_url",
             "images",
@@ -133,6 +141,8 @@ class ProductSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     sizes = ProductSizeSerializer(many=True, read_only=True)
     available_sizes = serializers.ListField(child=serializers.CharField(), read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    review_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Product
@@ -156,6 +166,8 @@ class ProductSerializer(serializers.ModelSerializer):
             "currency",
             "sku",
             "stock",
+            "average_rating",
+            "review_count",
             "status",
             "created_at",
             "updated_at",

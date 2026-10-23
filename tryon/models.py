@@ -96,7 +96,8 @@ class ComboItem(models.Model):
 
 class TryOnProductAsset(models.Model):
     """
-    Tracks Virtual Try-On enability and candidate images for a store product.
+    Tracks Virtual Try-On enability and multi-angle candidate images for a store product.
+    Requires at least 3 angles (Front, Back, Side) in flat-lay/mannequin style for AVAILABLE status.
     """
     product = models.OneToOneField(
         "products.Product",
@@ -109,7 +110,31 @@ class TryOnProductAsset(models.Model):
         null=True,
         blank=True,
         related_name="+",
-        help_text="The verified flat-lay/mannequin image candidate.",
+        help_text="Primary try-on image candidate (defaults to front_image).",
+    )
+    front_image = models.ForeignKey(
+        "products.ProductImage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Verified Front view flat-lay/mannequin image.",
+    )
+    back_image = models.ForeignKey(
+        "products.ProductImage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Verified Back view flat-lay/mannequin image.",
+    )
+    side_image = models.ForeignKey(
+        "products.ProductImage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Verified Side view flat-lay/mannequin image.",
     )
     status = models.CharField(
         max_length=20,
@@ -129,3 +154,11 @@ class TryOnProductAsset(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - AR: {self.status}"
+
+    @property
+    def has_all_angles(self):
+        return bool(self.front_image and self.back_image and self.side_image)
+
+    @property
+    def angles_count(self):
+        return sum(1 for img in [self.front_image, self.back_image, self.side_image] if img is not None)

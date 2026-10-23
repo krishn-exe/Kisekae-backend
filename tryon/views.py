@@ -1,18 +1,22 @@
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from .models import Combo, ComboItem
+from products.models import Product
+from products.views import ProductPagination
+from stores.permissions import IsSeller, get_store_membership
+from .models import ARStatus, Combo, ComboItem
 from .serializers import (
     ComboAddItemSerializer,
     ComboCreateSerializer,
     ComboItemSerializer,
     ComboSerializer,
     ComboUpdateSerializer,
+    SellerProductARStatusSerializer,
 )
 from .services import ComboService
 
@@ -49,6 +53,32 @@ COMBO_ERROR_SCHEMA = inline_serializer(
     },
 )
 
+SELLER_AR_STATUS_LIST_SCHEMA = inline_serializer(
+    name="SellerARStatusListEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="SellerARStatusPaginatedData",
+            fields={
+                "count": serializers.IntegerField(),
+                "next": serializers.CharField(allow_null=True),
+                "previous": serializers.CharField(allow_null=True),
+                "results": SellerProductARStatusSerializer(many=True),
+            },
+        ),
+    },
+)
+
+SELLER_AR_STATUS_DETAIL_SCHEMA = inline_serializer(
+    name="SellerARStatusDetailEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": SellerProductARStatusSerializer(),
+    },
+)
+
 
 class BaseComboView(APIView):
     permission_classes = [IsAuthenticated]
@@ -72,6 +102,7 @@ class ComboListCreateView(BaseComboView):
     """
 
     @extend_schema(
+        operation_id="user_combo_list",
         tags=["Combos"],
         summary="List user's combos",
         description="Returns all outfit combos created by the authenticated user with full product card items.",
@@ -95,6 +126,7 @@ class ComboListCreateView(BaseComboView):
         )
 
     @extend_schema(
+        operation_id="user_combo_create",
         tags=["Combos"],
         summary="Create a new combo",
         description=(
@@ -139,6 +171,7 @@ class ComboDetailView(BaseComboView):
     """
 
     @extend_schema(
+        operation_id="user_combo_detail",
         tags=["Combos"],
         summary="Get combo details",
         description="Returns details and items for a specific outfit combo.",
@@ -158,6 +191,7 @@ class ComboDetailView(BaseComboView):
         )
 
     @extend_schema(
+        operation_id="user_combo_update",
         tags=["Combos"],
         summary="Update combo",
         description="Updates a combo's name or replaces its product items with category validation.",
@@ -198,6 +232,7 @@ class ComboDetailView(BaseComboView):
         )
 
     @extend_schema(
+        operation_id="user_combo_delete",
         tags=["Combos"],
         summary="Delete combo",
         description="Permanently deletes an outfit combo and its item associations.",
@@ -228,6 +263,7 @@ class ComboItemAddView(BaseComboView):
     """
 
     @extend_schema(
+        operation_id="user_combo_item_add",
         tags=["Combos"],
         summary="Add item to combo",
         description="Adds a product to the combo. Validates category compatibility against existing items in the combo.",
@@ -274,6 +310,7 @@ class ComboItemDeleteView(BaseComboView):
     """
 
     @extend_schema(
+        operation_id="user_combo_item_delete",
         tags=["Combos"],
         summary="Remove item from combo",
         description="Removes a specific product item from the combo.",
@@ -306,3 +343,113 @@ class ComboItemDeleteView(BaseComboView):
             )
 
         return success_response(message="Item removed from combo successfully.")
+
+
+class StoreProductsARStatusView(APIView):
+    """
+    Seller API: Browse store products with their AR Try-On readiness,
+    rejection reason, and detected angle views.
+    """
+    permission_classes = [IsAuthenticated, IsSeller]
+    pagination_class = ProductPagination
+
+    @extend_schema(
+        operation_id="seller_store_products_ar_status",
+        tags=["Seller AR Status"],
+        summary="List store products AR Try-On status",
+        description=(
+            "Returns products for a store accompanied by their AR status flag "
+            "('AVAILABLE', 'PROCESSING', 'REJECTED'), exact rejection reasons, "
+            "and angle detection metrics (Front, Back, Side)."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                description="Filter by AR status (AVAILABLE, PROCESSING, REJECTED)",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="page",
+                description="Page number",
+                required=False,
+                type=int,
+            ),
+        ],
+        responses={200: SELLER_AR_STATUS_LIST_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def get(self, request, store_pk):
+        store, _ = get_store_membership(request.user, store_pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        queryset = (
+            Product.objects.filter(store=store)
+            .select_related("tryon_asset")
+            .prefetch_related("images")
+            .order_by("-created_at")
+        )
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(tryon_asset__status=status_filter.upper())
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = SellerProductARStatusSerializer(page, many=True)
+
+        return success_response(
+            message="Store products AR status fetched successfully.",
+            data={
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
+        )
+
+
+class StoreProductARStatusDetailView(APIView):
+    """
+    Seller API: Get single product AR Try-On status and angle metrics.
+    """
+    permission_classes = [IsAuthenticated, IsSeller]
+
+    @extend_schema(
+        operation_id="seller_store_product_ar_status_detail",
+        tags=["Seller AR Status"],
+        summary="Get single product AR Try-On status",
+        description="Returns AR Try-On readiness flag, rejection reason, and verified angles for a single product.",
+        responses={200: SELLER_AR_STATUS_DETAIL_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def get(self, request, store_pk, product_pk):
+        store, _ = get_store_membership(request.user, store_pk)
+        if not store:
+            return error_response(
+                message="Store not found.",
+                code="STORE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        product = (
+            Product.objects.filter(store=store, pk=product_pk)
+            .select_related("tryon_asset")
+            .prefetch_related("images")
+            .first()
+        )
+        if not product:
+            return error_response(
+                message="Product not found.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = SellerProductARStatusSerializer(product)
+        return success_response(
+            message="Product AR status fetched successfully.",
+            data=serializer.data,
+        )

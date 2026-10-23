@@ -44,6 +44,8 @@ class ProductService:
             ProductSize.objects.bulk_create(size_objs)
 
         transaction.on_commit(lambda: generate_product_embedding_task.delay(product.id))
+        from tryon.tasks import preprocess_product_image_task
+        transaction.on_commit(lambda: preprocess_product_image_task.delay(product.id))
         return product
 
     @staticmethod
@@ -117,6 +119,8 @@ class ProductService:
         elif product.images.count() < MAX_IMAGES_PER_PRODUCT:
             ProductImage.objects.create(product=product, image=image_file, order=0)
 
+        from tryon.tasks import preprocess_product_image_task
+        preprocess_product_image_task.delay(product.id)
         return product
 
     @staticmethod
@@ -126,6 +130,8 @@ class ProductService:
             product.image.delete(save=False)
         product.image = None
         product.save(update_fields=["image", "updated_at"])
+        from tryon.tasks import preprocess_product_image_task
+        preprocess_product_image_task.delay(product.id)
         return product
 
     @staticmethod
@@ -151,6 +157,8 @@ class ProductService:
             product.image = image_file
             product.save(update_fields=["image", "updated_at"])
 
+        from tryon.tasks import preprocess_product_image_task
+        transaction.on_commit(lambda: preprocess_product_image_task.delay(product.id))
         return img_obj
 
     @staticmethod
@@ -171,5 +179,7 @@ class ProductService:
         else:
             product.image = None
         product.save(update_fields=["image", "updated_at"])
+        from tryon.tasks import preprocess_product_image_task
+        transaction.on_commit(lambda: preprocess_product_image_task.delay(product.id))
 
         return True

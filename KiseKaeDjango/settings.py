@@ -208,6 +208,7 @@ SPECTACULAR_SETTINGS = {
         'OrderStatusEnum': 'orders.models.OrderStatus.choices',
         'ProductStatusEnum': 'products.models.ProductStatus.choices',
         'ProductCategoryEnum': 'products.models.ProductCategory.choices',
+        'ARStatusEnum': 'tryon.models.ARStatus.choices',
     },
     'SWAGGER_UI_SETTINGS': {
         'persistAuthorization': True,
@@ -237,6 +238,8 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Cart & Checkout', 'description': 'Multi-store order checkout and validation.'},
         {'name': 'Reviews & Ratings', 'description': 'Customer product ratings (1-5 stars), review submissions, verified buyer badges, and star breakdowns.'},
         {'name': 'Store Analytics', 'description': 'Store performance KPI metrics, revenue aggregations, product rankings, and CSV export.'},
+        {'name': 'Combos', 'description': 'Customer outfit combo management with category and layering validation for Virtual Try-On.'},
+        {'name': 'Seller AR Status', 'description': 'Seller product Virtual Try-On readiness flags (AVAILABLE, PROCESSING, REJECTED), rejection reasons, and angle metrics.'},
     ],
 }
 

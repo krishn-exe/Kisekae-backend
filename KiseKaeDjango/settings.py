@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'notifications',
     'reviews',
     'storages',
+    'tryon',
 
 ]
 

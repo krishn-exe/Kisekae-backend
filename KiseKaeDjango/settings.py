@@ -423,3 +423,10 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Virtual Try-On & Vertex AI Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+VERTEX_AI_PROJECT = os.getenv("VERTEX_AI_PROJECT", "")
+VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+

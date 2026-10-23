@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
 
 
 class GeminiVisionService:
@@ -87,7 +87,7 @@ Return ONLY the raw JSON object adhering to this schema."""
                 f"{GEMINI_API_URL}?key={api_key}",
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=15,
+                timeout=45,
             )
 
             if response.status_code != 200:
@@ -144,3 +144,107 @@ Return ONLY the raw JSON object adhering to this schema."""
                 "confidence": 0.0,
                 "error": str(exc),
             }
+
+    POSE_PROMPT = """Analyze this photograph of a person submitted for apparel Virtual Try-On.
+Evaluate the person's pose and orientation relative to the camera.
+Return a JSON object adhering to this schema:
+- "is_valid_person": boolean (true if a human being or model is visible in the photo; false if the photo is of an inanimate object, pet, scenery, meme, or empty)
+- "detected_pose": string, one of ["FRONT", "BACK", "SIDE"] (FRONT = facing toward camera; BACK = facing away from camera; SIDE = standing in profile)
+- "confidence": float between 0.0 and 1.0
+
+Return ONLY the raw JSON object adhering to this schema."""
+
+    @classmethod
+    def detect_person_pose(
+        cls,
+        image_bytes: bytes,
+        filename: str = "person.jpg",
+    ) -> dict[str, Any]:
+        """
+        Uses Gemini Flash to automatically detect whether a customer is posing FRONT, BACK, or SIDE,
+        and verifies that a human being is actually in the image.
+        """
+        api_key = cls.get_api_key()
+        if not api_key:
+            return {
+                "is_valid_person": True,
+                "detected_pose": "FRONT",
+                "confidence": 1.0,
+            }
+
+        mime_type, _ = mimetypes.guess_type(filename)
+        if not mime_type or not mime_type.startswith("image/"):
+            mime_type = "image/jpeg"
+
+        b64_image = base64.b64encode(image_bytes).decode("utf-8")
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": cls.POSE_PROMPT},
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": b64_image,
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.1,
+            },
+        }
+
+        try:
+            response = requests.post(
+                f"{GEMINI_API_URL}?key={api_key}",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=45,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Gemini Pose Detection returned HTTP {response.status_code}: {response.text}")
+                return {
+                    "is_valid_person": True,
+                    "detected_pose": "FRONT",
+                    "confidence": 0.5,
+                }
+
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return {
+                    "is_valid_person": True,
+                    "detected_pose": "FRONT",
+                    "confidence": 0.5,
+                }
+
+            text_content = (
+                candidates[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
+            parsed = json.loads(text_content.strip())
+            pose = str(parsed.get("detected_pose", "FRONT")).upper()
+            if pose not in ["FRONT", "BACK", "SIDE"]:
+                pose = "FRONT"
+
+            return {
+                "is_valid_person": bool(parsed.get("is_valid_person", True)),
+                "detected_pose": pose,
+                "confidence": float(parsed.get("confidence", 0.0)),
+            }
+        except Exception as exc:
+            logger.error(f"Failed to detect person pose with Gemini: {exc}")
+            return {
+                "is_valid_person": True,
+                "detected_pose": "FRONT",
+                "confidence": 0.5,
+                "error": str(exc),
+            }
+

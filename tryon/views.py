@@ -3,14 +3,25 @@ from django.db.models import Prefetch
 from django.http import HttpResponseRedirect
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from products.models import Product
+from products.models import Product, ProductStatus
 from products.views import ProductPagination
 from stores.permissions import IsSeller, get_store_membership
-from .models import ARStatus, Combo, ComboItem
+from .models import (
+    ARStatus,
+    Combo,
+    ComboItem,
+    TRYON_SUPPORTED_CATEGORIES,
+    TRYON_UNSUPPORTED_CATEGORIES,
+    TryOnAngle,
+    TryOnProductAsset,
+    TryOnRequest,
+    TryOnRequestStatus,
+)
 from .serializers import (
     ComboAddItemSerializer,
     ComboCreateSerializer,
@@ -19,8 +30,11 @@ from .serializers import (
     ComboUpdateSerializer,
     SellerProductARStatusSerializer,
     SharedComboSerializer,
+    TryOnGenerateRequestSerializer,
+    TryOnRequestDetailSerializer,
 )
 from .services import ComboService
+from .tasks import generate_tryon_task
 
 COMBO_RESPONSE_SCHEMA = inline_serializer(
     name="ComboResponseEnvelope",
@@ -89,6 +103,40 @@ SELLER_AR_STATUS_DETAIL_SCHEMA = inline_serializer(
         "data": SellerProductARStatusSerializer(),
     },
 )
+
+TRYON_GENERATE_RESPONSE_SCHEMA = inline_serializer(
+    name="TryOnGenerateResponseEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="TryOnGenerateResponseData",
+            fields={
+                "request_id": serializers.UUIDField(),
+                "status": serializers.CharField(),
+            },
+        ),
+    },
+)
+
+TRYON_DETAIL_RESPONSE_SCHEMA = inline_serializer(
+    name="TryOnDetailResponseEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": TryOnRequestDetailSerializer(),
+    },
+)
+
+TRYON_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="TryOnListResponseEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": TryOnRequestDetailSerializer(many=True),
+    },
+)
+
 
 
 class BaseComboView(APIView):
@@ -577,3 +625,187 @@ class StoreProductARStatusDetailView(APIView):
             message="Product AR status fetched successfully.",
             data=serializer.data,
         )
+
+
+class TryOnGenerateView(APIView):
+    """
+    Customer API: Trigger asynchronous Virtual Try-On generation using Vertex AI.
+    Accepts customer selfie / body photo and either a single product_id or a combo_id.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        operation_id="tryon_generate",
+        tags=["Virtual Try-On"],
+        summary="Queue Virtual Try-On generation",
+        description=(
+            "Submits customer selfie/photo along with either a product_id (single garment) "
+            "or a combo_id (outfit). Validates garment AR availability and queues asynchronous "
+            "Google Vertex AI prediction."
+        ),
+        request=TryOnGenerateRequestSerializer,
+        responses={202: TRYON_GENERATE_RESPONSE_SCHEMA, 400: COMBO_ERROR_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        serializer = TryOnGenerateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        product_id = data.get("product_id")
+        combo_id = data.get("combo_id")
+        person_image = data["person_image"]
+
+        target_product = None
+        target_combo = None
+
+        if product_id:
+            target_product = (
+                Product.objects.filter(pk=product_id)
+                .select_related("tryon_asset")
+                .first()
+            )
+            if not target_product:
+                return error_response(
+                    message=f"Product #{product_id} not found.",
+                    code="PRODUCT_NOT_FOUND",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Category constraint check
+            if target_product.category in TRYON_UNSUPPORTED_CATEGORIES or target_product.category not in TRYON_SUPPORTED_CATEGORIES:
+                display_name = target_product.get_category_display() if hasattr(target_product, "get_category_display") else target_product.category
+                return error_response(
+                    message=f"Category '{display_name}' is not supported for Virtual Try-On.",
+                    code="UNSUPPORTED_CATEGORY",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # AR Availability check
+            asset = getattr(target_product, "tryon_asset", None)
+            if not asset or asset.status != ARStatus.AVAILABLE:
+                reason = asset.rejection_reason if asset else "Product images have not been processed for AR."
+                return error_response(
+                    message=f"Product is not AR ready. Status: {asset.status if asset else 'UNPROCESSED'}. {reason}",
+                    code="AR_NOT_AVAILABLE",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        elif combo_id:
+            target_combo = (
+                Combo.objects.filter(pk=combo_id)
+                .prefetch_related("items__product__tryon_asset")
+                .first()
+            )
+            if not target_combo:
+                return error_response(
+                    message=f"Combo #{combo_id} not found.",
+                    code="COMBO_NOT_FOUND",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            if not target_combo.items.exists():
+                return error_response(
+                    message="Combo contains no items.",
+                    code="EMPTY_COMBO",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Verify each item in combo
+            for item in target_combo.items.all():
+                p = item.product
+                if p.category in TRYON_UNSUPPORTED_CATEGORIES or p.category not in TRYON_SUPPORTED_CATEGORIES:
+                    return error_response(
+                        message=f"Item '{p.name}' belongs to unsupported category '{p.category}'.",
+                        code="UNSUPPORTED_CATEGORY",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                asset = getattr(p, "tryon_asset", None)
+                if not asset or asset.status != ARStatus.AVAILABLE:
+                    return error_response(
+                        message=f"Item '{p.name}' is not AR ready. Status: {asset.status if asset else 'UNPROCESSED'}.",
+                        code="AR_NOT_AVAILABLE",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        # Create TryOnRequest record
+        tryon_req = TryOnRequest.objects.create(
+            user=request.user,
+            product=target_product,
+            combo=target_combo,
+            angle=TryOnAngle.AUTO,
+            person_image=person_image,
+            status=TryOnRequestStatus.PENDING,
+        )
+
+        # Queue async task
+        generate_tryon_task.delay(str(tryon_req.id))
+
+        return success_response(
+            message="Try-on generation queued successfully.",
+            data={
+                "request_id": str(tryon_req.id),
+                "status": TryOnRequestStatus.PENDING,
+            },
+            status_code=status.HTTP_202_ACCEPTED,
+        )
+
+
+class TryOnRequestDetailView(APIView):
+    """
+    Customer API: Check status or retrieve result of an asynchronous Try-On job.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="tryon_status",
+        tags=["Virtual Try-On"],
+        summary="Get Try-On request status",
+        description="Polls the status and returns the rendered result image URL once READY.",
+        responses={200: TRYON_DETAIL_RESPONSE_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def get(self, request, request_id):
+        tryon_req = (
+            TryOnRequest.objects.filter(pk=request_id, user=request.user)
+            .select_related("product", "combo")
+            .first()
+        )
+        if not tryon_req:
+            return error_response(
+                message="Try-On request not found.",
+                code="REQUEST_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = TryOnRequestDetailSerializer(tryon_req)
+        return success_response(
+            message="Try-On status retrieved successfully.",
+            data=serializer.data,
+        )
+
+
+class TryOnHistoryListView(APIView):
+    """
+    Customer API: Retrieve previous Virtual Try-On history for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="tryon_history_list",
+        tags=["Virtual Try-On"],
+        summary="List customer Try-On history",
+        description="Returns customer's past virtual try-on requests and generated images.",
+        responses={200: TRYON_LIST_RESPONSE_SCHEMA},
+    )
+    def get(self, request):
+        requests_qs = (
+            TryOnRequest.objects.filter(user=request.user)
+            .select_related("product", "combo")
+            .order_by("-created_at")[:50]
+        )
+        serializer = TryOnRequestDetailSerializer(requests_qs, many=True)
+        return success_response(
+            message="Try-on history retrieved successfully.",
+            data=serializer.data,
+        )
+

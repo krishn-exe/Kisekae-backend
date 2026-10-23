@@ -3,7 +3,17 @@ from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
 from products.models import Product
-from .models import ARStatus, Combo, ComboItem, TryOnProductAsset
+from .models import (
+    ARStatus,
+    Combo,
+    ComboItem,
+    TRYON_SUPPORTED_CATEGORIES,
+    TRYON_UNSUPPORTED_CATEGORIES,
+    TryOnAngle,
+    TryOnProductAsset,
+    TryOnRequest,
+    TryOnRequestStatus,
+)
 from .services import ComboValidationService
 
 
@@ -205,3 +215,97 @@ class SellerProductARStatusSerializer(serializers.ModelSerializer):
                 "side": bool(asset.side_image_id),
             }
         return {"front": False, "back": False, "side": False}
+
+
+class TryOnGenerateRequestSerializer(serializers.Serializer):
+    """
+    Serializer for submitting a Virtual Try-On request with a customer selfie/photo.
+    """
+    person_image = serializers.ImageField(
+        required=True,
+        help_text="Customer selfie or body photograph (JPEG/PNG/WebP, max 7MB).",
+    )
+    product_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Product ID for single-garment try-on. (Mutually exclusive with combo_id)",
+    )
+    combo_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Combo ID for outfit try-on. (Mutually exclusive with product_id)",
+    )
+
+    def validate_person_image(self, value):
+        max_size = 7 * 1024 * 1024  # 7 MB limit
+        if value.size > max_size:
+            raise serializers.ValidationError("Customer image file size cannot exceed 7MB.")
+
+        # Check content type / extension
+        ext = value.name.split(".")[-1].lower() if "." in value.name else ""
+        if ext not in ["jpg", "jpeg", "png", "webp"]:
+            raise serializers.ValidationError("Unsupported image format. Allowed formats: JPG, PNG, WebP.")
+        return value
+
+    def validate(self, attrs):
+        product_id = attrs.get("product_id")
+        combo_id = attrs.get("combo_id")
+
+        if not product_id and not combo_id:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["Either 'product_id' or 'combo_id' must be provided."]}
+            )
+        if product_id and combo_id:
+            raise serializers.ValidationError(
+                {"non_field_errors": ["Cannot provide both 'product_id' and 'combo_id' in the same request."]}
+            )
+
+        return attrs
+
+
+class TryOnRequestDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for checking the status and retrieving result image of a Try-On request.
+    """
+    product_id = serializers.IntegerField(source="product.id", read_only=True, allow_null=True)
+    product_name = serializers.CharField(source="product.name", read_only=True, allow_null=True)
+    combo_id = serializers.IntegerField(source="combo.id", read_only=True, allow_null=True)
+    combo_name = serializers.CharField(source="combo.name", read_only=True, allow_null=True)
+    person_image_url = serializers.SerializerMethodField()
+    result_image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TryOnRequest
+        fields = [
+            "id",
+            "status",
+            "angle",
+            "product_id",
+            "product_name",
+            "combo_id",
+            "combo_name",
+            "person_image_url",
+            "result_image_url",
+            "error_message",
+            "created_at",
+            "completed_at",
+        ]
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_person_image_url(self, obj) -> str | None:
+        if obj.person_image:
+            try:
+                return obj.person_image.url
+            except Exception:
+                return None
+        return None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_result_image_url(self, obj) -> str | None:
+        if obj.result_image:
+            try:
+                return obj.result_image.url
+            except Exception:
+                return None
+        return None
+

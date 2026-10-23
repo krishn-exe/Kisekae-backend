@@ -1,6 +1,9 @@
 import logging
+from typing import Any
 from celery import shared_task
+from django.core.files.base import ContentFile
 from django.db import transaction
+from django.utils import timezone
 
 from products.models import Product, ProductCategory
 from .gemini_service import GeminiVisionService
@@ -8,8 +11,12 @@ from .models import (
     ARStatus,
     TRYON_SUPPORTED_CATEGORIES,
     TRYON_UNSUPPORTED_CATEGORIES,
+    TryOnAngle,
     TryOnProductAsset,
+    TryOnRequest,
+    TryOnRequestStatus,
 )
+from .vertex_service import VertexAITryOnError, VertexAIVirtualTryOnClient
 
 logger = logging.getLogger(__name__)
 
@@ -194,3 +201,145 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
     except Exception as exc:
         logger.error(f"Error in preprocess_product_image_task for product #{product_id}: {exc}")
         raise self.retry(exc=exc)
+
+
+CATEGORY_TRYON_ORDER = {
+    ProductCategory.BOTTOM: 1,
+    ProductCategory.ONE_PIECE: 2,
+    ProductCategory.TOP: 2,
+    ProductCategory.OUTERWEAR: 3,
+}
+
+
+def get_garment_image_bytes(product: Product, angle: str = "FRONT") -> bytes:
+    """
+    Extracts raw image bytes for a garment flat-lay from its TryOnProductAsset or gallery.
+    Selects the requested perspective angle (Front, Back, Side) if available.
+    """
+    asset = getattr(product, "tryon_asset", None)
+    if not asset:
+        asset = TryOnProductAsset.objects.filter(product=product).first()
+
+    target_img = None
+    if asset:
+        if angle == TryOnAngle.BACK and asset.back_image:
+            target_img = asset.back_image
+        elif angle == TryOnAngle.SIDE and asset.side_image:
+            target_img = asset.side_image
+        else:
+            target_img = asset.front_image or asset.candidate_image
+
+    if not target_img and asset and asset.candidate_image:
+        target_img = asset.candidate_image
+
+    if target_img and target_img.image:
+        target_img.image.open("rb")
+        data = target_img.image.read()
+        target_img.image.close()
+        return data
+
+    if product.image:
+        product.image.open("rb")
+        data = product.image.read()
+        product.image.close()
+        return data
+
+    raise ValueError(f"No usable flat-lay image found for product #{product.id} ({product.name}).")
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=5)
+def generate_tryon_task(self, request_id: str) -> bool:
+    """
+    Processes a customer Virtual Try-On request using Google Vertex AI (virtual-try-on-001).
+    - If single product: calls Vertex AI once with the person photo and garment flat-lay image.
+    - If combo: chains predictions sequentially (BOTTOM -> ONE_PIECE/TOP -> OUTERWEAR),
+      piping each generated intermediate result into the next layer.
+    """
+    tryon_req = TryOnRequest.objects.filter(pk=request_id).first()
+    if not tryon_req:
+        logger.error(f"TryOnRequest #{request_id} not found.")
+        return False
+
+    tryon_req.status = TryOnRequestStatus.PROCESSING
+    tryon_req.save(update_fields=["status"])
+
+    try:
+        if not tryon_req.person_image:
+            raise ValueError("Customer selfie / person image is missing.")
+
+        tryon_req.person_image.open("rb")
+        person_bytes = tryon_req.person_image.read()
+        tryon_req.person_image.close()
+
+        angle = tryon_req.angle or TryOnAngle.AUTO
+
+        # Auto-detect customer pose perspective using Gemini if AUTO
+        if angle == TryOnAngle.AUTO:
+            pose_info = GeminiVisionService.detect_person_pose(
+                image_bytes=person_bytes,
+                filename=tryon_req.person_image.name,
+            )
+            if not pose_info.get("is_valid_person", True):
+                raise ValueError(
+                    "No recognizable person was detected in the uploaded photo. "
+                    "Please upload a clear photograph of yourself."
+                )
+            detected_angle = pose_info.get("detected_pose", TryOnAngle.FRONT)
+            angle = detected_angle if detected_angle in [TryOnAngle.FRONT, TryOnAngle.BACK, TryOnAngle.SIDE] else TryOnAngle.FRONT
+            tryon_req.angle = angle
+            tryon_req.save(update_fields=["angle"])
+            logger.info(f"Gemini auto-detected pose for TryOn #{tryon_req.id}: {angle}")
+
+        if tryon_req.product:
+            # Single Garment Prediction
+            garment_bytes = get_garment_image_bytes(tryon_req.product, angle=angle)
+            result_bytes = VertexAIVirtualTryOnClient.predict(
+                person_image_bytes=person_bytes,
+                garment_image_bytes=garment_bytes,
+            )
+        elif tryon_req.combo:
+            # Sequential Combo Chaining
+            combo = (
+                tryon_req.combo.__class__.objects.filter(pk=tryon_req.combo_id)
+                .prefetch_related("items__product__tryon_asset")
+                .first()
+            )
+            if not combo or not combo.items.exists():
+                raise ValueError("Combo contains no items for Virtual Try-On.")
+
+            items = list(combo.items.all())
+            # Sort items by layering hierarchy: BOTTOM (1) -> TOP/ONE_PIECE (2) -> OUTERWEAR (3)
+            sorted_items = sorted(
+                items,
+                key=lambda it: CATEGORY_TRYON_ORDER.get(it.category, 99),
+            )
+
+            current_canvas_bytes = person_bytes
+            for item in sorted_items:
+                garment_bytes = get_garment_image_bytes(item.product, angle=angle)
+                current_canvas_bytes = VertexAIVirtualTryOnClient.predict(
+                    person_image_bytes=current_canvas_bytes,
+                    garment_image_bytes=garment_bytes,
+                )
+            result_bytes = current_canvas_bytes
+        else:
+            raise ValueError("TryOnRequest has neither a product nor a combo specified.")
+
+        # Save result image
+        filename = f"tryon_result_{tryon_req.id}.png"
+        tryon_req.result_image.save(filename, ContentFile(result_bytes), save=False)
+        tryon_req.status = TryOnRequestStatus.READY
+        tryon_req.completed_at = timezone.now()
+        tryon_req.error_message = ""
+        tryon_req.save(update_fields=["result_image", "status", "completed_at", "error_message"])
+
+        logger.info(f"TryOnRequest #{tryon_req.id} completed successfully.")
+        return True
+
+    except Exception as exc:
+        logger.error(f"TryOnRequest #{tryon_req.id} failed: {exc}", exc_info=True)
+        tryon_req.status = TryOnRequestStatus.FAILED
+        tryon_req.error_message = str(exc)
+        tryon_req.save(update_fields=["status", "error_message"])
+        return False
+

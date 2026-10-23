@@ -337,3 +337,75 @@ class TestComboAPIs(BaseComboTestCase):
         url = reverse("combo-list-create")
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TestComboSharing(BaseComboTestCase):
+    def setUp(self):
+        super().setUp()
+        self.combo = ComboService.create_combo(
+            user=self.user,
+            name="Alice Party Look",
+            product_ids=[self.top_product.id, self.bottom_product.id],
+        )
+
+    def test_combo_has_share_properties(self):
+        self.combo.refresh_from_db()
+        self.assertTrue(bool(self.combo.share_code))
+        self.assertEqual(self.combo.deep_link, f"kisekae://combos/{self.combo.share_code}")
+        self.assertEqual(self.combo.share_url, f"https://live.kisekae.app/combos/{self.combo.share_code}")
+
+    def test_get_shared_combo_public(self):
+        self.client.logout()
+        url = reverse("shared-combo-detail", kwargs={"share_code": self.combo.share_code})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data["success"])
+        data = res.data["data"]
+        self.assertEqual(data["name"], "Alice Party Look")
+        self.assertEqual(data["share_code"], self.combo.share_code)
+        self.assertEqual(data["deep_link"], f"kisekae://combos/{self.combo.share_code}")
+        self.assertEqual(data["share_url"], f"https://live.kisekae.app/combos/{self.combo.share_code}")
+        self.assertEqual(len(data["items"]), 2)
+
+    def test_get_shared_combo_not_found(self):
+        self.client.logout()
+        url = reverse("shared-combo-detail", kwargs={"share_code": "non-existent-code"})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(res.data["success"])
+
+    def test_shared_combo_redirect_to_flutter(self):
+        self.client.logout()
+        url = reverse("shared-combo-redirect", kwargs={"share_code": self.combo.share_code})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_302_FOUND)
+        self.assertEqual(res["Location"], f"kisekae://combos/{self.combo.share_code}")
+
+    def test_shared_combo_redirect_not_found(self):
+        self.client.logout()
+        url = reverse("shared-combo-redirect", kwargs={"share_code": "unknown-code"})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_save_shared_combo_authenticated(self):
+        # Authenticate as other_user (Bob)
+        self.client.force_authenticate(user=self.other_user)
+        url = reverse("shared-combo-save", kwargs={"share_code": self.combo.share_code})
+        res = self.client.post(url)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res.data["success"])
+        cloned_id = res.data["data"]["id"]
+        self.assertNotEqual(cloned_id, self.combo.id)
+
+        # Verify cloned combo in database
+        cloned = Combo.objects.get(id=cloned_id)
+        self.assertEqual(cloned.user, self.other_user)
+        self.assertEqual(cloned.name, f"{self.combo.name} (Saved)")
+        self.assertEqual(cloned.items.count(), 2)
+
+    def test_save_shared_combo_unauthenticated_fails(self):
+        self.client.logout()
+        url = reverse("shared-combo-save", kwargs={"share_code": self.combo.share_code})
+        res = self.client.post(url)
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+

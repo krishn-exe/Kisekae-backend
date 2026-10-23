@@ -1,8 +1,9 @@
 from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
+from django.http import HttpResponseRedirect
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
@@ -17,6 +18,7 @@ from .serializers import (
     ComboSerializer,
     ComboUpdateSerializer,
     SellerProductARStatusSerializer,
+    SharedComboSerializer,
 )
 from .services import ComboService
 
@@ -35,6 +37,15 @@ COMBO_LIST_RESPONSE_SCHEMA = inline_serializer(
         "success": serializers.BooleanField(default=True),
         "message": serializers.CharField(),
         "data": ComboSerializer(many=True),
+    },
+)
+
+SHARED_COMBO_RESPONSE_SCHEMA = inline_serializer(
+    name="SharedComboResponseEnvelope",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": SharedComboSerializer(),
     },
 )
 
@@ -105,7 +116,7 @@ class ComboListCreateView(BaseComboView):
         operation_id="user_combo_list",
         tags=["Combos"],
         summary="List user's combos",
-        description="Returns all outfit combos created by the authenticated user with full product card items.",
+        description="Returns all outfit combos created by the authenticated user with full product card items, deep links, and share URLs.",
         responses={200: COMBO_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
@@ -133,7 +144,8 @@ class ComboListCreateView(BaseComboView):
             "Creates a new outfit combo. Strictly enforces category rules: "
             "Only Top, Bottom, One-Piece, and Outerwear are allowed. "
             "One-Piece cannot combine with Top or Bottom. "
-            "At most one item per category. Max 3 items total."
+            "At most one item per category. Max 3 items total. "
+            "Generates deep link (kisekae://combos/<share_code>) and share URL."
         ),
         request=ComboCreateSerializer,
         responses={201: COMBO_RESPONSE_SCHEMA, 400: COMBO_ERROR_SCHEMA},
@@ -174,7 +186,7 @@ class ComboDetailView(BaseComboView):
         operation_id="user_combo_detail",
         tags=["Combos"],
         summary="Get combo details",
-        description="Returns details and items for a specific outfit combo.",
+        description="Returns details and items for a specific outfit combo including share links.",
         responses={200: COMBO_RESPONSE_SCHEMA, 404: COMBO_ERROR_SCHEMA},
     )
     def get(self, request, pk):
@@ -343,6 +355,118 @@ class ComboItemDeleteView(BaseComboView):
             )
 
         return success_response(message="Item removed from combo successfully.")
+
+
+class SharedComboDetailView(APIView):
+    """
+    Public API: Fetch details of a shared outfit combo via its unique share code.
+    Accessible without authentication for deep-linking in the Flutter mobile app
+    and web previews.
+    """
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="shared_combo_detail",
+        tags=["Combos"],
+        summary="Get shared combo details",
+        description=(
+            "Public endpoint to retrieve an outfit combo using its unique share code. "
+            "Does not require authentication. Powers Flutter deep-linking (kisekae://combos/<share_code>) "
+            "and web landing previews."
+        ),
+        responses={200: SHARED_COMBO_RESPONSE_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def get(self, request, share_code: str):
+        combo = ComboService.get_shared_combo(share_code.strip())
+        if not combo:
+            return error_response(
+                message="Shared combo not found or no longer available.",
+                code="COMBO_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        serializer = SharedComboSerializer(combo)
+        return success_response(
+            message="Shared combo retrieved successfully.",
+            data=serializer.data,
+        )
+
+
+class MobileDeepLinkRedirect(HttpResponseRedirect):
+    allowed_schemes = ["http", "https", "kisekae"]
+
+
+class SharedComboRedirectView(APIView):
+    """
+    Public API: Web-to-App deep link redirect.
+    When a user clicks a web link (e.g. from WhatsApp, SMS, or mobile browser),
+    this endpoint issues an HTTP 302 redirect directly into the Flutter app custom URI scheme.
+    """
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="shared_combo_redirect_to_app",
+        tags=["Combos"],
+        summary="Redirect to Flutter app",
+        description="Redirects HTTP requests directly to the Flutter app custom URI scheme 'kisekae://combos/<share_code>'.",
+        responses={302: None, 404: COMBO_ERROR_SCHEMA},
+    )
+    def get(self, request, share_code: str):
+        combo = ComboService.get_shared_combo(share_code.strip())
+        if not combo:
+            return error_response(
+                message="Shared combo not found.",
+                code="COMBO_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        return MobileDeepLinkRedirect(redirect_to=combo.deep_link)
+
+
+class SharedComboSaveView(APIView):
+    """
+    Customer API: Save / Clone a shared combo into the authenticated user's own collection.
+    Allows customers who discover a shared outfit to save it and customize it.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        operation_id="shared_combo_clone",
+        tags=["Combos"],
+        summary="Save shared combo to my combos",
+        description="Clones an outfit discovered via a shared link into the current authenticated user's personal combos collection.",
+        request=None,
+        responses={201: COMBO_RESPONSE_SCHEMA, 400: COMBO_ERROR_SCHEMA, 404: COMBO_ERROR_SCHEMA},
+    )
+    def post(self, request, share_code: str):
+        try:
+            cloned_combo = ComboService.clone_shared_combo(
+                user=request.user,
+                share_code=share_code.strip(),
+            )
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            code = getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR"
+            status_code = status.HTTP_404_NOT_FOUND if code == "COMBO_NOT_FOUND" else status.HTTP_400_BAD_REQUEST
+            return error_response(
+                message=msg,
+                code=str(code).upper(),
+                status_code=status_code,
+            )
+
+        combo_detail = (
+            Combo.objects.filter(pk=cloned_combo.pk, user=request.user)
+            .prefetch_related(
+                Prefetch(
+                    "items",
+                    queryset=ComboItem.objects.select_related("product__store"),
+                )
+            )
+            .first()
+        )
+        return success_response(
+            message="Combo saved to your collection successfully.",
+            data=ComboSerializer(combo_detail).data,
+            status_code=status.HTTP_201_CREATED,
+        )
 
 
 class StoreProductsARStatusView(APIView):

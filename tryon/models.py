@@ -25,10 +25,16 @@ class ARStatus(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
 
 
+def generate_share_code() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 class Combo(models.Model):
     """
     A user-curated outfit / combo of products.
     Enforces strict category constraints for Virtual Try-On eligibility.
+    Supports public sharing via Flutter deep link (kisekae://combos/<share_code>)
+    and web links (https://live.kisekae.app/combos/<share_code>).
     """
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -36,6 +42,14 @@ class Combo(models.Model):
         related_name="tryon_combos",
     )
     name = models.CharField(max_length=120, blank=True, default="My Combo")
+    share_code = models.CharField(
+        max_length=32,
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text="Unique public share code for deep linking.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -48,6 +62,21 @@ class Combo(models.Model):
     @property
     def items_count(self):
         return self.items.count()
+
+    @property
+    def deep_link(self) -> str:
+        """Custom scheme deep link opened directly by the Flutter app."""
+        return f"kisekae://combos/{self.share_code}" if self.share_code else ""
+
+    @property
+    def share_url(self) -> str:
+        """Universal / web link representation."""
+        return f"https://live.kisekae.app/combos/{self.share_code}" if self.share_code else ""
+
+    def save(self, *args, **kwargs):
+        if not self.share_code:
+            self.share_code = generate_share_code()
+        super().save(*args, **kwargs)
 
 
 class ComboItem(models.Model):

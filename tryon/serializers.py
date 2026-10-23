@@ -35,16 +35,47 @@ class ComboItemSerializer(serializers.ModelSerializer):
 class ComboSerializer(serializers.ModelSerializer):
     items = ComboItemSerializer(many=True, read_only=True)
     items_count = serializers.IntegerField(read_only=True)
+    deep_link = serializers.CharField(read_only=True)
+    share_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = Combo
         fields = [
             "id",
             "name",
+            "share_code",
+            "deep_link",
+            "share_url",
             "items_count",
             "items",
             "created_at",
             "updated_at",
+        ]
+
+
+class SharedComboSerializer(serializers.ModelSerializer):
+    """
+    Public representation of an outfit combo shared via link or custom URI scheme.
+    Used for web rendering and unauthenticated Flutter app deep-link loading.
+    """
+    creator_name = serializers.CharField(source="user.name", read_only=True)
+    items = ComboItemSerializer(many=True, read_only=True)
+    items_count = serializers.IntegerField(read_only=True)
+    deep_link = serializers.CharField(read_only=True)
+    share_url = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Combo
+        fields = [
+            "id",
+            "name",
+            "creator_name",
+            "share_code",
+            "deep_link",
+            "share_url",
+            "items_count",
+            "items",
+            "created_at",
         ]
 
 

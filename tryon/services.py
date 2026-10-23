@@ -132,7 +132,7 @@ class ComboValidationService:
 
 
 class ComboService:
-    """Business operations for creating, updating, and managing user Combos."""
+    """Business operations for creating, updating, managing, and sharing user Combos."""
 
     @staticmethod
     @transaction.atomic
@@ -209,3 +209,23 @@ class ComboService:
     def delete_combo(combo: Combo) -> bool:
         combo.delete()
         return True
+
+    @staticmethod
+    def get_shared_combo(share_code: str):
+        return (
+            Combo.objects.filter(share_code=share_code)
+            .select_related("user")
+            .prefetch_related("items__product__store")
+            .first()
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def clone_shared_combo(user, share_code: str) -> Combo:
+        original = ComboService.get_shared_combo(share_code)
+        if not original:
+            raise ValidationError("Shared combo not found.", code="COMBO_NOT_FOUND")
+
+        new_name = f"{original.name} (Saved)"
+        product_ids = list(original.items.values_list("product_id", flat=True))
+        return ComboService.create_combo(user=user, name=new_name, product_ids=product_ids)

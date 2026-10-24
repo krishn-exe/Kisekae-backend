@@ -12,3 +12,4 @@ gcp-key*.json
 *service-account*.json
 credentials/
 *.pem
+tryon_packshots/

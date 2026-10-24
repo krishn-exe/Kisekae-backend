@@ -1,6 +1,37 @@
+import logging
 from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
+
+logger = logging.getLogger(__name__)
+
+
+def get_signed_file_url(field_file, expires_in: int = 3600) -> str | None:
+    """
+    Generates a secure presigned URL for private user media (user photos, try-on results).
+    If using S3 storage, uses boto3 to generate a presigned GET URL with expiration.
+    If using local FileSystemStorage, returns standard relative media URL.
+    """
+    if not field_file or not hasattr(field_file, "name") or not field_file.name:
+        return None
+
+    storage = getattr(field_file, "storage", None)
+    if storage is not None and hasattr(storage, "bucket") and hasattr(storage.bucket, "meta"):
+        try:
+            s3_client = storage.bucket.meta.client
+            bucket_name = storage.bucket_name
+            return s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket_name, "Key": field_file.name},
+                ExpiresIn=expires_in,
+            )
+        except Exception as e:
+            logger.warning("Failed to generate presigned S3 URL for %s: %s", field_file.name, e)
+
+    try:
+        return field_file.url
+    except Exception:
+        return None
 
 from products.models import Product
 from .models import (
@@ -293,19 +324,9 @@ class TryOnRequestDetailSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_person_image_url(self, obj) -> str | None:
-        if obj.person_image:
-            try:
-                return obj.person_image.url
-            except Exception:
-                return None
-        return None
+        return get_signed_file_url(obj.person_image)
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_result_image_url(self, obj) -> str | None:
-        if obj.result_image:
-            try:
-                return obj.result_image.url
-            except Exception:
-                return None
-        return None
+        return get_signed_file_url(obj.result_image)
 

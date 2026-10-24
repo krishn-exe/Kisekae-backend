@@ -271,6 +271,26 @@ class TestTryOnStatusAndHistoryAPIs(BaseTryOnTestCase):
         self.assertEqual(data["product_name"], "Classic White Tee")
         self.assertIn("result_test", data["result_image_url"])
 
+    def test_signed_file_url_with_s3_storage(self):
+        from unittest.mock import MagicMock
+        from tryon.serializers import get_signed_file_url
+
+        mock_storage = MagicMock()
+        mock_storage.bucket.meta.client.generate_presigned_url.return_value = "https://s3.amazonaws.com/test?Signature=XYZ"
+        mock_storage.bucket_name = "test-bucket"
+
+        mock_file = MagicMock()
+        mock_file.name = "tryon/results/output.png"
+        mock_file.storage = mock_storage
+
+        signed_url = get_signed_file_url(mock_file, expires_in=3600)
+        self.assertEqual(signed_url, "https://s3.amazonaws.com/test?Signature=XYZ")
+        mock_storage.bucket.meta.client.generate_presigned_url.assert_called_once_with(
+            "get_object",
+            Params={"Bucket": "test-bucket", "Key": "tryon/results/output.png"},
+            ExpiresIn=3600,
+        )
+
     def test_other_user_cannot_access_request(self):
         self.client.force_authenticate(user=self.other_user)
         url = reverse("tryon-request-detail", kwargs={"request_id": self.tryon_req.id})

@@ -14,9 +14,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("999.00"),
         "description": "Crafted from 100% combed ringspun cotton with a 240 GSM dense knit, this classic crewneck t-shirt delivers a structured drape with ultra-soft handfeel. Features a ribbed collar with twin-needle stitching for lasting shape retention. Designed with a timeless regular fit that pairs effortlessly with selvedge denim, tailored chinos, or under casual outerwear for versatile everyday styling. Pre-shrunk to minimize shrinkage after washing.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0001.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0002.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0003.jpg",
         ],
     },
     {
@@ -28,9 +28,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1299.00"),
         "description": "An authentic streetwear silhouette featuring drop shoulders and an exaggerated boxy cut. Enzyme-washed for a vintage faded patina and lived-in softness. Made from durable 280 GSM heavy cotton jersey. Style with relaxed cargo pants or distressed denim for an effortless urban streetwear aesthetic.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0004.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0005.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0006.jpg",
         ],
     },
     {
@@ -42,9 +42,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1999.00"),
         "description": "A refined smart-casual staple cut from traditional Oxford basketweave cotton. Features a button-down collar, single chest patch pocket, and subtle box pleat at the back yoke for comfortable shoulder movement. Breathable and durable, ideal for workwear, client presentations, or casual weekend brunches layered with chinos.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1620012253295-c15c429fccf8?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0007.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0008.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0009.jpg",
         ],
     },
     {
@@ -56,9 +56,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2299.00"),
         "description": "Crafted from a breathable 55% linen and 45% cotton blend, tailored with a retro resort camp collar. The lightweight open weave promotes air circulation on warm summer days. Detailed with natural shell buttons and a straight square hem designed to be worn untucked over linen shorts or light-wash denim.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1603252109303-2751441dd157?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0010.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0011.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0012.jpg",
         ],
     },
     {
@@ -70,9 +70,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2699.00"),
         "description": "Constructed from 400 GSM unbrushed French terry fleece with ribbed side panels for enhanced mobility. Features a double-lined drawstring hood, kangaroo pouch pocket, and heavy ribbed cuffs. The substantial drape holds its structured silhouette while providing warm, cozy comfort during cooler weather.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1578768079052-aa76e520036c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0013.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0014.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0015.jpg",
         ],
     },
     {
@@ -84,9 +84,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2999.00"),
         "description": "Knitted from extra-long staple Supima cotton yarns for exceptional softness, strength, and color retention. Designed with a clean crewneck, set-in sleeves, and fine ribbed trims. Lightweight enough for effortless office layering over an Oxford shirt or worn directly against the skin.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1614975058789-41316d0e2e9c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0016.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0017.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0018.jpg",
         ],
     },
     {
@@ -98,9 +98,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1499.00"),
         "description": "A modern athletic classic engineered from pure mercerized cotton pique with subtle waffle texture. Features a three-button placket, flat-knit ribbed collar that resists curling, and side vent splits for ease of movement. Pairs seamlessly with tailored trousers or weekend shorts.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1586363104862-3a5e2ab60d99?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0019.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0020.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0021.jpg",
         ],
     },
     {
@@ -112,9 +112,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1399.00"),
         "description": "Inspired by traditional maritime apparel, crafted from durable combed cotton interlock knit. Characterized by clean horizontal stripes, a boat-neck collar, and relaxed straight cut. A timeless French Riviera layering piece that complements denim jackets and neutral trousers.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0022.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0023.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0024.jpg",
         ],
     },
     {
@@ -126,9 +126,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2499.00"),
         "description": "Double-brushed cotton flannel offering warm insulation and a soft touch. Cut with generous room in the chest and arms to function as an overshirt over basic tees. Features twin flap chest pockets with button closures and reinforced elbow patches for classic rugged workwear durability.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1554412933-514a83d2f3c8?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0025.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0026.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0027.jpg",
         ],
     },
     {
@@ -140,9 +140,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2199.00"),
         "description": "A versatile transitional piece featuring an antique brass quarter-zip front with a stand collar. Cut from 320 GSM loopback cotton terry with stretch elastane ribbing at cuffs and hem. Perfect for golf, morning jogs, or smart-casual office Fridays over a collared shirt.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1578768079052-aa76e520036c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0028.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0029.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0030.jpg",
         ],
     },
     {
@@ -154,9 +154,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1599.00"),
         "description": "Engineered with a micro-thermal honeycomb weave that traps body heat while allowing moisture to escape. Designed with raglan sleeves and snug ribbed cuffs. Excellent as a base thermal layer during winter treks or as a standalone top during cool autumn evenings.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0031.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0032.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0033.jpg",
         ],
     },
     {
@@ -168,9 +168,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2399.00"),
         "description": "Impeccably tailored from 100% two-ply Egyptian cotton poplin with a silky smooth finish. Features a stiffened semi-spread collar, French mitered cuffs, and genuine mother-of-pearl buttons. An indispensable executive garment designed for business suits and formal black-tie events.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1620012253295-c15c429fccf8?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0034.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0035.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0036.jpg",
         ],
     },
     {
@@ -182,9 +182,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3299.00"),
         "description": "Richly patterned with authentic Aran fisherman cable knits across the chest and sleeves. Spun from a blend of Australian merino wool and soft acrylic for warmth without the itch. Features an elegant mockneck and chunky ribbed hems for cold-weather sophistication.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1614975058789-41316d0e2e9c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0037.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0038.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0039.jpg",
         ],
     },
     {
@@ -196,9 +196,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1899.00"),
         "description": "Woven with indigo warp and ecru weft yarns to achieve an authentic vintage denim chambray texture. Detailed with cat-eye buttons, contrast triple-needle chain-stitching, and twin utility pockets. Softens beautifully with wear and washing.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1603252109303-2751441dd157?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0040.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0041.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0042.jpg",
         ],
     },
     {
@@ -210,9 +210,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1099.00"),
         "description": "Crafted from fine-gauge Supima cotton that offers a lightweight, breathable drape with subtle natural sheen. Features a clean chest patch pocket, tagless neck print for comfort, and reinforced shoulder seams. A versatile casual base layer.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0043.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0044.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0045.jpg",
         ],
     },
     {
@@ -224,9 +224,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2099.00"),
         "description": "Printed with vibrant tropical botanical leaves on silky rayon fabric for a fluid, breezy drape. Designed with a classic camp collar, loose relaxed body, and side slit vents. Ideal for beach vacations, summer pool parties, and warm-weather getaways.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1603252109303-2751441dd157?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0046.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0047.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0048.jpg",
         ],
     },
     {
@@ -238,9 +238,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1299.00"),
         "description": "Constructed from 260 GSM carded cotton with an enzyme stonewash finish. Features a contemporary relaxed skater cut with wider sleeves and a ribbed collar. Finished with minimalist typography screen print across the back.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0049.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0050.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0051.jpg",
         ],
     },
     {
@@ -252,9 +252,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("899.00"),
         "description": "Made from 2x2 stretch ribbed cotton-modal jersey that gently contours to the body. Features deep armholes and clean bound neck trims. An essential layering base under open shirts or worn alone during warm summer workouts and casual outings.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0052.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0053.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0054.jpg",
         ],
     },
 
@@ -270,9 +270,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2999.00"),
         "description": "Crafted on vintage shuttle looms from 13.5 oz Japanese selvedge denim infused with 2% elastane for comfortable flexibility. Cut slim through the thigh with a clean taper down to a narrow leg opening. Features a classic five-pocket construction, copper rivets, and a genuine leather waistband patch.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1475178626620-a4d074967452?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0055.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0056.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0057.jpg",
         ],
     },
     {
@@ -284,9 +284,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2299.00"),
         "description": "Tailored from combed stretch cotton twill with an enzyme wash for broken-in comfort. Designed with a mid-rise waist, flat-front silhouette, welt back pockets with horn buttons, and a clean straight leg. A smart-casual workhorse that bridges the gap between formal trousers and casual denim.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0058.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0059.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0060.jpg",
         ],
     },
     {
@@ -298,9 +298,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3199.00"),
         "description": "Featuring double front pleats and a relaxed drape inspired by 1950s sartorial tailoring. Cut from a wrinkle-resistant wool-poly blend that maintains sharp center creases all day. Features side slip pockets, buttoned back welt pockets, and an internal curtained waistband for clean tucks.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0061.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0062.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0063.jpg",
         ],
     },
     {
@@ -312,9 +312,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2599.00"),
         "description": "A classic 90s heritage straight fit cut from 100% rigid cotton denim. Subtly washed down with pumice stones for authentic whisker fading at the lap and honeycombs behind the knees. Features a button fly, reinforced belt loops, and heavy chain-stitched hems.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1475178626620-a4d074967452?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0064.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0065.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0066.jpg",
         ],
     },
     {
@@ -326,9 +326,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2199.00"),
         "description": "Tailored from an airy 55% linen and 45% cotton blend with a natural slub texture. Equipped with an elasticated waistband with an internal drawstring for customizable comfort. Features a relaxed straight leg that stacks effortlessly over loafers, sandals, or clean sneakers.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0067.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0068.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0069.jpg",
         ],
     },
     {
@@ -340,9 +340,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1999.00"),
         "description": "Engineered from 380 GSM brushed-back cotton fleece for maximum warmth and structure. Designed with tapered legs, heavy ribbed ankle cuffs, zippered deep side pockets to secure your phone, and a metal-tipped cotton drawstring waistband. The ultimate luxury loungewear bottom.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1552902865-b72c031ac5ea?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1517445312882-bc9910d016b7?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0070.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0071.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0072.jpg",
         ],
     },
     {
@@ -354,9 +354,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1599.00"),
         "description": "Cut from crisp stretch cotton twill hitting just above the knee with a 9-inch inseam. Finished with a zip fly, slanted front pockets, and button-through rear pockets. Clean and tailored enough to wear with polo shirts or linen button-downs at summer cookouts.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1591195853828-11db59a44f6b?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0073.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0074.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0075.jpg",
         ],
     },
     {
@@ -368,9 +368,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2799.00"),
         "description": "Constructed from tear-resistant cotton ripstop fabric designed for utilitarian functionality. Features bellows cargo pockets with hidden snap closures, articulated knees for unrestricted movement, and drawstring hems allowing you to adjust between a straight or tapered silhouette.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1517445312882-bc9910d016b7?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1552902865-b72c031ac5ea?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0076.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0077.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0078.jpg",
         ],
     },
     {
@@ -382,9 +382,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2899.00"),
         "description": "Designed with a dramatic high-rise waist and a relaxed wide-leg cut that pools elegantly over footwear. Tailored from a fluid twill weave that drapes without clinging. Features a concealed hook-and-bar closure and deep side slash pockets.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0079.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0080.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0081.jpg",
         ],
     },
     {
@@ -396,9 +396,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3199.00"),
         "description": "Unwashed 14 oz raw denim ready to develop personalized fades with wear. Features a medium rise and a classic straight leg from knee to ankle. Equipped with donut button fly, yellow contrast stitching, and durable bar-tacked stress points.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1475178626620-a4d074967452?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0082.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0083.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0084.jpg",
         ],
     },
     {
@@ -410,9 +410,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2699.00"),
         "description": "Crafted from plush 8-wale cotton corduroy offering rich tactile texture and cozy warmth. Features an easy straight leg, a comfortable partially elasticated waistband, and horn button closures. Pairs effortlessly with wool sweaters and denim jackets.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0085.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0086.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0087.jpg",
         ],
     },
     {
@@ -424,9 +424,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2599.00"),
         "description": "Engineered for active commuters and modern travelers from a water-repellent nylon-spandex technical twill. 4-way stretch provides full range of movement without losing shape. Features a hidden zippered security pocket for passports and transit cards.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0088.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0089.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0090.jpg",
         ],
     },
     {
@@ -438,9 +438,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1799.00"),
         "description": "Vintage-inspired cutoff shorts with a raw frayed hem and distressed detailing. Cut from midweight cotton denim with a relaxed fit through the seat and thigh. A casual summer must-have to wear with tees, tank tops, and low-top sneakers.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1591195853828-11db59a44f6b?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0091.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0092.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0093.jpg",
         ],
     },
     {
@@ -452,9 +452,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2499.00"),
         "description": "Modern smart trousers with clean single pleats, slash pockets, and a neat tapered hem. Woven from high-twist cotton yarns that resist creasing during long office hours. Style with dress shirts or knit polo tees for elevated office dressing.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0094.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0095.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0096.jpg",
         ],
     },
     {
@@ -466,9 +466,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("1399.00"),
         "description": "Constructed from 280 GSM soft unbrushed French terry loops with a 7-inch inseam. Designed with deep side pockets, a back patch pocket, and an elasticated waistband with a contrast natural drawstring. Designed for warm-weather relaxation and weekend getaways.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1591195853828-11db59a44f6b?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1552902865-b72c031ac5ea?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0097.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0098.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0099.jpg",
         ],
     },
     {
@@ -480,9 +480,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2699.00"),
         "description": "Dyed with sulfur-free black dye that retains its deep saturation wash after wash. Crafted from 12 oz stretch denim that holds its shape without bagging at the knees. A sleek night-out denim staple that dresses up effortlessly with leather jackets or blazers.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1475178626620-a4d074967452?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0100.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0101.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0102.jpg",
         ],
     },
 
@@ -498,9 +498,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3999.00"),
         "description": "The quintessential American trucker jacket constructed from 14 oz rigid cotton denim. Features pointed chest flap pockets with shank buttons, side handwarmer welt pockets, adjustable waist tabs, and vintage contrast topstitching. A timeless year-round layering essential that looks better with every year of wear.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1543076447-215ad9ba6923?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0103.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0104.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0105.jpg",
         ],
     },
     {
@@ -512,9 +512,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("6499.00"),
         "description": "Tailored from an insulating blend of 70% virgin wool and 30% cashmere with a silky satin interior lining. Styled with broad peak lapels, a 6x2 double-breasted button stance, ticket pocket, and a central back vent. Drapes cleanly over formal business suits and chunky winter knitwear.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1539533018447-63fcce667883?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0106.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0107.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0108.jpg",
         ],
     },
     {
@@ -526,9 +526,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3599.00"),
         "description": "Constructed from water-resistant flight nylon with a lightweight polyester lining. Features a sturdy two-way metal zipper, ribbed baseball collar, elasticated cuffs, and slanted snap-button hand pockets. A versatile transitional jacket that layers effortlessly over t-shirts and hoodies.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0109.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0110.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0111.jpg",
         ],
     },
     {
@@ -540,9 +540,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("4199.00"),
         "description": "Engineered with 650-fill hypoallergenic recycled synthetic down fill for superior warmth-to-weight ratio. Encased in a durable DWR ripstop nylon shell with zippered fleece-lined hand pockets and an interior zippered chest pouch that doubles as a travel pack sack.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0112.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0113.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0114.jpg",
         ],
     },
     {
@@ -554,9 +554,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("5299.00"),
         "description": "Expertly structured blazer woven from tropical high-twist wool with natural stretch. Features sharp peak lapels, a two-button stance, functional kissing button cuffs, and double rear side vents. An essential formal and smart-casual jacket that elevates any trouser or dark denim combination.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0115.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0116.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0117.jpg",
         ],
     },
     {
@@ -568,9 +568,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("4599.00"),
         "description": "A rebel silhouette crafted from heavyweight vegan faux suede with a velvety brushed nap. Features an asymmetrical zippered closure, notched lapels with metallic snap studs, zippered sleeve gussets, and zippered chest pockets. Brings rugged edge to any basic outfit.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0118.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0119.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0120.jpg",
         ],
     },
     {
@@ -582,9 +582,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("4299.00"),
         "description": "Constructed from thick 6-wale cotton corduroy fully lined with plush faux-shearling sherpa fleece for cold-weather insulation. Finished with metal wreath buttons, twin flap chest pockets, and a fold-down sherpa fleece collar for vintage autumn warmth.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1521223890158-f9f7c3d5d504?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0121.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0122.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0123.jpg",
         ],
     },
     {
@@ -596,9 +596,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("5799.00"),
         "description": "Woven from tightly twisted water-repellent cotton gabardine twill. Features storm flaps at the shoulder and back, gun flap detailing, a removable waist belt with leather buckle, and epaulets on the shoulders. The iconic rainy day outer layer for effortless sophistication.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1539533018447-63fcce667883?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0124.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0125.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0126.jpg",
         ],
     },
 
@@ -614,9 +614,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2999.00"),
         "description": "Crafted from a fluid, airy chiffon fabric adorned with watercolor botanical floral blossoms. Features a flattering V-neckline, subtle empire waist seam, tiered flounce hemline, and a discreet invisible back zipper. Perfect for garden weddings, weekend brunches, and warm summer vacations.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0127.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0128.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0129.jpg",
         ],
     },
     {
@@ -628,9 +628,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2799.00"),
         "description": "Knitted from a dense modal-spandex ribbed fabric that contours and sculpts the body while providing comfortable all-day stretch. Features a sleek crew neckline, full-length fitted sleeves, and a tasteful side leg slit for ease of movement. Pairs beautifully with boots or heels.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0130.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0131.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0132.jpg",
         ],
     },
     {
@@ -642,9 +642,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3299.00"),
         "description": "Cut from crisp lightweight cotton poplin with sweeping tiered volume. Features delicate adjustable spaghetti straps, a square neckline, and practical side seam pockets. The breezy silhouette provides maximum air circulation during sweltering summer afternoons.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0133.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0134.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0135.jpg",
         ],
     },
     {
@@ -656,9 +656,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3599.00"),
         "description": "Woven from liquid-shine silk-feel satin cut on the bias to drape seamlessly along the natural silhouette. Features a graceful cowl neckline, crisscross lace-up back straps, and an ankle-length hem. The quintessential dress for date nights, galas, and upscale evening parties.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0136.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0137.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0138.jpg",
         ],
     },
     {
@@ -670,9 +670,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3199.00"),
         "description": "A chic one-piece boiler suit tailored from a breathable linen-viscose blend. Features a notched revere collar, front button closure, functional chest flap pockets, and a matching fabric belt with a tortoiseshell D-ring buckle to cinch the waist. Effortless utilitarian style in a single garment.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0139.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0140.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0141.jpg",
         ],
     },
     {
@@ -684,9 +684,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2899.00"),
         "description": "True wrap construction made from 100% natural European flax linen. Tailored with elbow-length flutter sleeves, a surplice V-neckline, and an asymmetrical tulip hemline. The self-tie waist adjusts perfectly to your body shape for a universally flattering fit.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0142.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0143.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0144.jpg",
         ],
     },
     {
@@ -698,9 +698,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("3099.00"),
         "description": "Feminine cottagecore silhouette featuring an elasticated smocked bodice that stretches comfortably. Detailed with romantic puff sleeves that can be worn on or off the shoulder, a square neckline, and a gently flared A-line skirt. Lightweight cotton lining ensures opacity.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0145.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0146.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0147.jpg",
         ],
     },
     {
@@ -712,9 +712,9 @@ DEMO_PRODUCTS = [
         "compare_at_price": Decimal("2999.00"),
         "description": "Casual vintage overalls cut from 100% durable cotton denim. Designed with adjustable buckle shoulder straps, side button closures at the hips, a front bib pouch pocket, and rolled hems. Layer over striped tees or basic crop tops for an effortless casual 90s look.",
         "image_urls": [
-            "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800&auto=format&fit=crop&q=80",
-            "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800&auto=format&fit=crop&q=80",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0148.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0149.jpg",
+            "https://huggingface.co/datasets/Humanbased-AI/Fashion-1K/resolve/main/images/0150.jpg",
         ],
     },
 ]

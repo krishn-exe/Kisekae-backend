@@ -227,6 +227,7 @@ def get_optimized_product_queryset():
 def apply_product_filters(queryset, request):
     """
     Applies shared query filters for search and public browsing:
+    - store / store_id
     - category / type
     - size (checks availability in stock)
     - color
@@ -234,6 +235,14 @@ def apply_product_filters(queryset, request):
     - in_stock
     - letter
     """
+    store_param = request.query_params.get("store_id") or request.query_params.get("store")
+    if store_param:
+        store_val = str(store_param).strip()
+        if store_val.isdigit():
+            queryset = queryset.filter(store_id=int(store_val))
+        else:
+            queryset = queryset.filter(store__slug__iexact=store_val)
+
     category_param = request.query_params.get("category") or request.query_params.get("type")
     if category_param:
         cat_code = normalize_category_param(category_param)
@@ -1026,7 +1035,9 @@ class ProductSearchView(APIView):
             OpenApiParameter(name="min_price", description="Minimum price filter", required=False, type=float),
             OpenApiParameter(name="max_price", description="Maximum price filter", required=False, type=float),
             OpenApiParameter(name="in_stock", description="If true, only return products with stock > 0", required=False, type=bool),
-            OpenApiParameter(name="similarity_threshold", description="Cosine distance threshold for semantic matching (default: 0.82)", required=False, type=float),
+            OpenApiParameter(name="store_id", description="Optional filter by store ID", required=False, type=int),
+            OpenApiParameter(name="store", description="Optional filter by store slug", required=False, type=str),
+            OpenApiParameter(name="similarity_threshold", description="Cosine distance threshold for semantic matching (default: 0.58)", required=False, type=float),
             OpenApiParameter(name="ordering", description="Sort order: 'relevance' (default), 'price', '-price', 'newest', 'oldest', 'name', '-name'", required=False, type=str),
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
@@ -1042,9 +1053,9 @@ class ProductSearchView(APIView):
 
         raw_threshold = request.query_params.get("similarity_threshold")
         try:
-            threshold = float(raw_threshold) if raw_threshold is not None else 0.82
+            threshold = float(raw_threshold) if raw_threshold is not None else 0.58
         except (ValueError, TypeError):
-            threshold = 0.82
+            threshold = 0.58
 
         queryset = get_optimized_product_queryset()
 
@@ -1069,12 +1080,12 @@ class ProductSearchView(APIView):
 
                 if query_vector:
                     try:
+                        # Hybrid Search: Exact/prefix/substring match on name OR high-confidence semantic vector match.
+                        # Strict cosine distance threshold (default 0.58) prevents irrelevant catalog noise.
                         queryset = queryset.annotate(
                             distance=CosineDistance("embedding_record__embedding", query_vector)
                         ).filter(
                             Q(name__icontains=query)
-                            | Q(description__icontains=query)
-                            | Q(color__icontains=query)
                             | (Q(embedding_record__isnull=False) & Q(distance__lte=threshold))
                         )
                         has_vector_search = True

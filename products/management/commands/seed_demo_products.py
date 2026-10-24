@@ -323,8 +323,7 @@ class Command(BaseCommand):
                 product.save(update_fields=["image"])
 
             # Generate and save Vector Embedding for Semantic Search & Recommendations
-            search_text = f"{product.name} {product.color} {product.get_category_display()} {product.description}"
-            vec = embedding_service.embed_text(search_text)
+            vec = embedding_service.embed_product(product)
             if vec:
                 ProductEmbedding.objects.update_or_create(
                     product=product,

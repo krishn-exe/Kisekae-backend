@@ -66,7 +66,7 @@ class AnalyticsDashboardView(BaseAnalyticsView):
     """Retrieve key performance indicators and high-level dashboard metrics for a store."""
 
     @extend_schema(
-        tags=["Store Analytics"],
+        tags=["Store - Analytics"],
         summary="Store dashboard KPI metrics",
         description=(
             "Calculates high-level key performance metrics for a store, including total revenue, "
@@ -103,7 +103,7 @@ class RevenueAnalyticsView(BaseAnalyticsView):
     """Retrieve revenue time series and summary for a store."""
 
     @extend_schema(
-        tags=["Store Analytics"],
+        tags=["Store - Analytics"],
         summary="Store revenue analytics over time",
         description=(
             "Aggregates revenue and order counts into chronological time series buckets (daily, weekly, or monthly). "
@@ -141,7 +141,7 @@ class ProductPerformanceView(BaseAnalyticsView):
     """Retrieve product sales rankings and performance analytics."""
 
     @extend_schema(
-        tags=["Store Analytics"],
+        tags=["Store - Analytics"],
         summary="Store product sales performance ranking",
         description=(
             "Calculates ranked product performance based on gross revenue or units sold. "
@@ -181,7 +181,7 @@ class OrderMetricsView(BaseAnalyticsView):
     """Retrieve order status breakdown, cancellation rate, and fulfillment velocity."""
 
     @extend_schema(
-        tags=["Store Analytics"],
+        tags=["Store - Analytics"],
         summary="Store order metrics & fulfillment velocity",
         description=(
             "Aggregates order counts across all 6 lifecycle statuses (PENDING, CONFIRMED, PROCESSING, SHIPPED, "
@@ -219,7 +219,7 @@ class ReportDownloadView(BaseAnalyticsView):
     """Generate and download a CSV report (sales, inventory, orders)."""
 
     @extend_schema(
-        tags=["Store Analytics"],
+        tags=["Store - Analytics"],
         summary="Download CSV reports",
         description="Generates and streams a CSV report for sales, inventory, or orders within the optional date filter range.",
         parameters=[

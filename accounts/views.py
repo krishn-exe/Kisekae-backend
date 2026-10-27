@@ -22,7 +22,7 @@ from cart.services import CartService
 from products.models import Product
 
 from .otp import RedisOTP
-from .models import Address, UserSettings, WishlistItem
+from .models import Address, PendingRegistration, UserSettings, WishlistItem
 from .responses import error_response, success_response
 from .serializers import (
     AddressSerializer,
@@ -39,6 +39,7 @@ from .serializers import (
     ResetPasswordSerializer,
     UpdateWishlistNoteSerializer,
     UserSettingsSerializer,
+    UserProfileSerializer,
     UserUpdateSerializer,
     WishlistItemSerializer)
 from .social import process_social_login
@@ -86,7 +87,7 @@ class RegisterView(APIView):
         summary="Register a new user account",
         description=(
             "Initiates user registration and automatically dispatches a 6-digit verification code to the email address. "
-            "Registration data is staged in Redis with a 15-minute TTL; the user account is created in the database "
+            "Registration data is staged temporarily in the database with a 15-minute expiration; the user account is created "
             "upon successful OTP verification (`POST /accounts/otp/verify/`). "
             "Name and password are optional. Accepts optional `is_seller` boolean (defaults to false)."
         ),
@@ -130,24 +131,31 @@ class RegisterView(APIView):
                 },
                 status_code=status.HTTP_201_CREATED)
 
-        hashed_password = make_password(password) if password else None
-        pending_data = {
-            "name": name,
-            "email": email,
-            "password": hashed_password,
-            "is_seller": is_seller,
-        }
+        hashed_password = make_password(password) if password else ""
         
-        cache_key = f"pending_registration:{email}"
-        if not cache.add(cache_key, pending_data, timeout=900):
-            ttl_func = getattr(cache, "ttl", None)
-            ttl = ttl_func(cache_key) if callable(ttl_func) else None
-            ttl = max(ttl or 900, 1)
-            return error_response(
-                message=f"A registration is already pending for this email. Please wait {ttl} seconds or verify the code sent.",
-                code="REGISTRATION_PENDING",
-                details={"ttl": ttl},
-                status_code=status.HTTP_409_CONFLICT)
+        pending_reg = PendingRegistration.objects.filter(email__iexact=email).first()
+        if pending_reg:
+            if not pending_reg.is_expired(ttl_seconds=900):
+                ttl = pending_reg.remaining_ttl(ttl_seconds=900)
+                return error_response(
+                    message=f"A registration is already pending for this email. Please wait {ttl} seconds or verify the code sent.",
+                    code="REGISTRATION_PENDING",
+                    details={"ttl": ttl},
+                    status_code=status.HTTP_409_CONFLICT)
+            else:
+                pending_reg.name = name
+                pending_reg.password = hashed_password
+                pending_reg.is_seller = is_seller
+                from django.utils import timezone
+                pending_reg.created_at = timezone.now()
+                pending_reg.save()
+        else:
+            PendingRegistration.objects.create(
+                email=email,
+                name=name,
+                password=hashed_password,
+                is_seller=is_seller,
+            )
 
         otp = RedisOTP(email=email, purpose="verify_email")
         can_send, wait_secs = otp.can_issue()
@@ -268,7 +276,8 @@ class OTPRequestView(APIView):
         purpose = serializer.validated_data.get("purpose", "login")
 
         user = User.objects.filter(email__iexact=email).first()
-        has_pending_reg = cache.get(f"pending_registration:{email}") is not None
+        pending_reg = PendingRegistration.objects.filter(email__iexact=email).first()
+        has_pending_reg = pending_reg is not None and not pending_reg.is_expired(ttl_seconds=900)
 
         should_send = False
         if user and user.is_active:
@@ -322,9 +331,9 @@ class OTPVerifyView(APIView):
         description=(
             "Verifies the 6-digit OTP code against Redis.\n"
             "- If `purpose` is 'verify_email', creates the database account (if pending registration) or marks email verified, "
-            "returning user info and JWT access token in `data.access`, with refresh token in an HttpOnly cookie (`refresh_token`). "
+            "returning user info (including `is_seller`) and JWT access token in `data.access`, with refresh token in an HttpOnly cookie (`refresh_token`). "
             "If the registration session expired (>15 min), returns 400 with code `REGISTRATION_EXPIRED`.\n"
-            "- If `purpose` is 'login' (default), marks email verified and returns user info and JWT access token in `data.access`, "
+            "- If `purpose` is 'login' (default), marks email verified and returns user info (including `is_seller`) and JWT access token in `data.access`, "
             "with refresh token in an HttpOnly cookie (`refresh_token`).\n"
             "- If `purpose` is 'password_reset', returns a 5-minute single-use `reset_token` in the response body "
             "to be used with `POST /accounts/password/reset/`."
@@ -347,6 +356,7 @@ class OTPVerifyView(APIView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(),
+                                    "is_seller": serializers.BooleanField(),
                                 }),
                             "access": serializers.CharField(required=False, allow_null=True, help_text="JWT access token"),
                             "reset_token": serializers.CharField(required=False, allow_null=True, help_text="Single-use password reset token"),
@@ -390,7 +400,7 @@ class OTPVerifyView(APIView):
                 if not user.is_email_verified:
                     user.is_email_verified = True
                     user.save(update_fields=["is_email_verified"])
-                cache.delete(f"pending_registration:{email}")
+                PendingRegistration.objects.filter(email__iexact=email).delete()
                 return success_response(
                     message="Email verified successfully.",
                     data={
@@ -398,33 +408,35 @@ class OTPVerifyView(APIView):
                             "id": user.id,
                             "name": user.name,
                             "email": user.email,
+                            "is_seller": user.is_seller,
                         }
                     },
                     tokens=tokens_for_user(user),
                     status_code=status.HTTP_200_OK)
 
-            # User not in DB yet - check pending registration in Redis
-            pending_data = cache.get(f"pending_registration:{email}")
-            if not pending_data:
+            # User not in DB yet - check pending registration in DB
+            pending_reg = PendingRegistration.objects.filter(email__iexact=email).first()
+            if not pending_reg or pending_reg.is_expired(ttl_seconds=900):
+                if pending_reg:
+                    pending_reg.delete()
                 return error_response(
                     message="Registration session expired or not found. Please register again.",
                     code="REGISTRATION_EXPIRED",
                     status_code=status.HTTP_400_BAD_REQUEST)
 
             user = User(
-                email=pending_data["email"],
-                name=pending_data.get("name", ""),
-                is_seller=pending_data.get("is_seller", False),
+                email=pending_reg.email,
+                name=pending_reg.name,
+                is_seller=pending_reg.is_seller,
                 is_email_verified=True,
                 is_active=True)
-            pwd = pending_data.get("password")
-            if pwd:
-                user.password = pwd
+            if pending_reg.password:
+                user.password = pending_reg.password
             else:
                 user.set_unusable_password()
             user.save()
 
-            cache.delete(f"pending_registration:{email}")
+            pending_reg.delete()
 
             return success_response(
                 message="Email verified successfully.",
@@ -433,6 +445,7 @@ class OTPVerifyView(APIView):
                         "id": user.id,
                         "name": user.name,
                         "email": user.email,
+                        "is_seller": user.is_seller,
                     }
                 },
                 tokens=tokens_for_user(user),
@@ -479,6 +492,7 @@ class OTPVerifyView(APIView):
                     "id": user.id,
                     "name": user.name,
                     "email": user.email,
+                    "is_seller": user.is_seller,
                 }
             },
             tokens=tokens_for_user(user),
@@ -777,6 +791,7 @@ class BaseOAuthView(APIView):
                         "id": user.id,
                         "name": user.name,
                         "email": user.email,
+                        "is_seller": user.is_seller,
                     },
                     "created": created,
                 },
@@ -829,6 +844,7 @@ class GoogleOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
+                                    "is_seller": serializers.BooleanField(),
                                 }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
@@ -848,6 +864,7 @@ class GoogleOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
+                                    "is_seller": serializers.BooleanField(),
                                 }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
@@ -893,6 +910,7 @@ class GitHubOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
+                                    "is_seller": serializers.BooleanField(),
                                 }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
@@ -912,6 +930,7 @@ class GitHubOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
+                                    "is_seller": serializers.BooleanField(),
                                 }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
@@ -1002,27 +1021,16 @@ class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Customer Profile"],
+        tags=["Profile - Personal Info"],
         summary="Get customer profile details",
-        description="Returns the authenticated user's profile details including name, email, verification status, and summary stats (address and wishlist counts).",
+        description="Returns the authenticated user's profile details including name, email, verification status, summary stats (addresses, wishlist, orders, saved AR looks), and settings.",
         responses={
             200: inline_serializer(
                 name="UserDetailResponse",
                 fields={
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
-                    "data": inline_serializer(
-                        name="UserDetailData",
-                        fields={
-                            "id": serializers.IntegerField(),
-                            "name": serializers.CharField(),
-                            "email": serializers.EmailField(allow_null=True),
-                            "is_email_verified": serializers.BooleanField(),
-                            "is_seller": serializers.BooleanField(),
-                            "date_joined": serializers.DateTimeField(allow_null=True),
-                            "addresses_count": serializers.IntegerField(),
-                            "wishlist_items_count": serializers.IntegerField(),
-                        }),
+                    "data": UserProfileSerializer(),
                 }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
@@ -1041,22 +1049,13 @@ class UserDetailView(APIView):
                 status_code=status.HTTP_403_FORBIDDEN)
         return success_response(
             message="User profile fetched successfully.",
-            data={
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "is_email_verified": user.is_email_verified,
-                "is_seller": user.is_seller,
-                "date_joined": user.date_joined.isoformat() if user.date_joined else None,
-                "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
-                "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
-            },
+            data=UserProfileSerializer(user).data,
             status_code=status.HTTP_200_OK)
 
     @extend_schema(
-        tags=["Customer Profile"],
+        tags=["Profile - Personal Info"],
         summary="Update customer profile name",
-        description="Updates the authenticated user's name on their customer profile.",
+        description="Updates the authenticated user's personal profile information (name).",
         request=UserUpdateSerializer,
         responses={
             200: inline_serializer(
@@ -1064,24 +1063,13 @@ class UserDetailView(APIView):
                 fields={
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
-                    "data": inline_serializer(
-                        name="UserUpdateData",
-                        fields={
-                            "id": serializers.IntegerField(),
-                            "name": serializers.CharField(),
-                            "email": serializers.EmailField(),
-                            "is_email_verified": serializers.BooleanField(),
-                            "is_seller": serializers.BooleanField(),
-                            "date_joined": serializers.DateTimeField(allow_null=True),
-                            "addresses_count": serializers.IntegerField(),
-                            "wishlist_items_count": serializers.IntegerField(),
-                        }),
+                    "data": UserProfileSerializer(),
                 }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
         })
-    def patch(self, request):
+    def put(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
@@ -1094,51 +1082,11 @@ class UserDetailView(APIView):
         user.save(update_fields=["name"])
         return success_response(
             message="User profile updated successfully.",
-            data={
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "is_email_verified": user.is_email_verified,
-                "is_seller": user.is_seller,
-                "date_joined": user.date_joined.isoformat() if user.date_joined else None,
-                "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
-                "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
-            },
+            data=UserProfileSerializer(user).data,
             status_code=status.HTTP_200_OK)
 
     @extend_schema(
-        tags=["Customer Profile"],
-        summary="Replace customer profile name",
-        description="Replaces the authenticated user's name on their customer profile.",
-        request=UserUpdateSerializer,
-        responses={
-            200: inline_serializer(
-                name="UserUpdatePutResponse",
-                fields={
-                    "success": serializers.BooleanField(),
-                    "message": serializers.CharField(),
-                    "data": inline_serializer(
-                        name="UserUpdatePutData",
-                        fields={
-                            "id": serializers.IntegerField(),
-                            "name": serializers.CharField(),
-                            "email": serializers.EmailField(),
-                            "is_email_verified": serializers.BooleanField(),
-                            "is_seller": serializers.BooleanField(),
-                            "date_joined": serializers.DateTimeField(allow_null=True),
-                            "addresses_count": serializers.IntegerField(),
-                            "wishlist_items_count": serializers.IntegerField(),
-                        }),
-                }),
-            400: COMMON_ERROR_SCHEMA,
-            401: COMMON_ERROR_SCHEMA,
-            403: COMMON_ERROR_SCHEMA,
-        })
-    def put(self, request):
-        return self.patch(request)
-
-    @extend_schema(
-        tags=["Customer Profile"],
+        tags=["Profile - Personal Info"],
         summary="Delete / deactivate customer account",
         description="Deactivates the authenticated user's account and clears refresh token cookies.",
         responses={200: inline_serializer(name="UserDeleteResponse", fields={"message": serializers.CharField()})})
@@ -1159,7 +1107,7 @@ class UserSettingsView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Accounts"],
+        tags=["Profile - Personal Info"],
         summary="Get user notification and app settings",
         description="Retrieves the authenticated user's notification preferences and application settings.",
         responses={200: USER_SETTINGS_RESPONSE_SCHEMA})
@@ -1170,12 +1118,12 @@ class UserSettingsView(APIView):
             data=UserSettingsSerializer(settings_obj).data)
 
     @extend_schema(
-        tags=["Accounts"],
+        tags=["Profile - Personal Info"],
         summary="Update user notification and app settings",
-        description="Updates the authenticated user's notification preferences and application settings (partial update supported).",
+        description="Updates the authenticated user's notification preferences and application settings.",
         request=UserSettingsSerializer,
         responses={200: USER_SETTINGS_RESPONSE_SCHEMA, 400: COMMON_ERROR_SCHEMA})
-    def patch(self, request):
+    def put(self, request):
         settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
         serializer = UserSettingsSerializer(settings_obj, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -1198,7 +1146,7 @@ class AddressListCreateView(APIView):
 
     @extend_schema(
         operation_id="customer_address_list",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="List customer delivery addresses",
         description="Returns all saved addresses for the authenticated customer. Addresses are sorted with the default address first.",
         responses={
@@ -1228,7 +1176,7 @@ class AddressListCreateView(APIView):
 
     @extend_schema(
         operation_id="customer_address_create",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Create a delivery address",
         description=(
             "Adds a new delivery address for the authenticated user. "
@@ -1288,7 +1236,7 @@ class AddressDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_address_retrieve",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Get address details",
         description="Retrieves a specific delivery address by ID belonging to the authenticated customer.",
         responses={
@@ -1314,7 +1262,7 @@ class AddressDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_address_replace",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Update address (full)",
         description="Replaces all fields of an existing delivery address.",
         request=AddressSerializer,
@@ -1345,7 +1293,7 @@ class AddressDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_address_update",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Update address (partial)",
         description="Updates one or more fields of an existing delivery address.",
         request=AddressSerializer,
@@ -1376,7 +1324,7 @@ class AddressDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_address_destroy",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Delete address",
         description="Deletes a saved delivery address. If the deleted address was marked as default, the most recent remaining address is promoted to default.",
         responses={
@@ -1417,7 +1365,7 @@ class AddressSetDefaultView(APIView):
 
     @extend_schema(
         operation_id="customer_address_set_default",
-        tags=["Customer Addresses"],
+        tags=["Profile - Addresses"],
         summary="Set address as default",
         description="Sets the specified address as the customer's primary default delivery address.",
         request=None,
@@ -1467,7 +1415,7 @@ class WishlistListCreateView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_list",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="List customer wishlist items",
         description="Returns all products saved in the authenticated customer's wishlist with up-to-date pricing, stock, and store details.",
         responses={
@@ -1497,7 +1445,7 @@ class WishlistListCreateView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_add",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Add product to wishlist",
         description="Adds an active product to the authenticated customer's wishlist. If already present, updates its optional note and returns 200 OK.",
         request=AddWishlistSerializer,
@@ -1544,7 +1492,7 @@ class WishlistListCreateView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_clear",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Clear wishlist",
         description="Removes all products from the customer's wishlist.",
         responses={
@@ -1587,7 +1535,7 @@ class WishlistDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_check",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Check if product is wishlisted",
         description="Checks whether a given product is saved in the user's wishlist and returns the wishlist item details.",
         responses={
@@ -1632,7 +1580,7 @@ class WishlistDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_update_note",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Update wishlist item note",
         description="Updates personal note or remark for this wishlisted item.",
         request=UpdateWishlistNoteSerializer,
@@ -1673,7 +1621,7 @@ class WishlistDetailView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_remove",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Remove product from wishlist",
         description="Deletes a product from the customer's wishlist by product ID or item ID.",
         responses={
@@ -1718,7 +1666,7 @@ class WishlistMoveToCartView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_move_to_cart",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Move wishlisted product to cart",
         description="Transfers a wishlisted item into the user's active shopping cart and automatically deletes it from the wishlist.",
         request=None,
@@ -1791,7 +1739,7 @@ class WishlistBulkMoveToCartView(APIView):
 
     @extend_schema(
         operation_id="customer_wishlist_bulk_move_to_cart",
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Bulk move wishlist items to cart",
         description="Transfers multiple (or all) wishlisted items into the user's active shopping cart and automatically removes successfully added items from the wishlist.",
         request=BulkMoveWishlistToCartSerializer,
@@ -1885,7 +1833,7 @@ class WishlistBulkMoveToCartAliasView(WishlistBulkMoveToCartView):
     @extend_schema(
         operation_id="customer_wishlist_bulk_move_to_cart_alias",
         deprecated=True,
-        tags=["Customer Wishlist"],
+        tags=["Profile - Wishlist"],
         summary="Bulk move wishlist items to cart (alias)",
         description="Alias for POST /accounts/wishlist/move-to-cart/. Transfers multiple or all wishlisted items into active cart.",
         request=BulkMoveWishlistToCartSerializer,

@@ -87,7 +87,7 @@ class ProductStockView(BaseInventoryView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Inventory"],
+        tags=["Store - Inventory"],
         summary="Adjust product stock level",
         description="Updates stock for a product directly or by delta, recording an audit entry.",
         request=StockAdjustSerializer,
@@ -132,7 +132,7 @@ class BulkStockUpdateView(BaseInventoryView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Inventory"],
+        tags=["Store - Inventory"],
         summary="Bulk update stock for multiple products",
         description="Atomically updates stock levels across multiple products in the store.",
         request=BulkStockUpdateSerializer,
@@ -165,7 +165,7 @@ class StockUpdateHistoryView(BaseInventoryView):
     pagination_class = StorePagination
 
     @extend_schema(
-        tags=["Inventory"],
+        tags=["Store - Inventory"],
         summary="List stock change history (audit ledger)",
         description="Lists paginated stock change history for store products. Filterable by product_id.",
         parameters=[
@@ -208,7 +208,7 @@ class ProductStockAlertView(BaseInventoryView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Inventory Alerts"],
+        tags=["Store - Inventory"],
         summary="Get stock alert setting for a product",
         description="Retrieves current low-stock alert configuration for a product. Returns default threshold (5) if unconfigured.",
         responses={200: PRODUCT_STOCK_ALERT_GET_RESPONSE_SCHEMA, 404: INVENTORY_ERROR_SCHEMA},
@@ -246,7 +246,7 @@ class ProductStockAlertView(BaseInventoryView):
         )
 
     @extend_schema(
-        tags=["Inventory Alerts"],
+        tags=["Store - Inventory"],
         summary="Set or update stock alert threshold for a product",
         description="Configures or updates the low-stock alert threshold count for this product.",
         request=SetStockAlertSerializer,
@@ -281,7 +281,7 @@ class StockAlertListView(BaseInventoryView):
     throttle_scope = "store_read"
 
     @extend_schema(
-        tags=["Inventory Alerts"],
+        tags=["Store - Inventory"],
         summary="List all configured stock alerts for store",
         description="Lists all configured stock alert thresholds for products in the store.",
         responses={200: STOCK_ALERT_LIST_RESPONSE_SCHEMA},
@@ -302,7 +302,7 @@ class LowStockProductsView(BaseInventoryView):
     throttle_scope = "store_read"
 
     @extend_schema(
-        tags=["Inventory"],
+        tags=["Store - Inventory"],
         summary="List products with low or zero stock",
         description="Returns all products currently at or below their configured or default alert threshold.",
         responses={200: LOW_STOCK_PRODUCTS_RESPONSE_SCHEMA},

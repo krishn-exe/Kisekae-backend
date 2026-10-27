@@ -210,7 +210,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_product_list",
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="List products for a store",
         description="Returns all products for the specified store. Filterable by status and category.",
         parameters=[
@@ -276,7 +276,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_product_create",
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Create a new product",
         description="Creates a new product with category, color, and size breakdown (e.g. S/M/L/XL for clothing, 6-10 for shoes).",
         request=ProductCreateSerializer,
@@ -345,7 +345,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_product_detail",
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Get product details",
         description="Returns details of a specific product with its images and size stocks.",
         responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
@@ -367,7 +367,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             data=ProductSerializer(product).data)
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Update product details",
         description="Updates details of a product, including category, color, and size stocks.",
         request=ProductUpdateSerializer,
@@ -410,7 +410,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             data=ProductSerializer(updated_product).data)
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Delete a product",
         description="Permanently deletes a product and cleans up gallery images.",
         responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
@@ -471,7 +471,7 @@ class ProductMultipleImageView(APIView):
         return product, None
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="List all product images",
         description="Returns list of all images for this product (up to 10 images).",
         responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
@@ -485,7 +485,7 @@ class ProductMultipleImageView(APIView):
             data=ProductImageSerializer(images, many=True).data)
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Upload product images (max 10 total)",
         description="Uploads one or multiple images to the product image gallery (JPEG, PNG, WEBP; max 5MB each). Maximum 10 images per product.",
         request=inline_serializer(
@@ -533,7 +533,7 @@ class ProductImageDetailView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Delete a specific product image",
         description="Deletes a specific gallery image by ID. If thumbnail was deleted, promotes the next available image.",
         responses={200: inline_serializer(name="ProductImageDeleteSuccess", fields={"success": serializers.BooleanField()}), 404: PRODUCT_ERROR_SCHEMA})
@@ -557,7 +557,7 @@ class ProductImageView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Upload primary product image",
         description="Uploads or replaces the primary product thumbnail image (JPEG, PNG, WEBP; max 5MB).",
         request=inline_serializer(
@@ -589,7 +589,7 @@ class ProductImageView(APIView):
             data=ProductSerializer(updated).data)
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Remove primary product image",
         description="Removes the primary product image.",
         responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
@@ -610,7 +610,7 @@ class ProductListingStatusView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Get catalog listing status overview",
         description="Returns breakdown of product counts by status (ACTIVE, DRAFT, INACTIVE) and stock health.",
         responses={200: PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
@@ -638,7 +638,7 @@ class ProductBulkUpdateView(APIView):
     permission_classes = [IsAuthenticated, IsSeller, IsBusinessVerified]
 
     @extend_schema(
-        tags=["Products"],
+        tags=["Store - Products"],
         summary="Bulk update products status and price",
         description="Updates status, category, color, price, and compare-at price in bulk across multiple store products.",
         request=BulkProductUpdateSerializer,

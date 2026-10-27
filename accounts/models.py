@@ -237,4 +237,46 @@ class WishlistItem(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.product.name}"
-
+
+
+class PendingRegistration(models.Model):
+    email = models.EmailField(
+        unique=True,
+        validators=[email_validator],
+    )
+    name = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        validators=[name_validator],
+    )
+    password = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="Hashed password for the pending user.",
+    )
+    is_seller = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Pending Registration"
+        verbose_name_plural = "Pending Registrations"
+
+    def is_expired(self, ttl_seconds: int = 900) -> bool:
+        from django.utils import timezone
+        import datetime
+        return timezone.now() > self.created_at + datetime.timedelta(seconds=ttl_seconds)
+
+    def remaining_ttl(self, ttl_seconds: int = 900) -> int:
+        from django.utils import timezone
+        import datetime
+        expires_at = self.created_at + datetime.timedelta(seconds=ttl_seconds)
+        rem = int((expires_at - timezone.now()).total_seconds())
+        return max(rem, 0)
+
+    def __str__(self):
+        return f"Pending registration for {self.email}"
+
+

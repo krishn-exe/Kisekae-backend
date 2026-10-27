@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Address, User, WishlistItem
+from .models import Address, PendingRegistration, User, WishlistItem
 
 
 @admin.register(User)
@@ -38,4 +38,13 @@ class WishlistItemAdmin(admin.ModelAdmin):
     list_display = ("user", "product", "note", "created_at")
     search_fields = ("user__email", "product__name", "note")
     list_filter = ("created_at",)
+
+
+@admin.register(PendingRegistration)
+class PendingRegistrationAdmin(admin.ModelAdmin):
+    list_display = ("email", "name", "is_seller", "created_at")
+    search_fields = ("email", "name")
+    list_filter = ("is_seller", "created_at")
+    readonly_fields = ("created_at",)
+
 

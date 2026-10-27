@@ -6,6 +6,12 @@ from notifications.email_service import NotificationEmailService
 @shared_task
 def flush_expired_tokens_task():
     call_command('flushexpiredtokens')
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import PendingRegistration
+    cutoff = timezone.now() - timedelta(minutes=15)
+    PendingRegistration.objects.filter(created_at__lt=cutoff).delete()
+
 
 
 @shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})

@@ -63,7 +63,7 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_list",
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="List user's stores",
         description="Returns all stores the authenticated seller is a member of. By default excludes archived stores.",
         parameters=[
@@ -129,7 +129,7 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_create",
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Create a new store",
         description="Creates a new store and designates the authenticated seller as the OWNER atomically.",
         request=StoreCreateSerializer,
@@ -157,7 +157,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
 
     @extend_schema(
         operation_id="seller_store_detail",
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Get store details",
         description="Returns details of a specific store. User must be a member of the store.",
         responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -177,7 +177,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Update store details",
         description="Updates details of a store (name, description, contact details, or active status). Managers and Owner can update.",
         request=StoreUpdateSerializer,
@@ -215,7 +215,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Archive (soft-delete) store",
         description="Soft-archives a store. Only the store OWNER can archive the store. Revokes pending invitations.",
         responses={200: STORE_ACTION_SUCCESS_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -255,7 +255,7 @@ class StoreRestoreView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Restore an archived store",
         description="Restores a soft-archived store back to ACTIVE status. Only the store OWNER can restore.",
         request=None,
@@ -296,7 +296,7 @@ class StoreTransferOwnershipView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Transfer store ownership",
         description="Transfers store ownership from current owner to an existing member. Only the current OWNER can perform this.",
         request=TransferOwnershipSerializer,
@@ -338,7 +338,7 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="List store members",
         description="Lists all members of the store. Accessible by Owner and Managers.",
         responses={200: STORE_MEMBER_LIST_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -359,7 +359,7 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Add a seller directly as a store manager",
         description="Adds an existing seller account as a manager to the store directly. Accessible by Owner and Managers.",
         request=AddMemberSerializer,
@@ -396,7 +396,7 @@ class StoreMemberDeleteView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Remove a member from the store",
         description="Removes a manager from the store. Cannot remove the owner or yourself (use leave instead).",
         responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -427,7 +427,7 @@ class StoreLeaveView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Leave a store",
         description="Allows a manager to leave the store. The store owner cannot leave without transferring ownership first.",
         request=None,
@@ -459,7 +459,7 @@ class StoreInvitationListCreateView(APIView):
 
     @extend_schema(
         operation_id="store_invitations_list",
-        tags=["Store Invitations"],
+        tags=["Store - Invitations"],
         summary="List invitations for a store",
         description="Lists all sent invitations for this store. Filter by ?status= (PENDING, ACCEPTED, DECLINED, REVOKED, EXPIRED).",
         parameters=[
@@ -492,7 +492,7 @@ class StoreInvitationListCreateView(APIView):
         )
 
     @extend_schema(
-        tags=["Store Invitations"],
+        tags=["Store - Invitations"],
         summary="Invite a seller to manage the store",
         description="Sends an email invitation to manage this store as a Manager. Can be initiated by Owner or Managers.",
         request=CreateInvitationSerializer,
@@ -529,7 +529,7 @@ class StoreInvitationRevokeView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Store Invitations"],
+        tags=["Store - Invitations"],
         summary="Revoke an invitation",
         description="Revokes a pending invitation for this store.",
         responses={200: STORE_ACTION_SUCCESS_SCHEMA, 400: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -564,7 +564,7 @@ class StoreInvitationResendView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Store Invitations"],
+        tags=["Store - Invitations"],
         summary="Resend an invitation",
         description="Generates a new token and resets the 7-day expiration for a pending or expired invitation.",
         request=None,
@@ -601,7 +601,7 @@ class InviteeInvitationListView(APIView):
 
     @extend_schema(
         operation_id="seller_pending_invitations_list",
-        tags=["Seller Invitations"],
+        tags=["Store - Seller Invitations"],
         summary="List my pending store invitations",
         description="Lists all pending invitations addressed to the authenticated seller's email address.",
         responses={200: STORE_INVITATION_LIST_RESPONSE_SCHEMA},
@@ -633,7 +633,7 @@ class InviteeInvitationAcceptView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Seller Invitations"],
+        tags=["Store - Seller Invitations"],
         summary="Accept a store invitation",
         description="Accepts an invitation addressed to the authenticated seller's email and grants Manager membership.",
         request=None,
@@ -661,7 +661,7 @@ class InviteeInvitationDeclineView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Seller Invitations"],
+        tags=["Store - Seller Invitations"],
         summary="Decline a store invitation",
         description="Declines an invitation addressed to the authenticated seller's email.",
         request=None,
@@ -689,7 +689,7 @@ class InviteeInvitationTokenAcceptView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Seller Invitations"],
+        tags=["Store - Seller Invitations"],
         summary="Accept an invitation using secret token",
         description="Accepts an invitation using the secret token received in the invitation email or deep link.",
         request=AcceptTokenSerializer,
@@ -717,7 +717,7 @@ class StoreLogoView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Upload store logo",
         description="Uploads or replaces the store logo (JPEG, PNG, WEBP; max 2MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
@@ -758,7 +758,7 @@ class StoreLogoView(APIView):
         )
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Remove store logo",
         description="Removes the store logo. Accessible by Owner and Managers.",
         request=None,
@@ -799,7 +799,7 @@ class StoreBannerView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Upload store banner",
         description="Uploads or replaces the store banner (JPEG, PNG, WEBP; max 5MB). Accessible by Owner and Managers.",
         request=ImageUploadSerializer,
@@ -840,7 +840,7 @@ class StoreBannerView(APIView):
         )
 
     @extend_schema(
-        tags=["Stores"],
+        tags=["Store - Management"],
         summary="Remove store banner",
         description="Removes the store banner. Accessible by Owner and Managers.",
         request=None,
@@ -883,7 +883,7 @@ class BusinessVerificationView(APIView):
     permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
-        tags=["Store Verification"],
+        tags=["Store - Verification"],
         summary="Get business verification details",
         description="Returns the business verification status and submitted details for the store.",
         responses={200: BUSINESS_VERIFICATION_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
@@ -918,7 +918,7 @@ class BusinessVerificationView(APIView):
         )
 
     @extend_schema(
-        tags=["Store Verification"],
+        tags=["Store - Verification"],
         summary="Submit business verification form",
         description="Submits the required business verification form (PAN, GSTIN, business address, phone, email). "
                     "Completing this e-collection enables access to seller dashboard operations.",

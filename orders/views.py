@@ -77,7 +77,7 @@ class OrderListCreateView(BaseOrderView):
 
     @extend_schema(
         operation_id="seller_store_orders_list",
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="List orders for store",
         description="Returns paginated orders for the store. Filterable by status and customer search.",
         parameters=[
@@ -121,7 +121,7 @@ class OrderListCreateView(BaseOrderView):
 
     @extend_schema(
         operation_id="seller_store_order_create",
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Create a new order",
         description="Creates a new customer order and reserves inventory.",
         request=OrderCreateSerializer,
@@ -160,7 +160,7 @@ class OrderListCreateView(BaseOrderView):
 class OrderDetailView(BaseOrderView):
     @extend_schema(
         operation_id="seller_store_order_detail",
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Get order details",
         description="Returns detailed information for a specific order including items and history.",
         responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
@@ -191,7 +191,7 @@ class OrderStatusUpdateView(BaseOrderView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Update order status",
         description="Advances or transitions an order status according to the lifecycle state machine.",
         request=OrderStatusUpdateSerializer,
@@ -235,7 +235,7 @@ class OrderDeliverView(BaseOrderView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Mark order as delivered",
         description="Seller endpoint to mark an order as DELIVERED. Updates status, records delivered_at timestamp, and logs status history.",
         request=OrderDeliverSerializer,
@@ -273,7 +273,7 @@ class BulkOrderStatusUpdateView(BaseOrderView):
     throttle_scope = "store_write"
 
     @extend_schema(
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Bulk update order statuses",
         description="Updates status for multiple orders simultaneously.",
         request=BulkOrderStatusUpdateSerializer,
@@ -496,7 +496,7 @@ class OrderMarkDeliveredAliasView(OrderDeliverView):
     @extend_schema(
         operation_id="seller_order_mark_delivered_alias",
         deprecated=True,
-        tags=["Orders"],
+        tags=["Store - Orders"],
         summary="Mark order as delivered (alias)",
         description="Alias for POST /stores/{pk}/orders/{order_id}/deliver/. Marks order as delivered.",
         request=OrderDeliverSerializer,

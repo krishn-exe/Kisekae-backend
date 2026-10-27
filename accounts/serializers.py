@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema_field
 
 from .models import Address, UserSettings, WishlistItem
 from products.models import Product, ProductStatus
@@ -365,6 +366,9 @@ class UserSettingsSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     addresses_count = serializers.SerializerMethodField()
     wishlist_items_count = serializers.SerializerMethodField()
+    orders_count = serializers.SerializerMethodField()
+    saved_ar_looks_count = serializers.SerializerMethodField()
+    settings = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -377,14 +381,35 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "date_joined",
             "addresses_count",
             "wishlist_items_count",
+            "orders_count",
+            "saved_ar_looks_count",
+            "settings",
         ]
         read_only_fields = fields
 
+    @extend_schema_field(serializers.IntegerField)
     def get_addresses_count(self, obj):
         return obj.addresses.count() if hasattr(obj, "addresses") else 0
 
+    @extend_schema_field(serializers.IntegerField)
     def get_wishlist_items_count(self, obj):
         return obj.wishlist_items.count() if hasattr(obj, "wishlist_items") else 0
+
+    @extend_schema_field(serializers.IntegerField)
+    def get_orders_count(self, obj):
+        return obj.orders.count() if hasattr(obj, "orders") else 0
+
+    @extend_schema_field(serializers.IntegerField)
+    def get_saved_ar_looks_count(self, obj):
+        return obj.combos.count() if hasattr(obj, "combos") else 0
+
+    @extend_schema_field(UserSettingsSerializer)
+    def get_settings(self, obj):
+        settings_obj = getattr(obj, "settings", None)
+        if not settings_obj:
+            from accounts.models import UserSettings
+            settings_obj, _ = UserSettings.objects.get_or_create(user=obj)
+        return UserSettingsSerializer(settings_obj).data
 
 
 class AddressSerializer(serializers.ModelSerializer):

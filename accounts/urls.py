@@ -1,9 +1,6 @@
 from django.urls import path
 
 from .views import (
-    AddressDetailView,
-    AddressListCreateView,
-    AddressSetDefaultView,
     BecomeSellerView,
     ChangePasswordView,
     GitHubOAuthView,
@@ -15,13 +12,6 @@ from .views import (
     RegisterView,
     ResetPasswordView,
     TokenRefreshView,
-    UserDetailView,
-    UserSettingsView,
-    WishlistDetailView,
-    WishlistListCreateView,
-    WishlistBulkMoveToCartView,
-    WishlistBulkMoveToCartAliasView,
-    WishlistMoveToCartView,
 )
 
 urlpatterns = [
@@ -37,21 +27,5 @@ urlpatterns = [
     path("password/change/", ChangePasswordView.as_view(), name="password-change"),
     path("password/reset/", ResetPasswordView.as_view(), name="password-reset"),
     path("become-seller/", BecomeSellerView.as_view(), name="become-seller"),
-
-    # Customer Profile
-    path("me/", UserDetailView.as_view(), name="me"),
-    path("profile/", UserDetailView.as_view(), name="profile"),
-    path("me/settings/", UserSettingsView.as_view(), name="me-settings"),
-
-    # Customer Addresses
-    path("addresses/", AddressListCreateView.as_view(), name="address-list-create"),
-    path("addresses/<int:address_id>/", AddressDetailView.as_view(), name="address-detail"),
-    path("addresses/<int:address_id>/default/", AddressSetDefaultView.as_view(), name="address-set-default"),
-
-    # Customer Wishlist
-    path("wishlist/", WishlistListCreateView.as_view(), name="wishlist-list-create"),
-    path("wishlist/<int:product_id>/", WishlistDetailView.as_view(), name="wishlist-detail"),
-    path("wishlist/move-to-cart/", WishlistBulkMoveToCartView.as_view(), name="wishlist-bulk-move-to-cart"),
-    path("wishlist/bulk-move-to-cart/", WishlistBulkMoveToCartAliasView.as_view(), name="wishlist-bulk-move"),
-    path("wishlist/<int:product_id>/move-to-cart/", WishlistMoveToCartView.as_view(), name="wishlist-move-to-cart"),
 ]
+

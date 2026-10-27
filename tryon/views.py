@@ -74,7 +74,7 @@ class ComboListCreateView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_list",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="List user's combos",
         description="Returns all outfit combos created by the authenticated user with full product card items, deep links, and share URLs.",
         responses={200: COMBO_LIST_RESPONSE_SCHEMA},
@@ -98,7 +98,7 @@ class ComboListCreateView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_create",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Create a new combo",
         description=(
             "Creates a new outfit combo. Strictly enforces category rules: "
@@ -135,7 +135,7 @@ class ComboDetailView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_detail",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Get combo details",
         description="Returns details and items for a specific outfit combo including share links.",
         responses={200: COMBO_RESPONSE_SCHEMA, 404: COMBO_ERROR_SCHEMA},
@@ -155,7 +155,7 @@ class ComboDetailView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_update",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Update combo",
         description="Updates a combo's name or replaces its product items with category validation.",
         request=ComboUpdateSerializer,
@@ -187,7 +187,7 @@ class ComboDetailView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_delete",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Delete combo",
         description="Permanently deletes an outfit combo and its item associations.",
         responses={
@@ -218,7 +218,7 @@ class ComboItemAddView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_item_add",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Add item to combo",
         description="Adds a product to the combo. Validates category compatibility against existing items in the combo.",
         request=ComboAddItemSerializer,
@@ -256,7 +256,7 @@ class ComboItemDeleteView(BaseComboView):
 
     @extend_schema(
         operation_id="user_combo_item_delete",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Remove item from combo",
         description="Removes a specific product item from the combo.",
         responses={
@@ -291,7 +291,7 @@ class SharedComboDetailView(APIView):
 
     @extend_schema(
         operation_id="shared_combo_detail",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Get shared combo details",
         description=(
             "Public endpoint to retrieve an outfit combo using its unique share code. "
@@ -329,7 +329,7 @@ class SharedComboRedirectView(APIView):
 
     @extend_schema(
         operation_id="shared_combo_redirect_to_app",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Redirect to Flutter app",
         description="Redirects HTTP requests directly to the Flutter app custom URI scheme 'kisekae://combos/<share_code>'.",
         responses={302: None, 404: COMBO_ERROR_SCHEMA},
@@ -354,7 +354,7 @@ class SharedComboSaveView(APIView):
 
     @extend_schema(
         operation_id="shared_combo_clone",
-        tags=["Combos"],
+        tags=["Profile - Saved Looks"],
         summary="Save shared combo to my combos",
         description="Clones an outfit discovered via a shared link into the current authenticated user's personal combos collection.",
         request=None,
@@ -393,7 +393,7 @@ class StoreProductsARStatusView(APIView):
 
     @extend_schema(
         operation_id="seller_store_products_ar_status",
-        tags=["Seller AR Status"],
+        tags=["Store - AR Status"],
         summary="List store products AR Try-On status",
         description=(
             "Returns products for a store accompanied by their AR status flag "
@@ -459,7 +459,7 @@ class StoreProductARStatusDetailView(APIView):
 
     @extend_schema(
         operation_id="seller_store_product_ar_status_detail",
-        tags=["Seller AR Status"],
+        tags=["Store - AR Status"],
         summary="Get single product AR Try-On status",
         description="Returns AR Try-On readiness flag, rejection reason, and verified angles for a single product.",
         responses={200: SELLER_AR_STATUS_DETAIL_SCHEMA, 404: COMBO_ERROR_SCHEMA},

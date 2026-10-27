@@ -35,6 +35,7 @@ urlpatterns = [
     re_path(r'^metrics/?$', secured_metrics_view, name='prometheus-django-metrics'),
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
+    path('profile/', include('accounts.profile_urls')),
     path('stores/', include('stores.urls')),
     path('products/', include('products.public_urls')),
     path('cart/', include('cart.urls')),

@@ -235,7 +235,8 @@ def process_google_pkce_login(
         )
         created = True
 
-    cache.delete(f"pending_registration:{email}")
+    from .models import PendingRegistration
+    PendingRegistration.objects.filter(email__iexact=email).delete()
 
     return user, created, "Google"
 
@@ -356,7 +357,8 @@ def process_social_login(
         social_login.save(raw_request, connect=True)
         created = True
 
-    cache.delete(f"pending_registration:{email}")
+    from .models import PendingRegistration
+    PendingRegistration.objects.filter(email__iexact=email).delete()
 
     return user, created, provider.name
 

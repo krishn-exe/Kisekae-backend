@@ -35,7 +35,7 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
 
 
 class OrderListSerializer(serializers.ModelSerializer):
-    items_count = serializers.IntegerField(source="items.count", read_only=True)
+    items_count = serializers.SerializerMethodField()
     user_id = serializers.IntegerField(source="user.id", read_only=True)
 
     class Meta:
@@ -55,6 +55,11 @@ class OrderListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_items_count(self, obj) -> int:
+        if hasattr(obj, "items_count"):
+            return obj.items_count
+        return obj.items.count()
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):

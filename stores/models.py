@@ -62,6 +62,8 @@ class Store(models.Model):
     description = models.TextField(blank=True, default="")
     logo = models.ImageField(upload_to=store_logo_upload_path, null=True, blank=True)
     banner = models.ImageField(upload_to=store_banner_upload_path, null=True, blank=True)
+    website_link = models.URLField(blank=True, default="", max_length=255)
+    instagram_link = models.CharField(blank=True, default="", max_length=150)
     contact_email = models.EmailField(blank=True, default="")
     contact_phone = models.CharField(max_length=20, blank=True, default="")
     status = models.CharField(

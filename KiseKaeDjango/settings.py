@@ -208,6 +208,7 @@ SPECTACULAR_SETTINGS = {
         'OrderStatusEnum': 'orders.models.OrderStatus.choices',
         'ProductStatusEnum': 'products.models.ProductStatus.choices',
         'ProductCategoryEnum': 'products.models.ProductCategory.choices',
+        'ProductTypeEnum': 'products.models.ProductType.choices',
         'ARStatusEnum': 'tryon.models.ARStatus.choices',
     },
     'SWAGGER_UI_SETTINGS': {

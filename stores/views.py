@@ -1,7 +1,8 @@
 from django.db.models import Count
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from django.http import HttpResponse
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -59,6 +60,7 @@ class StoreMethodThrottleMixin:
 class StoreListCreateView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     pagination_class = StorePagination
 
     @extend_schema(
@@ -131,9 +133,23 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
         operation_id="seller_store_create",
         tags=["Store - Management"],
         summary="Create a new store",
-        description="Creates a new store and designates the authenticated seller as the OWNER atomically.",
+        description="Creates a new store with required name, description, logo, and banner, plus optional website and instagram links. Designates the authenticated seller as the OWNER atomically.",
         request=StoreCreateSerializer,
         responses={201: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
+        examples=[
+            OpenApiExample(
+                "Store Create Form Data",
+                value={
+                    "name": "Urban Edge Store",
+                    "description": "High-fashion minimalist streetwear and essentials.",
+                    "website_link": "https://urbanedge.in",
+                    "instagram_link": "@urbanedgestore",
+                    "contact_email": "contact@urbanedge.in",
+                    "contact_phone": "+919876543210",
+                },
+                request_only=True,
+            ),
+        ],
     )
     def post(self, request):
         serializer = StoreCreateSerializer(data=request.data)
@@ -154,6 +170,7 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
 class StoreDetailView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         operation_id="seller_store_detail",
@@ -177,6 +194,33 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
         )
 
     @extend_schema(
+        operation_id="seller_store_replace",
+        tags=["Store - Management"],
+        summary="Replace store details",
+        description="Replaces store details, logo, banner, and social links. Managers and Owner can update.",
+        request=StoreUpdateSerializer,
+        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        examples=[
+            OpenApiExample(
+                "Store Replace Example",
+                value={
+                    "name": "Kisekae Boutique Flagship",
+                    "description": "Premium apparel and contemporary street style collection.",
+                    "website_link": "https://kisekae-boutique.com",
+                    "instagram_link": "@kisekae.boutique",
+                    "contact_email": "support@kisekae-boutique.com",
+                    "contact_phone": "+919876543210",
+                    "status": "ACTIVE",
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    def put(self, request, pk):
+        return self.patch(request, pk)
+
+    @extend_schema(
+        operation_id="seller_store_update",
         tags=["Store - Management"],
         summary="Update store details",
         description="Updates details of a store (name, description, contact details, or active status). Managers and Owner can update.",
@@ -253,6 +297,7 @@ class StoreDetailView(StoreMethodThrottleMixin, APIView):
 class StoreRestoreView(APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Management"],
@@ -294,6 +339,7 @@ class StoreRestoreView(APIView):
 class StoreTransferOwnershipView(APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Management"],
@@ -336,6 +382,7 @@ class StoreTransferOwnershipView(APIView):
 class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Management"],
@@ -394,6 +441,7 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
 class StoreMemberDeleteView(APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Management"],
@@ -425,6 +473,7 @@ class StoreMemberDeleteView(APIView):
 class StoreLeaveView(APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Management"],
@@ -456,6 +505,7 @@ class StoreLeaveView(APIView):
 class StoreInvitationListCreateView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         operation_id="store_invitations_list",
@@ -527,6 +577,7 @@ class StoreInvitationListCreateView(APIView):
 class StoreInvitationRevokeView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Invitations"],
@@ -562,6 +613,7 @@ class StoreInvitationRevokeView(APIView):
 class StoreInvitationResendView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Invitations"],
@@ -598,6 +650,7 @@ class StoreInvitationResendView(APIView):
 class InviteeInvitationListView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         operation_id="seller_pending_invitations_list",
@@ -631,6 +684,7 @@ class InviteeInvitationListView(APIView):
 class InviteeInvitationAcceptView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Seller Invitations"],
@@ -659,6 +713,7 @@ class InviteeInvitationAcceptView(APIView):
 class InviteeInvitationDeclineView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Seller Invitations"],
@@ -687,6 +742,7 @@ class InviteeInvitationDeclineView(APIView):
 class InviteeInvitationTokenAcceptView(APIView):
     throttle_scope = "store_invite"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Seller Invitations"],
@@ -708,171 +764,51 @@ class InviteeInvitationTokenAcceptView(APIView):
         )
 
 
-# --- MEDIA (LOGO & BANNER) VIEWS ---
+# --- INVITATION REDIRECT VIEW ---
 
 
-class StoreLogoView(APIView):
-    throttle_scope = "store_write"
-    permission_classes = [IsAuthenticated, IsSeller]
-    parser_classes = [MultiPartParser, FormParser]
-
-    @extend_schema(
-        tags=["Store - Management"],
-        summary="Upload store logo",
-        description="Uploads or replaces the store logo (JPEG, PNG, WEBP; max 2MB). Accessible by Owner and Managers.",
-        request=ImageUploadSerializer,
-        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
-    )
-    def put(self, request, pk):
-        store, _ = get_store_membership(request.user, pk)
-        if not store:
-            return error_response(
-                message="Store not found.",
-                code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        if store.is_archived:
-            return error_response(
-                message="Archived store cannot be modified. Restore it first.",
-                code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        if store.status == StoreStatus.SUSPENDED:
-            return error_response(
-                message="This store is suspended and cannot be modified.",
-                code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-
-        serializer = ImageUploadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        image_file = serializer.validated_data["file"]
-
-        validate_store_image(image_file, MAX_LOGO_SIZE, "logo")
-
-        updated_store = StoreService.set_store_logo(store, image_file)
-        return success_response(
-            message="Store logo uploaded successfully.",
-            data=StoreSerializer(updated_store, context={"request": request}).data,
-        )
+class StoreInvitationRedirectView(APIView):
+    permission_classes = []
+    throttle_classes = []
 
     @extend_schema(
-        tags=["Store - Management"],
-        summary="Remove store logo",
-        description="Removes the store logo. Accessible by Owner and Managers.",
-        request=None,
-        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
+        operation_id="seller_invitation_email_redirect",
+        tags=["Store - Seller Invitations"],
+        summary="Invitation email deep-link redirect",
+        description="Redirects invitation email links into the KiseKae Seller app with fallback HTML token presentation.",
+        parameters=[
+            OpenApiParameter(name="token", description="Raw invitation token", required=True, type=str),
+        ],
+        responses={200: OpenApiResponse(description="HTML redirect page opening kisekae-seller:// with fallback token display")},
     )
-    def delete(self, request, pk):
-        store, _ = get_store_membership(request.user, pk)
-        if not store:
-            return error_response(
-                message="Store not found.",
-                code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        if store.is_archived:
-            return error_response(
-                message="Archived store cannot be modified. Restore it first.",
-                code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        if store.status == StoreStatus.SUSPENDED:
-            return error_response(
-                message="This store is suspended and cannot be modified.",
-                code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-
-        updated_store = StoreService.remove_store_logo(store)
-        return success_response(
-            message="Store logo removed successfully.",
-            data=StoreSerializer(updated_store, context={"request": request}).data,
-        )
-
-
-class StoreBannerView(APIView):
-    throttle_scope = "store_write"
-    permission_classes = [IsAuthenticated, IsSeller]
-    parser_classes = [MultiPartParser, FormParser]
-
-    @extend_schema(
-        tags=["Store - Management"],
-        summary="Upload store banner",
-        description="Uploads or replaces the store banner (JPEG, PNG, WEBP; max 5MB). Accessible by Owner and Managers.",
-        request=ImageUploadSerializer,
-        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
-    )
-    def put(self, request, pk):
-        store, _ = get_store_membership(request.user, pk)
-        if not store:
-            return error_response(
-                message="Store not found.",
-                code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        if store.is_archived:
-            return error_response(
-                message="Archived store cannot be modified. Restore it first.",
-                code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        if store.status == StoreStatus.SUSPENDED:
-            return error_response(
-                message="This store is suspended and cannot be modified.",
-                code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-
-        serializer = ImageUploadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        image_file = serializer.validated_data["file"]
-
-        validate_store_image(image_file, MAX_BANNER_SIZE, "banner")
-
-        updated_store = StoreService.set_store_banner(store, image_file)
-        return success_response(
-            message="Store banner uploaded successfully.",
-            data=StoreSerializer(updated_store, context={"request": request}).data,
-        )
-
-    @extend_schema(
-        tags=["Store - Management"],
-        summary="Remove store banner",
-        description="Removes the store banner. Accessible by Owner and Managers.",
-        request=None,
-        responses={200: STORE_DETAIL_RESPONSE_SCHEMA, 400: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA, 404: STORE_ERROR_SCHEMA},
-    )
-    def delete(self, request, pk):
-        store, _ = get_store_membership(request.user, pk)
-        if not store:
-            return error_response(
-                message="Store not found.",
-                code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        if store.is_archived:
-            return error_response(
-                message="Archived store cannot be modified. Restore it first.",
-                code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-        if store.status == StoreStatus.SUSPENDED:
-            return error_response(
-                message="This store is suspended and cannot be modified.",
-                code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-
-        updated_store = StoreService.remove_store_banner(store)
-        return success_response(
-            message="Store banner removed successfully.",
-            data=StoreSerializer(updated_store, context={"request": request}).data,
-        )
+    def get(self, request):
+        token = request.query_params.get("token", "").strip()
+        app_url = f"kisekae-seller://invitations/accept?token={token}"
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Accept Store Invitation - KiseKae Seller</title>
+    <meta http-equiv="refresh" content="0;url={app_url}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #faf8f5; color: #2d2527; }}
+        .card {{ background: white; padding: 32px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 420px; text-align: center; }}
+        .btn {{ display: inline-block; background: #802B3E; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px; }}
+        .token {{ font-family: monospace; background: #f3f0ec; padding: 8px 12px; border-radius: 6px; font-weight: bold; margin: 12px 0; word-break: break-all; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Opening KiseKae Seller...</h2>
+        <p>Redirecting to accept your store invitation.</p>
+        <a href="{app_url}" class="btn">Open App</a>
+        <p style="margin-top: 24px; font-size: 13px; color: #78716c;">If the app does not open automatically, copy this invitation token and enter it in the app:</p>
+        <div class="token">{token}</div>
+    </div>
+</body>
+</html>"""
+        return HttpResponse(html_content, content_type="text/html")
 
 
 # --- BUSINESS VERIFICATION VIEWS ---
@@ -881,6 +817,7 @@ class StoreBannerView(APIView):
 class BusinessVerificationView(APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @extend_schema(
         tags=["Store - Verification"],

@@ -1,8 +1,10 @@
+import re
 import uuid
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import IntegrityError, models, transaction
 from django.utils.text import slugify
 from pgvector.django import HnswIndex, VectorField
@@ -25,6 +27,16 @@ class ProductStatus(models.TextChoices):
     INACTIVE = "INACTIVE", "Inactive"
 
 
+class ProductType(models.TextChoices):
+    MEN = "MEN", "Men"
+    WOMEN = "WOMEN", "Women"
+    KIDS = "KIDS", "Kids"
+    ETHNIC = "ETHNIC", "Ethnic"
+    TRADITIONAL = "TRADITIONAL", "Traditional"
+    FORMAL = "FORMAL", "Formal"
+    SPORTS = "SPORTS", "Sports"
+
+
 class ProductCategory(models.TextChoices):
     ONE_PIECE = "ONE_PIECE", "One-Piece"
     TOP = "TOP", "Top"
@@ -45,9 +57,20 @@ CLOTHING_CATEGORIES = {
 FOOTWEAR_CATEGORIES = {
     ProductCategory.FOOTWEAR,
 }
+NO_SIZE_CATEGORIES = {
+    ProductCategory.HEADWEAR,
+    ProductCategory.EYEWEAR,
+    ProductCategory.ACCESSORIES,
+}
 
-CLOTHING_SIZES = ["S", "M", "L", "XL"]
-FOOTWEAR_SIZES = ["6", "7", "8", "9", "10"]
+CLOTHING_SIZES = ["XS", "S", "M", "L", "XL"]
+FOOTWEAR_SIZES = ["6", "7", "8", "9", "10", "11", "12"]
+
+HEX_COLOR_REGEX = re.compile(r"^#([A-Fa-f0-9]{6})$")
+hex_color_validator = RegexValidator(
+    regex=HEX_COLOR_REGEX,
+    message="Enter a valid 6-character hex color code starting with '#' (e.g. #000080 or #FFFFFF).",
+)
 
 
 class ProductQuerySet(models.QuerySet):
@@ -66,19 +89,26 @@ class Product(models.Model):
     )
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=300, db_index=True)
+    product_type = models.CharField(
+        max_length=20,
+        choices=ProductType.choices,
+        default=ProductType.MEN,
+        db_index=True,
+        help_text="Product target demographic / category type.",
+    )
     category = models.CharField(
         max_length=30,
         choices=ProductCategory.choices,
         default=ProductCategory.TOP,
         db_index=True,
-        help_text="Product clothing category / type.",
+        help_text="Product clothing category / apparel structure.",
     )
     color = models.CharField(
         max_length=50,
         blank=True,
         default="",
         db_index=True,
-        help_text="Primary color of the product (e.g. Black, White, Navy Blue).",
+        help_text="Primary color descriptor (derived from variants).",
     )
     description = models.TextField(blank=True, default="")
     image = models.ImageField(
@@ -104,7 +134,7 @@ class Product(models.Model):
     )
     stock = models.PositiveIntegerField(
         default=0,
-        help_text="Available inventory count (sum across all sizes when sizes are configured).",
+        help_text="Available inventory count (sum across all variant sizes).",
     )
     average_rating = models.DecimalField(
         max_digits=3,
@@ -154,17 +184,39 @@ class Product(models.Model):
 
     @property
     def is_in_stock(self):
-        return self.stock > 0
+        return self.total_stock > 0
+
+    @property
+    def total_stock(self):
+        """Sum of all variant size stocks."""
+        if hasattr(self, "_prefetched_objects_cache") and "variants" in self._prefetched_objects_cache:
+            return sum(v.total_stock for v in self.variants.all())
+        total = self.sizes.aggregate(total=models.Sum("stock"))["total"]
+        if total is not None:
+            return total
+        return self.stock or 0
 
     @property
     def thumbnail(self):
-        """Returns the URL of the first image of the product (thumbnail)."""
+        """Returns the URL of the first image of the product (first variant order 0 or gallery image 0)."""
+        if hasattr(self, "_prefetched_objects_cache") and "variants" in self._prefetched_objects_cache:
+            for variant in self.variants.all():
+                thumb = variant.thumbnail
+                if thumb:
+                    return thumb
+        else:
+            first_variant = self.variants.first()
+            if first_variant:
+                thumb = first_variant.thumbnail
+                if thumb:
+                    return thumb
+
         if hasattr(self, "_prefetched_objects_cache") and "images" in self._prefetched_objects_cache:
             images = list(self.images.all())
             if images and images[0].image and hasattr(images[0].image, "url"):
                 return images[0].image.url
         else:
-            first_img = self.images.first()
+            first_img = self.images.order_by("order", "id").first()
             if first_img and first_img.image and hasattr(first_img.image, "url"):
                 return first_img.image.url
         if self.image and hasattr(self.image, "url"):
@@ -177,17 +229,38 @@ class Product(models.Model):
 
     @property
     def available_sizes(self):
-        """Returns list of sizes currently in stock."""
+        """Returns list of sizes currently in stock across all variants."""
         if hasattr(self, "_prefetched_objects_cache") and "sizes" in self._prefetched_objects_cache:
-            return [s.size for s in self.sizes.all() if s.stock > 0]
-        return list(self.sizes.filter(stock__gt=0).values_list("size", flat=True))
+            return sorted(list({s.size for s in self.sizes.all() if s.stock > 0 and s.size}))
+        return list(self.sizes.filter(stock__gt=0).exclude(size="").values_list("size", flat=True).distinct())
+
+    @property
+    def ar_status(self):
+        """Returns AR readiness status data for virtual try-on."""
+        if hasattr(self, "tryon_asset") and self.tryon_asset:
+            asset = self.tryon_asset
+            return {
+                "status": asset.status,
+                "is_ready_for_tryon": asset.status == "AVAILABLE",
+                "rejection_reason": asset.rejection_reason,
+                "has_front_image": bool(asset.front_image),
+                "has_back_image": bool(asset.back_image),
+                "has_side_image": bool(asset.side_image),
+            }
+        return {
+            "status": "NOT_PROCESSED",
+            "is_ready_for_tryon": False,
+            "rejection_reason": None,
+            "has_front_image": False,
+            "has_back_image": False,
+            "has_side_image": False,
+        }
 
     def sync_total_stock(self):
-        """Updates product.stock to match the sum of its size stocks if sizes exist."""
-        if self.sizes.exists():
-            total = self.sizes.aggregate(total=models.Sum("stock"))["total"] or 0
-            self.stock = total
-            self.save(update_fields=["stock", "updated_at"])
+        """Updates product.stock to match the sum of its size stocks."""
+        total = self.sizes.aggregate(total=models.Sum("stock"))["total"] or 0
+        self.stock = total
+        self.save(update_fields=["stock", "updated_at"])
 
     def update_rating_stats(self):
         """Updates product.average_rating and product.review_count from related reviews."""
@@ -226,28 +299,96 @@ class Product(models.Model):
                         counter += 1
                         continue
                     raise
-            # Fallback if multiple concurrent retries still collided
             self.slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
             return super().save(*args, **kwargs)
 
         super().save(*args, **kwargs)
 
 
+class ProductVariant(models.Model):
+    """
+    Product color variant. Shares title and description with parent product,
+    but possesses distinct color hex, photos gallery, and variant-specific sizes/stock.
+    """
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="variants",
+    )
+    color_name = models.CharField(
+        max_length=50,
+        help_text="Display title for variant color (e.g. Navy Blue, Jet Black, Crimson).",
+    )
+    color_hex = models.CharField(
+        max_length=7,
+        validators=[hex_color_validator],
+        help_text="Hex color code in #RRGGBB format (e.g. #000080, #FFFFFF).",
+    )
+    sku = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Variant-specific Stock Keeping Unit identifier.",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "color_name"],
+                name="unique_product_variant_color",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.color_name} ({self.color_hex})"
+
+    @property
+    def total_stock(self):
+        if hasattr(self, "_prefetched_objects_cache") and "sizes" in self._prefetched_objects_cache:
+            return sum(s.stock for s in self.sizes.all())
+        return self.sizes.aggregate(total=models.Sum("stock"))["total"] or 0
+
+    @property
+    def thumbnail(self):
+        if hasattr(self, "_prefetched_objects_cache") and "images" in self._prefetched_objects_cache:
+            imgs = list(self.images.all())
+            if imgs and imgs[0].image and hasattr(imgs[0].image, "url"):
+                return imgs[0].image.url
+        first_img = self.images.order_by("order", "id").first()
+        if first_img and first_img.image and hasattr(first_img.image, "url"):
+            return first_img.image.url
+        return None
+
+
 class ProductSize(models.Model):
     """
-    Inventory stock for a specific size of a product.
-    For Clothing: S, M, L, XL
-    For Footwear: 6, 7, 8, 9, 10
+    Inventory stock for a specific size of a product variant.
+    For Clothing: XS, S, M, L, XL
+    For Footwear: 6, 7, 8, 9, 10, 11, 12
+    For Accessories/Eyewear: Empty or ONE_SIZE
     """
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
         related_name="sizes",
     )
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="sizes",
+    )
     size = models.CharField(
         max_length=20,
+        blank=True,
+        default="",
         db_index=True,
-        help_text="Size designation (e.g. S, M, L, XL for clothing; 6-10 for shoes).",
+        help_text="Size designation (e.g. XS-XL for clothing; 6-12 for shoes).",
     )
     stock = models.PositiveIntegerField(
         default=0,
@@ -260,30 +401,43 @@ class ProductSize(models.Model):
         ordering = ["id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["product", "size"],
-                name="unique_product_size",
+                fields=["variant", "size"],
+                name="unique_variant_size",
+                condition=models.Q(variant__isnull=False),
             ),
         ]
 
     def __str__(self):
-        return f"{self.product.name} - Size {self.size} ({self.stock} in stock)"
+        return f"{self.product.name} - Size {self.size or 'N/A'} ({self.stock} in stock)"
 
     def clean(self):
         super().clean()
         if self.size:
             self.size = str(self.size).strip().upper()
-        if hasattr(self, "product") and self.product and self.product.category:
-            cat = self.product.category
+        prod = None
+        if hasattr(self, "variant") and self.variant and self.variant.product:
+            prod = self.variant.product
+        elif hasattr(self, "product") and self.product:
+            prod = self.product
+
+        if prod and prod.category:
+            cat = prod.category
             if cat in CLOTHING_CATEGORIES:
-                allowed = CLOTHING_SIZES + ["XS", "XXL", "FREE_SIZE", "ONE_SIZE"]
+                allowed = ["XS", "S", "M", "L", "XL"]
                 if self.size not in allowed:
                     raise ValidationError(
-                        {"size": f"Invalid clothing size '{self.size}'. Allowed: {', '.join(CLOTHING_SIZES)}."}
+                        {"size": f"Invalid clothing size '{self.size}'. Allowed sizes: {', '.join(allowed)}."}
                     )
             elif cat in FOOTWEAR_CATEGORIES:
-                if self.size not in FOOTWEAR_SIZES:
+                allowed = ["6", "7", "8", "9", "10", "11", "12"]
+                if self.size not in allowed:
                     raise ValidationError(
-                        {"size": f"Invalid shoe size '{self.size}'. Allowed: {', '.join(FOOTWEAR_SIZES)}."}
+                        {"size": f"Invalid shoe size '{self.size}'. Allowed sizes: {', '.join(allowed)}."}
+                    )
+            elif cat in NO_SIZE_CATEGORIES:
+                if self.size and self.size not in ["", "ONE_SIZE", "NO_SIZE"]:
+                    raise ValidationError(
+                        {"size": f"Category '{cat}' does not have sizes. Leave size blank."}
                     )
 
     def save(self, *args, **kwargs):
@@ -291,13 +445,24 @@ class ProductSize(models.Model):
         super().save(*args, **kwargs)
 
 
+ProductVariantSize = ProductSize
+
+
 class ProductImage(models.Model):
     """
-    Multiple image support for product listings (up to 10 images per product).
+    Multiple image support for product variants (up to 10 images per variant).
+    Display order 0 is the primary thumbnail.
     """
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
+        related_name="images",
+    )
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name="images",
     )
     image = models.ImageField(upload_to=product_gallery_image_upload_path)
@@ -318,6 +483,9 @@ class ProductImage(models.Model):
         if self.image and hasattr(self.image, "url"):
             return self.image.url
         return None
+
+
+ProductVariantImage = ProductImage
 
 
 class CompatibleHnswIndex(HnswIndex):

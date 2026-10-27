@@ -6,14 +6,13 @@ from .views import (
     InviteeInvitationDeclineView,
     InviteeInvitationListView,
     InviteeInvitationTokenAcceptView,
-    StoreBannerView,
     StoreDetailView,
     StoreInvitationListCreateView,
+    StoreInvitationRedirectView,
     StoreInvitationResendView,
     StoreInvitationRevokeView,
     StoreLeaveView,
     StoreListCreateView,
-    StoreLogoView,
     StoreMemberDeleteView,
     StoreMemberListCreateView,
     StoreRestoreView,
@@ -26,6 +25,7 @@ urlpatterns = [
 
     # Invitee-side Invitation Management (must precede <int:pk>/)
     path("invitations/", InviteeInvitationListView.as_view(), name="invitee-invitation-list"),
+    path("invitations/redirect/", StoreInvitationRedirectView.as_view(), name="store-invitation-redirect"),
     path("invitations/accept-token/", InviteeInvitationTokenAcceptView.as_view(), name="invitee-invitation-token-accept"),
     path("invitations/<int:inv_id>/accept/", InviteeInvitationAcceptView.as_view(), name="invitee-invitation-accept"),
     path("invitations/<int:inv_id>/decline/", InviteeInvitationDeclineView.as_view(), name="invitee-invitation-decline"),
@@ -35,10 +35,6 @@ urlpatterns = [
     path("<int:pk>/verification/", BusinessVerificationView.as_view(), name="store-verification"),
     path("<int:pk>/restore/", StoreRestoreView.as_view(), name="store-restore"),
     path("<int:pk>/transfer-ownership/", StoreTransferOwnershipView.as_view(), name="store-transfer-ownership"),
-
-    # Store Media (Logo & Banner)
-    path("<int:pk>/logo/", StoreLogoView.as_view(), name="store-logo"),
-    path("<int:pk>/banner/", StoreBannerView.as_view(), name="store-banner"),
 
     # Store Members
     path("<int:pk>/members/", StoreMemberListCreateView.as_view(), name="store-member-list-create"),
@@ -59,6 +55,6 @@ urlpatterns = [
     # Store Orders Management
     path("<int:pk>/", include("orders.urls")),
 
-    # Store Analytics & Reporting
-    path("<int:pk>/", include("analytics.urls")),
+    # Store Analytics
+    path("<int:pk>/analytics/", include("analytics.urls")),
 ]

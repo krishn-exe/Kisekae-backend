@@ -1,7 +1,13 @@
 from decimal import Decimal
 from django.db import connection
 from django.db.models import Case, Count, FloatField, Prefetch, Q, Value, When
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
 from pgvector.django import CosineDistance
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -25,15 +31,17 @@ from .serializers import (
     CategoryItemSerializer,
     ProductCardSerializer,
     ProductCreateSerializer,
-    ProductImageSerializer,
     ProductListingStatusSerializer,
     ProductSerializer,
     ProductUpdateSerializer,
+    ProductVariantImageSerializer,
+    ProductVariantSerializer,
     PublicProductDetailSerializer,
-    SearchHistorySerializer)
+    SearchHistorySerializer,
+    VariantImageUploadSerializer)
 from .embedding_service import EmbeddingService
 from .recommendation_service import RecommendationService
-from .services import MAX_IMAGES_PER_PRODUCT, ProductService
+from .services import ProductService
 from .tasks import record_product_view_task, record_search_query_task
 
 from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
@@ -43,7 +51,7 @@ PRODUCT_ACTION_SUCCESS_SCHEMA = api_response(serializers.JSONField(default=None,
 STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProductDetailResponse")
 STORE_PRODUCT_LIST_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProductListResponse", many=True)
 CATEGORY_LIST_RESPONSE_SCHEMA = api_response(CategoryItemSerializer, "CategoryListResponse", many=True, message="Categories fetched successfully.")
-PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA = api_response(ProductImageSerializer, "ProductImageListResponse", many=True)
+VARIANT_IMAGE_LIST_RESPONSE_SCHEMA = api_response(ProductVariantImageSerializer, "VariantImageListResponse", many=True)
 PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = api_response(ProductListingStatusSerializer, "ProductListingStatusResponse")
 PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "ProductListPaginatedData")
 PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = api_response(
@@ -241,10 +249,13 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
 
         queryset = (
             Product.objects.for_store(store)
-            .select_related("store")
+            .select_related("store", "tryon_asset")
             .prefetch_related(
+                "variants__sizes",
+                Prefetch("variants__images", queryset=ProductImage.objects.order_by("order", "id")),
+                "sizes",
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-                "sizes")
+            )
         )
 
         status_filter = request.query_params.get("status")
@@ -278,14 +289,115 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
         operation_id="seller_store_product_create",
         tags=["Store - Products"],
         summary="Create a new product",
-        description="Creates a new product with category, color, and size breakdown (e.g. S/M/L/XL for clothing, 6-10 for shoes).",
+        description=(
+            "Creates a new product catalog entry under this store. "
+            "Supports product_type (MEN, WOMEN, KIDS, ETHNIC, TRADITIONAL, FORMAL, SPORTS), "
+            "category (ONE_PIECE, TOP, BOTTOM, FOOTWEAR, HEADWEAR, EYEWEAR, OUTERWEAR, ACCESSORIES), "
+            "and nested color variants with hex codes (#RRGGBB) and category-specific sizes "
+            "(Clothing: XS-XL, Footwear: 6-12, Eyewear/Accessories: no sizes)."
+        ),
         request=ProductCreateSerializer,
         responses={
             201: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA,
             400: PRODUCT_ERROR_SCHEMA,
             403: PRODUCT_ERROR_SCHEMA,
             404: PRODUCT_ERROR_SCHEMA,
-        })
+        },
+        examples=[
+            OpenApiExample(
+                "Clothing Product with Color Variants & Sizes",
+                value={
+                    "name": "Oversized Vintage Heavyweight Tee",
+                    "product_type": "MEN",
+                    "category": "TOP",
+                    "description": "240 GSM combed cotton vintage wash boxy fit t-shirt.",
+                    "price": "1499.00",
+                    "compare_at_price": "2199.00",
+                    "currency": "INR",
+                    "status": "ACTIVE",
+                    "variants": [
+                        {
+                            "color_name": "Washed Charcoal",
+                            "color_hex": "#2B2B2B",
+                            "sku": "TEE-CHAR-01",
+                            "is_active": True,
+                            "sizes": [
+                                {"size": "S", "stock": 15},
+                                {"size": "M", "stock": 25},
+                                {"size": "L", "stock": 20},
+                                {"size": "XL", "stock": 10}
+                            ]
+                        },
+                        {
+                            "color_name": "Off White",
+                            "color_hex": "#F8F8F6",
+                            "sku": "TEE-WHT-01",
+                            "is_active": True,
+                            "sizes": [
+                                {"size": "S", "stock": 10},
+                                {"size": "M", "stock": 20},
+                                {"size": "L", "stock": 15},
+                                {"size": "XL", "stock": 5}
+                            ]
+                        }
+                    ]
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Footwear Product with Sizes (6-12)",
+                value={
+                    "name": "Retro Leather Court Sneakers",
+                    "product_type": "MEN",
+                    "category": "FOOTWEAR",
+                    "description": "Full-grain calfskin leather low-top sneakers with vulcanized rubber sole.",
+                    "price": "4999.00",
+                    "compare_at_price": "6499.00",
+                    "currency": "INR",
+                    "status": "ACTIVE",
+                    "variants": [
+                        {
+                            "color_name": "White & Forest Green",
+                            "color_hex": "#1E3F20",
+                            "sku": "SNK-GRN-01",
+                            "is_active": True,
+                            "sizes": [
+                                {"size": "7", "stock": 5},
+                                {"size": "8", "stock": 12},
+                                {"size": "9", "stock": 15},
+                                {"size": "10", "stock": 8},
+                                {"size": "11", "stock": 4}
+                            ]
+                        }
+                    ]
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Eyewear / Accessories Product (No Sizes)",
+                value={
+                    "name": "Aviator Polarized Sunglasses",
+                    "product_type": "MEN",
+                    "category": "EYEWEAR",
+                    "description": "Classic gold frame aviator sunglasses with UV400 polarized green lenses.",
+                    "price": "2999.00",
+                    "compare_at_price": "3999.00",
+                    "currency": "INR",
+                    "status": "ACTIVE",
+                    "variants": [
+                        {
+                            "color_name": "Gold / Green G-15",
+                            "color_hex": "#D4AF37",
+                            "sku": "SUN-GLD-01",
+                            "stock": 40,
+                            "is_active": True
+                        }
+                    ]
+                },
+                request_only=True,
+            ),
+        ],
+    )
     def post(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -335,10 +447,13 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             return None, None, None
         product = (
             Product.objects.filter(store=store, pk=product_pk)
-            .select_related("store")
+            .select_related("store", "tryon_asset")
             .prefetch_related(
+                "variants__sizes",
+                Prefetch("variants__images", queryset=ProductImage.objects.order_by("order", "id")),
+                "sizes",
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-                "sizes")
+            )
             .first()
         )
         return store, membership, product
@@ -367,15 +482,24 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             data=ProductSerializer(product).data)
 
     @extend_schema(
+        operation_id="seller_store_product_replace",
+        tags=["Store - Products"],
+        summary="Replace product details",
+        description="Replaces product metadata, variants, and pricing completely.",
+        request=ProductUpdateSerializer,
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def put(self, request, pk, product_pk):
+        return self.patch(request, pk, product_pk)
+
+    @extend_schema(
+        operation_id="seller_store_product_update",
         tags=["Store - Products"],
         summary="Update product details",
-        description="Updates details of a product, including category, color, and size stocks.",
+        description="Partially updates product attributes, variants, and status.",
         request=ProductUpdateSerializer,
-        responses={
-            200: ProductSerializer,
-            400: PRODUCT_ERROR_SCHEMA,
-            404: PRODUCT_ERROR_SCHEMA,
-        })
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
     def patch(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
         if not store:
@@ -448,123 +572,42 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
 # MULTIPLE IMAGES MANAGEMENT (UP TO 10 IMAGES)
 # ============================================================================
 
-class ProductMultipleImageView(APIView):
-    """
-    Manage gallery images for a product (max 10 images).
-    """
+class ProductVariantImageView(ProductMethodThrottleMixin, APIView):
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated, IsSeller]
     parser_classes = [MultiPartParser, FormParser]
 
-    def _get_product(self, user, pk, product_pk):
-        store, _ = get_store_membership(user, pk)
-        if not store:
-            return None, error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
-        if store.is_archived:
-            return None, error_response("Cannot modify products in an archived store.", "STORE_ARCHIVED", status_code=status.HTTP_400_BAD_REQUEST)
-        if store.status == StoreStatus.SUSPENDED:
-            return None, error_response("Cannot modify products in a suspended store.", "STORE_SUSPENDED", status_code=status.HTTP_403_FORBIDDEN)
-
-        product = Product.objects.filter(store=store, pk=product_pk).first()
-        if not product:
-            return None, error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
-        return product, None
-
     @extend_schema(
         tags=["Store - Products"],
-        summary="List all product images",
-        description="Returns list of all images for this product (up to 10 images).",
-        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
-    def get(self, request, pk, product_pk):
-        product, err = self._get_product(request.user, pk, product_pk)
-        if err:
-            return err
-        images = product.images.all()
-        return success_response(
-            message="Product images fetched successfully.",
-            data=ProductImageSerializer(images, many=True).data)
-
-    @extend_schema(
-        tags=["Store - Products"],
-        summary="Upload product images (max 10 total)",
-        description="Uploads one or multiple images to the product image gallery (JPEG, PNG, WEBP; max 5MB each). Maximum 10 images per product.",
-        request=inline_serializer(
-            name="ProductMultiImageUpload",
-            fields={"images": serializers.ListField(child=serializers.ImageField(), required=False), "file": serializers.ImageField(required=False)}),
-        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
-    def post(self, request, pk, product_pk):
-        product, err = self._get_product(request.user, pk, product_pk)
-        if err:
-            return err
-
-        uploaded_files = request.FILES.getlist("images")
-        if not uploaded_files:
-            single = request.FILES.get("file")
-            if single:
-                uploaded_files = [single]
-
-        if not uploaded_files:
-            return error_response("At least one image file is required.", "VALIDATION_ERROR", status_code=status.HTTP_400_BAD_REQUEST)
-
-        current_count = product.images.count()
-        if current_count + len(uploaded_files) > MAX_IMAGES_PER_PRODUCT:
-            return error_response(
-                f"Cannot upload {len(uploaded_files)} image(s). Product currently has {current_count}/{MAX_IMAGES_PER_PRODUCT} images.",
-                "MAX_IMAGES_EXCEEDED",
-                status_code=status.HTTP_400_BAD_REQUEST)
-
-        for f in uploaded_files:
-            validate_store_image(f, MAX_PRODUCT_IMAGE_SIZE, "product image")
-
-        added = []
-        for f in uploaded_files:
-            img_obj = ProductService.add_gallery_image(product, f)
-            added.append(img_obj)
-
-        return success_response(
-            message=f"{len(added)} image(s) added successfully.",
-            data=ProductImageSerializer(product.images.all(), many=True).data,
-            status_code=status.HTTP_200_OK)
-
-
-class ProductImageDetailView(APIView):
-    """Delete a specific image from product gallery."""
-    throttle_scope = "store_write"
-    permission_classes = [IsAuthenticated, IsSeller]
-
-    @extend_schema(
-        tags=["Store - Products"],
-        summary="Delete a specific product image",
-        description="Deletes a specific gallery image by ID. If thumbnail was deleted, promotes the next available image.",
-        responses={200: inline_serializer(name="ProductImageDeleteSuccess", fields={"success": serializers.BooleanField()}), 404: PRODUCT_ERROR_SCHEMA})
-    def delete(self, request, pk, product_pk, image_id):
+        summary="List variant images",
+        description="Returns list of all images for this specific color variant.",
+        responses={200: VARIANT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def get(self, request, pk, product_pk, variant_pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
             return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
         product = Product.objects.filter(store=store, pk=product_pk).first()
         if not product:
             return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        ProductService.remove_gallery_image(product, image_id)
-
-        return success_response(message="Product image removed successfully.")
-
-
-class ProductImageView(APIView):
-    """Maintained for backward compatibility: uploads or removes primary thumbnail."""
-    throttle_scope = "store_write"
-    permission_classes = [IsAuthenticated, IsSeller]
-    parser_classes = [MultiPartParser, FormParser]
+        images = variant.images.order_by("order", "id")
+        return success_response(
+            message="Variant images fetched successfully.",
+            data=ProductVariantImageSerializer(images, many=True).data,
+        )
 
     @extend_schema(
         tags=["Store - Products"],
-        summary="Upload primary product image",
-        description="Uploads or replaces the primary product thumbnail image (JPEG, PNG, WEBP; max 5MB).",
-        request=inline_serializer(
-            name="ProductImageUpload",
-            fields={"file": serializers.ImageField()}),
-        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
-    def put(self, request, pk, product_pk):
+        summary="Upload variant image (max 10)",
+        description="Uploads an image for a specific color variant (JPEG, PNG, WEBP; max 5MB). Image at order 0 is the variant thumbnail.",
+        request=VariantImageUploadSerializer,
+        responses={201: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, product_pk, variant_pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
             return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
@@ -576,33 +619,59 @@ class ProductImageView(APIView):
         product = Product.objects.filter(store=store, pk=product_pk).first()
         if not product:
             return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        image_file = request.FILES.get("file")
-        if not image_file:
-            return error_response("Image file is required.", "VALIDATION_ERROR", status_code=status.HTTP_400_BAD_REQUEST)
+        serializer = VariantImageUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        validate_store_image(image_file, MAX_PRODUCT_IMAGE_SIZE, "product image")
+        image_file = serializer.validated_data["image"]
+        order = serializer.validated_data.get("order")
 
-        updated = ProductService.set_product_image(product, image_file)
+        validate_store_image(image_file, MAX_PRODUCT_IMAGE_SIZE, "variant image")
+        ProductService.add_variant_image(variant, image_file, order=order)
+
+        product.refresh_from_db()
         return success_response(
-            message="Product image uploaded successfully.",
-            data=ProductSerializer(updated).data)
+            message="Variant image uploaded successfully.",
+            data=ProductSerializer(product).data,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class ProductVariantImageDetailView(ProductMethodThrottleMixin, APIView):
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated, IsSeller]
 
     @extend_schema(
         tags=["Store - Products"],
-        summary="Remove primary product image",
-        description="Removes the primary product image.",
-        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
-    def delete(self, request, pk, product_pk):
+        summary="Delete a variant image",
+        description="Deletes a specific photo from a color variant gallery.",
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def delete(self, request, pk, product_pk, variant_pk, image_id):
         store, _ = get_store_membership(request.user, pk)
         if not store:
             return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        if store.is_archived:
+            return error_response("Cannot modify products in an archived store.", "STORE_ARCHIVED", status_code=status.HTTP_400_BAD_REQUEST)
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response("Cannot modify products in a suspended store.", "STORE_SUSPENDED", status_code=status.HTTP_403_FORBIDDEN)
+
         product = Product.objects.filter(store=store, pk=product_pk).first()
         if not product:
             return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        ProductService.remove_product_image(product)
-        return success_response(message="Product image removed successfully.")
+        ProductService.remove_variant_image(variant, image_id)
+        product.refresh_from_db()
+        return success_response(
+            message="Variant image removed successfully.",
+            data=ProductSerializer(product).data,
+        )
 
 
 class ProductListingStatusView(APIView):
@@ -669,18 +738,19 @@ class ProductBulkUpdateView(APIView):
 
         updated_ids = []
         errors = []
-        for item in items:
-            product = Product.objects.filter(store=store, pk=item["product_id"]).first()
-            if not product:
-                errors.append({"product_id": item["product_id"], "error": "Product not found"})
-                continue
-            update_data = {}
-            for field in ["status", "price", "compare_at_price", "category", "color"]:
-                if field in item:
-                    update_data[field] = item[field]
-            if update_data:
-                ProductService.update_product(product, **update_data)
-                updated_ids.append(product.id)
+        with transaction.atomic():
+            for item in items:
+                product = Product.objects.filter(store=store, pk=item["product_id"]).first()
+                if not product:
+                    errors.append({"product_id": item["product_id"], "error": "Product not found"})
+                    continue
+                update_data = {}
+                for field in ["status", "price", "compare_at_price", "category", "product_type", "color"]:
+                    if field in item:
+                        update_data[field] = item[field]
+                if update_data:
+                    ProductService.update_product(product, **update_data)
+                    updated_ids.append(product.id)
 
         return success_response(
             message=f"Bulk update completed: {len(updated_ids)} updated, {len(errors)} errors.",
@@ -871,18 +941,18 @@ class ProductSearchView(APIView):
         ordering = request.query_params.get("ordering", default_ordering).strip().lower()
 
         valid_orderings = {
-            "name": ("name"),
-            "-name": ("-name"),
-            "a-z": ("name"),
-            "z-a": ("-name"),
-            "price": ("price"),
-            "price_asc": ("price"),
-            "-price": ("-price"),
-            "price_desc": ("-price"),
-            "created_at": ("created_at"),
-            "oldest": ("created_at"),
-            "-created_at": ("-created_at"),
-            "newest": ("-created_at"),
+            "name": ("name",),
+            "-name": ("-name",),
+            "a-z": ("name",),
+            "z-a": ("-name",),
+            "price": ("price",),
+            "price_asc": ("price",),
+            "-price": ("-price",),
+            "price_desc": ("-price",),
+            "created_at": ("created_at",),
+            "oldest": ("created_at",),
+            "-created_at": ("-created_at",),
+            "newest": ("-created_at",),
         }
 
         if ordering == "relevance" and has_vector_search:

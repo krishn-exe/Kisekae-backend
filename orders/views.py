@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import Count, Q
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -91,7 +91,7 @@ class OrderListCreateView(BaseOrderView):
         if err:
             return err
 
-        queryset = Order.objects.filter(store=store).prefetch_related("items")
+        queryset = Order.objects.filter(store=store).annotate(items_count=Count("items"))
 
         status_filter = request.query_params.get("status")
         if status_filter:
@@ -489,35 +489,3 @@ class CustomerOrderTrackByNumberView(CustomerOrderTrackView):
     )
     def get(self, request, order_number=None, order_id=None):
         return super().get(request, order_number=order_number, order_id=order_id)
-
-
-class OrderMarkDeliveredAliasView(OrderDeliverView):
-    """Alias for marking order as delivered."""
-    @extend_schema(
-        operation_id="seller_order_mark_delivered_alias",
-        deprecated=True,
-        tags=["Store - Orders"],
-        summary="Mark order as delivered (alias)",
-        description="Alias for POST /stores/{pk}/orders/{order_id}/deliver/. Marks order as delivered.",
-        request=OrderDeliverSerializer,
-        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
-    )
-    def post(self, request, pk, order_id):
-        return super().post(request, pk, order_id)
-
-
-class CustomerMyOrdersAliasView(CustomerOrderListView):
-    """Alias endpoint for listing customer orders."""
-    @extend_schema(
-        operation_id="customer_my_orders_alias",
-        deprecated=True,
-        tags=["Customer Orders"],
-        summary="List customer orders (alias)",
-        description="Alias for GET /orders/. Returns paginated list of orders placed by the authenticated customer.",
-        parameters=[
-            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED)", required=False, type=str),
-        ],
-        responses={200: CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA},
-    )
-    def get(self, request):
-        return super().get(request)

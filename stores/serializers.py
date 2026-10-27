@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -9,7 +10,14 @@ from .models import (
     StoreMembership,
     StoreStatus,
 )
-from .validators import gst_validator, pan_validator, phone_validator
+from .validators import (
+    MAX_BANNER_SIZE,
+    MAX_LOGO_SIZE,
+    gst_validator,
+    pan_validator,
+    phone_validator,
+    validate_store_image,
+)
 
 User = get_user_model()
 
@@ -60,6 +68,8 @@ class StoreSerializer(serializers.ModelSerializer):
             "description",
             "logo_url",
             "banner_url",
+            "website_link",
+            "instagram_link",
             "contact_email",
             "contact_phone",
             "status",
@@ -98,10 +108,14 @@ class StoreSerializer(serializers.ModelSerializer):
 
 
 class StoreCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150)
-    description = serializers.CharField(required=False, allow_blank=True, default="")
-    contact_email = serializers.EmailField(required=False, allow_blank=True, default="")
-    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    name = serializers.CharField(max_length=150, help_text="Unique display name of the store")
+    description = serializers.CharField(min_length=5, help_text="Store description detailing offerings and brand story")
+    logo = serializers.ImageField(required=True, help_text="Store logo image (JPEG/PNG/WEBP, max 2MB)")
+    banner = serializers.ImageField(required=True, help_text="Store banner header image (JPEG/PNG/WEBP, max 5MB)")
+    website_link = serializers.URLField(required=False, allow_blank=True, default="", help_text="Official website URL")
+    instagram_link = serializers.CharField(max_length=150, required=False, allow_blank=True, default="", help_text="Store Instagram handle or URL")
+    contact_email = serializers.EmailField(required=False, allow_blank=True, default="", help_text="Customer support email")
+    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default="", help_text="Customer support contact number")
 
     def validate_name(self, value):
         val = value.strip()
@@ -109,15 +123,42 @@ class StoreCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Store name must be at least 2 characters.")
         return val
 
+    def validate_description(self, value):
+        val = value.strip()
+        if len(val) < 5:
+            raise serializers.ValidationError("Store description must be at least 5 characters.")
+        return val
+
+    def validate_logo(self, value):
+        if value:
+            try:
+                validate_store_image(value, MAX_LOGO_SIZE, "logo")
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(list(e.messages) if hasattr(e, "messages") else str(e))
+        return value
+
+    def validate_banner(self, value):
+        if value:
+            try:
+                validate_store_image(value, MAX_BANNER_SIZE, "banner")
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(list(e.messages) if hasattr(e, "messages") else str(e))
+        return value
+
 
 class StoreUpdateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=150, required=False)
-    description = serializers.CharField(required=False, allow_blank=True)
-    contact_email = serializers.EmailField(required=False, allow_blank=True)
-    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    name = serializers.CharField(max_length=150, required=False, help_text="Store display name")
+    description = serializers.CharField(required=False, allow_blank=True, help_text="Store description")
+    logo = serializers.ImageField(required=False, help_text="New logo image file (JPEG/PNG/WEBP, max 2MB)")
+    banner = serializers.ImageField(required=False, help_text="New banner image file (JPEG/PNG/WEBP, max 5MB)")
+    website_link = serializers.URLField(required=False, allow_blank=True, help_text="Official website URL")
+    instagram_link = serializers.CharField(max_length=150, required=False, allow_blank=True, help_text="Store Instagram handle or URL")
+    contact_email = serializers.EmailField(required=False, allow_blank=True, help_text="Support email")
+    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, help_text="Support phone")
     status = serializers.ChoiceField(
         choices=[StoreStatus.ACTIVE, StoreStatus.INACTIVE],
         required=False,
+        help_text="Store active status (ACTIVE or INACTIVE)",
     )
 
     def validate_name(self, value):
@@ -125,6 +166,22 @@ class StoreUpdateSerializer(serializers.Serializer):
         if len(val) < 2:
             raise serializers.ValidationError("Store name must be at least 2 characters.")
         return val
+
+    def validate_logo(self, value):
+        if value:
+            try:
+                validate_store_image(value, MAX_LOGO_SIZE, "logo")
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(list(e.messages) if hasattr(e, "messages") else str(e))
+        return value
+
+    def validate_banner(self, value):
+        if value:
+            try:
+                validate_store_image(value, MAX_BANNER_SIZE, "banner")
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(list(e.messages) if hasattr(e, "messages") else str(e))
+        return value
 
 
 class TransferOwnershipSerializer(serializers.Serializer):

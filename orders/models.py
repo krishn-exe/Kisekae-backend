@@ -138,4 +138,4 @@ class OrderStatusHistory(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.order_number}: {self.from_status} -> {self.to_status}"
+        return f"{self.order.order_number}: {self.from_status} -> {self.to_status}"

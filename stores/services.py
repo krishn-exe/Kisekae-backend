@@ -33,10 +33,24 @@ class StoreService:
 
     @staticmethod
     @transaction.atomic
-    def create_store(user, name, description="", contact_email="", contact_phone=""):
+    def create_store(
+        user,
+        name,
+        description="",
+        logo=None,
+        banner=None,
+        website_link="",
+        instagram_link="",
+        contact_email="",
+        contact_phone="",
+    ):
         store = Store.objects.create(
             name=name,
             description=description,
+            logo=logo,
+            banner=banner,
+            website_link=website_link,
+            instagram_link=instagram_link,
             contact_email=contact_email,
             contact_phone=contact_phone,
             created_by=user,
@@ -142,6 +156,10 @@ class StoreService:
     @transaction.atomic
     def remove_member(store, member_id, actor_user):
         store = StoreService._lock_store_for_membership_change(store)
+        actor_membership = StoreMembership.objects.filter(store=store, user=actor_user).first()
+        if not actor_membership or actor_membership.role != StoreRole.OWNER:
+            raise ValidationError("Only the store owner can remove members.")
+
         membership = (
             StoreMembership.objects.select_related("user")
             .filter(store=store, id=member_id)
@@ -204,6 +222,12 @@ class StoreService:
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         expires_at = timezone.now() + timedelta(days=getattr(settings, "STORE_INVITATION_TTL_DAYS", 7))
         target_user = User.objects.filter(email__iexact=email).first()
+        if not target_user:
+            raise ValidationError("No registered user found with this email. Sellers must register before being invited.")
+        if not target_user.is_active:
+            raise ValidationError("This user account is inactive.")
+        if not target_user.is_seller:
+            raise ValidationError("User is not registered as a seller.")
 
         invitation = StoreInvitation.objects.create(
             store=store,

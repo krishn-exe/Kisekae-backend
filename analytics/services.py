@@ -3,7 +3,7 @@ import io
 from datetime import datetime
 from decimal import Decimal
 
-from django.db.models import Count, F, Sum
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q, Sum
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 
 from inventory.services import InventoryService
@@ -12,7 +12,7 @@ from products.models import Product
 
 
 class AnalyticsService:
-    """Service providing analytical aggregations and CSV reporting for stores."""
+    """Service providing high-performance analytical aggregations and CSV reporting for stores."""
 
     @staticmethod
     def parse_date(date_str):
@@ -28,7 +28,9 @@ class AnalyticsService:
 
     @classmethod
     def get_dashboard_metrics(cls, store, from_date=None, to_date=None):
-        """Calculates key performance metrics for a store."""
+        """
+        Calculates key performance metrics for a store in a single conditional SQL roundtrip.
+        """
         orders = Order.objects.filter(store=store)
 
         from_d = cls.parse_date(from_date)
@@ -38,28 +40,40 @@ class AnalyticsService:
         if to_d:
             orders = orders.filter(created_at__date__lte=to_d)
 
-        total_orders = orders.count()
-        delivered_orders = orders.filter(status=OrderStatus.DELIVERED).count()
-        pending_orders = orders.filter(
-            status__in=[OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING]
-        ).count()
-        shipped_orders = orders.filter(status=OrderStatus.SHIPPED).count()
-        cancelled_orders = orders.filter(status=OrderStatus.CANCELLED).count()
-
-        non_cancelled = orders.exclude(status=OrderStatus.CANCELLED)
-        revenue_agg = non_cancelled.aggregate(total=Sum("total_amount"))["total"]
-        total_revenue = Decimal(str(revenue_agg or "0.00"))
-
-        valid_orders_count = non_cancelled.count()
-        average_order_value = (
-            round(float(total_revenue) / valid_orders_count, 2)
-            if valid_orders_count > 0
-            else 0.0
+        # Single conditional aggregation (PERF-04 fix)
+        agg_data = orders.aggregate(
+            total_orders=Count("id"),
+            delivered_orders=Count("id", filter=Q(status=OrderStatus.DELIVERED)),
+            pending_orders=Count(
+                "id",
+                filter=Q(status__in=[OrderStatus.PENDING, OrderStatus.CONFIRMED]),
+            ),
+            shipped_orders=Count("id", filter=Q(status=OrderStatus.SHIPPED)),
+            cancelled_orders=Count("id", filter=Q(status=OrderStatus.CANCELLED)),
+            refunded_orders=Count("id", filter=Q(status=OrderStatus.REFUNDED)),
+            revenue=Sum(
+                "total_amount",
+                filter=~Q(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED, OrderStatus.REFUNDED]),
+            ),
         )
 
-        units_agg = OrderItem.objects.filter(order__in=non_cancelled).aggregate(
-            total=Sum("quantity")
-        )["total"]
+        total_orders = agg_data["total_orders"] or 0
+        delivered_orders = agg_data["delivered_orders"] or 0
+        pending_orders = agg_data["pending_orders"] or 0
+        shipped_orders = agg_data["shipped_orders"] or 0
+        cancelled_orders = agg_data["cancelled_orders"] or 0
+        total_revenue = Decimal(str(agg_data["revenue"] or "0.00"))
+
+        valid_orders_count = total_orders - cancelled_orders - (agg_data["refunded_orders"] or 0)
+        average_order_value = (
+            Decimal(str(round(total_revenue / valid_orders_count, 2)))
+            if valid_orders_count > 0
+            else Decimal("0.00")
+        )
+
+        # Total units sold from successful/active orders
+        non_cancelled = orders.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
+        units_agg = OrderItem.objects.filter(order__in=non_cancelled).aggregate(total=Sum("quantity"))["total"]
         total_units_sold = units_agg or 0
 
         cancellation_rate = (
@@ -68,7 +82,8 @@ class AnalyticsService:
             else 0.0
         )
 
-        low_stock_count = len(InventoryService.get_low_stock_products(store))
+        # Scalable SQL low stock count
+        low_stock_count = InventoryService.get_low_stock_products_queryset(store).count()
 
         return {
             "total_revenue": float(total_revenue),
@@ -79,7 +94,7 @@ class AnalyticsService:
             "shipped_orders": shipped_orders,
             "cancelled_orders": cancelled_orders,
             "total_units_sold": total_units_sold,
-            "average_order_value": average_order_value,
+            "average_order_value": float(average_order_value),
             "cancellation_rate": cancellation_rate,
             "low_stock_products_count": low_stock_count,
         }
@@ -87,7 +102,9 @@ class AnalyticsService:
     @classmethod
     def get_revenue_analytics(cls, store, period="daily", from_date=None, to_date=None):
         """Calculates revenue time-series data aggregated daily, weekly, or monthly."""
-        orders = Order.objects.filter(store=store).exclude(status=OrderStatus.CANCELLED)
+        orders = Order.objects.filter(store=store).exclude(
+            status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED, OrderStatus.REFUNDED]
+        )
 
         from_d = cls.parse_date(from_date)
         to_d = cls.parse_date(to_date)
@@ -140,9 +157,9 @@ class AnalyticsService:
             })
 
         avg_rev = (
-            round(float(total_revenue) / total_orders, 2)
+            Decimal(str(round(total_revenue / total_orders, 2)))
             if total_orders > 0
-            else 0.0
+            else Decimal("0.00")
         )
 
         return {
@@ -150,16 +167,18 @@ class AnalyticsService:
             "currency": "INR",
             "total_revenue": float(total_revenue),
             "total_orders": total_orders,
-            "average_revenue_per_order": avg_rev,
+            "average_revenue_per_order": float(avg_rev),
             "time_series": series,
         }
 
     @classmethod
     def get_product_performance(cls, store, sort_by="revenue", limit=20, from_date=None, to_date=None):
-        """Calculates sales and returns performance ranking for store products."""
+        """
+        Calculates sales leaderboard grouped strictly by product_id and ordered in SQL.
+        """
         items = OrderItem.objects.filter(
             order__store=store
-        ).exclude(order__status=OrderStatus.CANCELLED)
+        ).exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
 
         from_d = cls.parse_date(from_date)
         to_d = cls.parse_date(to_date)
@@ -168,41 +187,35 @@ class AnalyticsService:
         if to_d:
             items = items.filter(order__created_at__date__lte=to_d)
 
+        sort_by = (sort_by or "revenue").lower()
+        order_field = "-gross_revenue" if sort_by != "units_sold" else "-units_sold"
+
+        try:
+            lim = int(limit)
+            lim = lim if lim > 0 else 20
+        except (ValueError, TypeError):
+            lim = 20
+
+        # Group strictly by product_id (BUG-22 fix)
         items_agg = (
-            items.values("product_id", "product_name", "product_sku")
+            items.values("product_id", "product_name")
             .annotate(
                 units_sold=Sum("quantity"),
                 gross_revenue=Sum("total_price"),
             )
+            .order_by(order_field)[:lim]
         )
 
-        results = []
-        for row in items_agg:
-            pid = row["product_id"]
-            sold = row["units_sold"] or 0
-            rev = Decimal(str(row["gross_revenue"] or "0.00"))
-
-            results.append({
-                "product_id": pid,
+        results = [
+            {
+                "product_id": row["product_id"],
                 "product_name": row["product_name"],
-                "sku": row["product_sku"] or "",
-                "units_sold": sold,
-                "gross_revenue": float(rev),
-            })
-
-        # Sorting
-        sort_by = (sort_by or "revenue").lower()
-        if sort_by == "units_sold":
-            results.sort(key=lambda x: x["units_sold"], reverse=True)
-        else:
-            results.sort(key=lambda x: x["gross_revenue"], reverse=True)
-
-        try:
-            lim = int(limit)
-            if lim > 0:
-                results = results[:lim]
-        except (ValueError, TypeError):
-            results = results[:20]
+                "sku": "",
+                "units_sold": row["units_sold"] or 0,
+                "gross_revenue": float(Decimal(str(row["gross_revenue"] or "0.00"))),
+            }
+            for row in items_agg
+        ]
 
         return {
             "sort_by": sort_by,
@@ -212,7 +225,10 @@ class AnalyticsService:
 
     @classmethod
     def get_order_metrics(cls, store, from_date=None, to_date=None):
-        """Calculates breakdown of order statuses, fulfillment velocity, and cancellation rates."""
+        """
+        Calculates breakdown of order statuses, fulfillment velocity, and cancellation rates
+        using database expressions without Python N+1 loops (PERF-02 fix).
+        """
         orders = Order.objects.filter(store=store)
 
         from_d = cls.parse_date(from_date)
@@ -222,43 +238,38 @@ class AnalyticsService:
         if to_d:
             orders = orders.filter(created_at__date__lte=to_d)
 
-        total_orders = orders.count()
-
-        # Status counts breakdown
         status_counts = {choice.value: 0 for choice in OrderStatus}
         counts_agg = orders.values("status").annotate(cnt=Count("id"))
+        total_orders = 0
         for row in counts_agg:
-            if row["status"] in status_counts:
-                status_counts[row["status"]] = row["cnt"]
+            s_val = row["status"]
+            cnt = row["cnt"]
+            total_orders += cnt
+            if s_val in status_counts:
+                status_counts[s_val] = cnt
 
         cancelled = status_counts.get(OrderStatus.CANCELLED, 0)
-        delivered = status_counts.get(OrderStatus.DELIVERED, 0)
-
         cancellation_rate = (
             round((cancelled / total_orders) * 100, 2)
             if total_orders > 0
             else 0.0
         )
 
-        # Average fulfillment time in hours for DELIVERED orders
-        delivered_orders = orders.filter(status=OrderStatus.DELIVERED).prefetch_related("status_history")
-        total_fulfillment_hours = 0.0
-        delivered_count = delivered_orders.count()
-
-        if delivered_count > 0:
-            for o in delivered_orders:
-                history_entry = (
-                    o.status_history.filter(to_status=OrderStatus.DELIVERED)
-                    .order_by("created_at")
-                    .first()
-                )
-                delivered_at = history_entry.created_at if history_entry else o.updated_at
-                diff_hours = (delivered_at - o.created_at).total_seconds() / 3600.0
-                total_fulfillment_hours += max(diff_hours, 0.0)
-
-            avg_fulfillment_hours = round(total_fulfillment_hours / delivered_count, 1)
-        else:
-            avg_fulfillment_hours = None
+        # Average fulfillment duration computed directly in database SQL (PERF-02 fix)
+        delivered_agg = orders.filter(
+            status=OrderStatus.DELIVERED,
+            delivered_at__isnull=False,
+        ).aggregate(
+            avg_duration=Avg(
+                ExpressionWrapper(F("delivered_at") - F("created_at"), output_field=DurationField())
+            )
+        )
+        avg_dur = delivered_agg.get("avg_duration")
+        avg_fulfillment_hours = (
+            round(avg_dur.total_seconds() / 3600.0, 1)
+            if avg_dur and avg_dur.total_seconds() > 0
+            else None
+        )
 
         return {
             "total_orders": total_orders,
@@ -269,7 +280,9 @@ class AnalyticsService:
 
     @classmethod
     def generate_csv_report(cls, store, report_type="sales", from_date=None, to_date=None):
-        """Generates a CSV report string based on report_type."""
+        """
+        Generates comprehensive CSV report with variant, color, and size breakdown (BUG-21 fix).
+        """
         output = io.StringIO()
         writer = csv.writer(output)
 
@@ -279,36 +292,81 @@ class AnalyticsService:
 
         if report_type == "inventory":
             writer.writerow([
+                "Product ID",
                 "Product Name",
                 "SKU",
-                "Current Stock",
+                "Category",
+                "Color Variant",
+                "Color Hex",
+                "Size",
+                "Variant Stock",
+                "Total Product Stock",
                 "Price (INR)",
-                "Compare At Price (INR)",
+                "Is Refundable",
                 "Status",
-                "Low Stock Threshold",
-                "Is Low Stock",
             ])
-            products = Product.objects.filter(store=store).select_related("stock_alert")
+            products = (
+                Product.objects.filter(store=store)
+                .prefetch_related("variants__sizes")
+                .order_by("name")
+            )
             for p in products:
-                threshold = getattr(p, "stock_alert", None)
-                thresh_val = threshold.threshold if threshold else 5
-                is_low = p.stock <= thresh_val
-                writer.writerow([
-                    p.name,
-                    p.sku or "",
-                    p.stock,
-                    str(p.price),
-                    str(p.compare_at_price or ""),
-                    p.status,
-                    thresh_val,
-                    "YES" if is_low else "NO",
-                ])
+                has_variants = False
+                for v in p.variants.all():
+                    has_variants = True
+                    if v.sizes.exists():
+                        for s in v.sizes.all():
+                            writer.writerow([
+                                p.id,
+                                p.name,
+                                v.sku or p.sku or "",
+                                p.category,
+                                v.color_name,
+                                v.color_hex,
+                                s.size or "N/A",
+                                s.stock,
+                                p.stock,
+                                str(p.price),
+                                "YES" if p.is_refundable else "NO",
+                                p.status,
+                            ])
+                    else:
+                        writer.writerow([
+                            p.id,
+                            p.name,
+                            v.sku or p.sku or "",
+                            p.category,
+                            v.color_name,
+                            v.color_hex,
+                            "N/A",
+                            v.total_stock,
+                            p.stock,
+                            str(p.price),
+                            "YES" if p.is_refundable else "NO",
+                            p.status,
+                        ])
+                if not has_variants:
+                    writer.writerow([
+                        p.id,
+                        p.name,
+                        p.sku or "",
+                        p.category,
+                        "Standard",
+                        "#000000",
+                        "N/A",
+                        p.stock,
+                        p.stock,
+                        str(p.price),
+                        "YES" if p.is_refundable else "NO",
+                        p.status,
+                    ])
 
         elif report_type == "orders":
             writer.writerow([
                 "Order Number",
                 "Date",
                 "Status",
+                "Payment Status",
                 "Customer Name",
                 "Customer Phone",
                 "Customer Email",
@@ -316,7 +374,7 @@ class AnalyticsService:
                 "Tracking Number",
                 "Shipping Address",
             ])
-            orders = Order.objects.filter(store=store)
+            orders = Order.objects.filter(store=store).order_by("-created_at")
             if from_d:
                 orders = orders.filter(created_at__date__gte=from_d)
             if to_d:
@@ -326,6 +384,7 @@ class AnalyticsService:
                     o.order_number,
                     o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                     o.status,
+                    o.payment_status,
                     o.customer_name,
                     o.customer_phone,
                     o.customer_email,
@@ -335,33 +394,46 @@ class AnalyticsService:
                 ])
 
         else:
-            # Default: sales report
+            # Sales report with line-item detail
             writer.writerow([
                 "Order Number",
                 "Date",
                 "Customer Name",
                 "Customer Email",
-                "Total Amount (INR)",
+                "Product Name",
+                "Color",
+                "Size",
+                "Quantity",
+                "Unit Price (INR)",
+                "Item Total (INR)",
+                "Order Total (INR)",
                 "Status",
-                "Items Count",
             ])
-            orders = Order.objects.filter(store=store).exclude(
-                status=OrderStatus.CANCELLED
-            ).prefetch_related("items")
+            orders = (
+                Order.objects.filter(store=store)
+                .exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
+                .prefetch_related("items")
+                .order_by("-created_at")
+            )
             if from_d:
                 orders = orders.filter(created_at__date__gte=from_d)
             if to_d:
                 orders = orders.filter(created_at__date__lte=to_d)
             for o in orders:
-                items_count = sum(item.quantity for item in o.items.all())
-                writer.writerow([
-                    o.order_number,
-                    o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                    o.customer_name,
-                    o.customer_email,
-                    str(o.total_amount),
-                    o.status,
-                    items_count,
-                ])
+                for item in o.items.all():
+                    writer.writerow([
+                        o.order_number,
+                        o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        o.customer_name,
+                        o.customer_email,
+                        item.product_name,
+                        item.color_name or "Standard",
+                        item.size or "N/A",
+                        item.quantity,
+                        str(item.unit_price),
+                        str(item.total_price),
+                        str(o.total_amount),
+                        o.status,
+                    ])
 
         return output.getvalue()

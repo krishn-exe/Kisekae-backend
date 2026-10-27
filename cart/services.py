@@ -1,8 +1,9 @@
 import uuid
+from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from products.models import Product, ProductStatus
+from products.models import Product, ProductStatus, ProductVariant
 from stores.models import StoreStatus
 
 from .models import Cart, CartItem
@@ -11,15 +12,8 @@ from .models import Cart, CartItem
 class CartService:
     @staticmethod
     def get_or_create_cart(user=None, cart_token=None):
-        """
-        Retrieves or creates a cart.
-        - If user is authenticated, finds or creates Cart(user=user).
-          If a cart_token was provided (from guest browsing), merges guest cart into user's cart.
-        - If user is None, finds or creates Cart with the specified cart_token.
-        """
         if user and user.is_authenticated:
             user_cart, _ = Cart.objects.get_or_create(user=user)
-            # Merge guest cart if cart_token provided
             if cart_token:
                 try:
                     val_token = uuid.UUID(str(cart_token)) if isinstance(cart_token, (str, uuid.UUID)) else cart_token
@@ -46,42 +40,50 @@ class CartService:
     @staticmethod
     @transaction.atomic
     def merge_carts(source_cart, target_cart):
-        """
-        Merges items from source_cart into target_cart (matching by product and size),
-        then deletes source_cart.
-        """
-        for item in source_cart.items.select_related("product").all():
-            existing = target_cart.items.filter(product=item.product, size=item.size).first()
-            max_qty = item.product.stock
-            if item.size and item.product.sizes.exists():
+        for item in source_cart.items.select_related("product", "variant").all():
+            existing = target_cart.items.filter(
+                product=item.product,
+                variant=item.variant,
+                size=item.size,
+            ).first()
+
+            max_stock = item.product.stock
+            if item.variant and item.variant.sizes.exists():
+                size_obj = item.variant.sizes.filter(size=item.size).first()
+                if size_obj:
+                    max_stock = size_obj.stock
+            elif item.size and item.product.sizes.exists():
                 size_obj = item.product.sizes.filter(size=item.size).first()
                 if size_obj:
-                    max_qty = size_obj.stock
+                    max_stock = size_obj.stock
 
             if existing:
-                combined_qty = min(existing.quantity + item.quantity, max_qty)
+                combined_qty = min(existing.quantity + item.quantity, max_stock)
                 existing.quantity = max(combined_qty, 1)
                 existing.save(update_fields=["quantity", "updated_at"])
             else:
                 CartItem.objects.create(
                     cart=target_cart,
                     product=item.product,
+                    variant=item.variant,
                     size=item.size,
-                    quantity=min(item.quantity, max_qty),
+                    quantity=min(item.quantity, max_stock),
                 )
         source_cart.delete()
         target_cart.save()
 
     @staticmethod
     @transaction.atomic
-    def add_item(cart, product_id, quantity=1, size=""):
-        """
-        Adds a product (and optional size) to the cart or increments its quantity.
-        """
+    def add_item(cart, product_id, variant_id=None, quantity=1, size=""):
         if quantity <= 0:
             raise ValidationError("Quantity must be greater than zero.")
 
-        product = Product.objects.select_related("store").prefetch_related("sizes").filter(pk=product_id).first()
+        product = (
+            Product.objects.select_related("store")
+            .prefetch_related("variants__sizes", "sizes")
+            .filter(pk=product_id)
+            .first()
+        )
         if not product:
             raise ValidationError("Product not found.")
 
@@ -93,11 +95,40 @@ class CartService:
 
         clean_size = str(size or "").strip().upper()
 
+        # Resolve variant
+        variant = None
+        if variant_id:
+            variant = product.variants.filter(pk=variant_id).first()
+            if not variant:
+                raise ValidationError("Selected color variant not found.")
+            if not variant.is_active:
+                raise ValidationError("Selected color variant is inactive.")
+        else:
+            # Default to first active variant if available
+            variant = product.variants.filter(is_active=True).first()
+
         # Handle size selection and stock
         available_stock = product.stock
-        if product.sizes.exists():
+        if variant and variant.sizes.exists():
             if not clean_size:
-                # If sizes exist but user didn't specify, default to first in-stock size if available
+                first_avail = variant.sizes.filter(stock__gt=0).first()
+                if first_avail:
+                    clean_size = first_avail.size
+                    available_stock = first_avail.stock
+                else:
+                    raise ValidationError(f"This color ({variant.color_name}) is currently out of stock in all sizes.")
+            else:
+                size_obj = variant.sizes.filter(size=clean_size).first()
+                if not size_obj:
+                    valid_sizes = list(variant.sizes.values_list("size", flat=True))
+                    raise ValidationError(
+                        f"Size '{clean_size}' is not valid for color '{variant.color_name}'. Available sizes: {', '.join(valid_sizes)}."
+                    )
+                if size_obj.stock <= 0:
+                    raise ValidationError(f"Size '{clean_size}' in color '{variant.color_name}' is currently out of stock.")
+                available_stock = size_obj.stock
+        elif product.sizes.exists():
+            if not clean_size:
                 first_avail = product.sizes.filter(stock__gt=0).first()
                 if first_avail:
                     clean_size = first_avail.size
@@ -118,14 +149,15 @@ class CartService:
         if available_stock <= 0:
             raise ValidationError("This product is currently out of stock.")
 
-        cart_item = cart.items.filter(product=product, size=clean_size).first()
+        cart_item = cart.items.filter(product=product, variant=variant, size=clean_size).first()
         current_quantity = cart_item.quantity if cart_item else 0
         target_quantity = current_quantity + quantity
 
         if target_quantity > available_stock:
             size_note = f" in size '{clean_size}'" if clean_size else ""
+            color_note = f" ({variant.color_name})" if variant else ""
             raise ValidationError(
-                f"Cannot add {quantity} item(s). Only {available_stock - current_quantity} more item(s) available{size_note}."
+                f"Cannot add {quantity} item(s). Only {available_stock - current_quantity} more item(s) available{color_note}{size_note}."
             )
 
         if cart_item:
@@ -135,6 +167,7 @@ class CartService:
             cart_item = CartItem.objects.create(
                 cart=cart,
                 product=product,
+                variant=variant,
                 size=clean_size,
                 quantity=target_quantity,
             )
@@ -145,11 +178,7 @@ class CartService:
     @staticmethod
     @transaction.atomic
     def update_item_quantity(cart, item_id, quantity):
-        """
-        Updates the quantity of a cart item.
-        If quantity is 0, removes the item.
-        """
-        cart_item = cart.items.select_related("product").prefetch_related("product__sizes").filter(pk=item_id).first()
+        cart_item = cart.items.select_related("product", "variant").filter(pk=item_id).first()
         if not cart_item:
             raise ValidationError("Item not found in cart.")
 
@@ -159,8 +188,14 @@ class CartService:
             return None
 
         product = cart_item.product
+        variant = cart_item.variant
         max_stock = product.stock
-        if cart_item.size and product.sizes.exists():
+
+        if variant and variant.sizes.exists():
+            size_obj = variant.sizes.filter(size=cart_item.size).first()
+            if size_obj:
+                max_stock = size_obj.stock
+        elif cart_item.size and product.sizes.exists():
             size_obj = product.sizes.filter(size=cart_item.size).first()
             if size_obj:
                 max_stock = size_obj.stock
@@ -178,9 +213,6 @@ class CartService:
 
     @staticmethod
     def remove_item(cart, item_id):
-        """
-        Removes an item from the cart.
-        """
         cart_item = cart.items.filter(pk=item_id).first()
         if not cart_item:
             raise ValidationError("Item not found in cart.")
@@ -189,24 +221,18 @@ class CartService:
 
     @staticmethod
     def clear_cart(cart):
-        """
-        Removes all items from the cart.
-        """
         cart.items.all().delete()
         cart.save(update_fields=["updated_at"])
 
     @staticmethod
     def validate_cart(cart):
-        """
-        Validates all items in the cart against current stock and availability.
-        Returns a dictionary with summary, valid flag, and list of issues.
-        """
         issues = []
         is_valid = True
 
-        for item in cart.items.select_related("product", "product__store").prefetch_related("product__sizes").all():
+        for item in cart.items.select_related("product", "variant", "product__store").all():
             product = item.product
             store = product.store
+            variant = item.variant
 
             if store.status != StoreStatus.ACTIVE or store.archived_at is not None:
                 is_valid = False
@@ -228,21 +254,37 @@ class CartService:
                     "issue": "Product is no longer active.",
                     "code": "PRODUCT_INACTIVE",
                 })
+            elif variant and not variant.is_active:
+                is_valid = False
+                issues.append({
+                    "item_id": item.id,
+                    "product_id": product.id,
+                    "product_name": product.name,
+                    "variant_id": variant.id,
+                    "color_name": variant.color_name,
+                    "size": item.size,
+                    "issue": f"Color variant '{variant.color_name}' is inactive.",
+                    "code": "VARIANT_INACTIVE",
+                })
             else:
                 max_stock = product.stock
-                if item.size and product.sizes.exists():
+                if variant and variant.sizes.exists():
+                    size_obj = variant.sizes.filter(size=item.size).first()
+                    max_stock = size_obj.stock if size_obj else 0
+                elif item.size and product.sizes.exists():
                     size_obj = product.sizes.filter(size=item.size).first()
                     max_stock = size_obj.stock if size_obj else 0
 
                 if max_stock < item.quantity:
                     is_valid = False
                     size_str = f" in size '{item.size}'" if item.size else ""
+                    color_str = f" ({variant.color_name})" if variant else ""
                     issues.append({
                         "item_id": item.id,
                         "product_id": product.id,
                         "product_name": product.name,
                         "size": item.size,
-                        "issue": f"Requested {item.quantity}, but only {max_stock} available{size_str}.",
+                        "issue": f"Requested {item.quantity}, but only {max_stock} available{color_str}{size_str}.",
                         "code": "INSUFFICIENT_STOCK",
                         "available_stock": max_stock,
                     })
@@ -260,14 +302,14 @@ class CartService:
     @transaction.atomic
     def checkout_cart(cart, user, customer_data):
         """
-        Converts all items in the cart into one or more confirmed orders grouped by store.
-        Skips payment gateway capture for PoC, advancing orders directly to CONFIRMED.
-        Empties the cart upon successful order placement.
+        Converts all items in the cart into one or more PENDING orders grouped by store,
+        places a 5-minute inventory reservation on the exact variant sizes, and generates
+        Razorpay order payloads for each store order.
         """
         if not user or not user.is_authenticated:
             raise ValidationError("An authenticated user account is required to complete checkout.")
 
-        items = list(cart.items.select_related("product", "product__store").prefetch_related("product__sizes").all())
+        items = list(cart.items.select_related("product", "variant", "product__store").all())
         if not items:
             raise ValidationError("Cannot checkout an empty cart.")
 
@@ -285,14 +327,14 @@ class CartService:
 
         created_orders = []
         from orders.services import OrderService
-        from orders.models import OrderStatus
 
         for store, store_items in items_by_store.items():
             items_payload = [
                 {
                     "product_id": item.product.id,
-                    "quantity": item.quantity,
+                    "variant_id": item.variant.id if item.variant else None,
                     "size": item.size,
+                    "quantity": item.quantity,
                 }
                 for item in store_items
             ]
@@ -303,19 +345,52 @@ class CartService:
                 items_data=items_payload,
                 user=user,
             )
-
-            # Direct confirmation for PoC (skipping payment gateway capture)
-            OrderService.update_order_status(
-                order=order,
-                new_status=OrderStatus.CONFIRMED,
-                user=user,
-                notes="Order placed and confirmed directly (PoC checkout).",
-            )
-
             created_orders.append(order)
 
-        # Clear items from cart
+        # Clear items from cart upon successful reservation
         cart.items.all().delete()
         cart.save(update_fields=["updated_at"])
 
         return created_orders
+
+    @staticmethod
+    @transaction.atomic
+    def reorder(order, user):
+        """
+        Re-adds items from an existing order back into the user's active cart.
+        """
+        user_cart = CartService.get_or_create_cart(user=user)
+        added_count = 0
+        skipped = []
+
+        for item in order.items.select_related("product", "variant").all():
+            product = item.product
+            variant = item.variant
+            size = item.size
+            qty = item.quantity
+
+            if not product or product.status != ProductStatus.ACTIVE or product.store.status != StoreStatus.ACTIVE:
+                skipped.append({"product_name": item.product_name, "reason": "Product or store is no longer active."})
+                continue
+
+            if variant and not variant.is_active:
+                skipped.append({"product_name": item.product_name, "reason": f"Color variant '{item.color_name}' is inactive."})
+                continue
+
+            try:
+                CartService.add_item(
+                    cart=user_cart,
+                    product_id=product.id,
+                    variant_id=variant.id if variant else None,
+                    quantity=qty,
+                    size=size,
+                )
+                added_count += 1
+            except ValidationError as exc:
+                skipped.append({"product_name": item.product_name, "reason": str(exc)})
+
+        return {
+            "reordered_items_count": added_count,
+            "skipped_items": skipped,
+            "cart": user_cart,
+        }

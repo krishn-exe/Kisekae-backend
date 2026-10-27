@@ -154,6 +154,10 @@ class Product(models.Model):
         default=ProductStatus.DRAFT,
         db_index=True,
     )
+    is_refundable = models.BooleanField(
+        default=True,
+        help_text="Seller option: whether this product is eligible for return and refund post-delivery.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

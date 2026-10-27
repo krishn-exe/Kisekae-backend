@@ -1,37 +1,69 @@
+import json
+import logging
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Q
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
+from accounts.models import Address
 from accounts.responses import error_response, success_response
+from cart.services import CartService
+from products.models import Product, ProductVariant
 from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
 
 from .models import Order, OrderStatus
+from .razorpay_service import RazorpayService
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
-    OrderCreateSerializer,
+    BuyNowSerializer,
+    CustomerOrderTrackSerializer,
+    OrderCancelSerializer,
     OrderDeliverSerializer,
     OrderDetailSerializer,
     OrderListSerializer,
+    OrderRefundApproveSerializer,
+    OrderRefundRequestSerializer,
     OrderStatusUpdateSerializer,
-    CustomerOrderTrackSerializer,
+    PaymentVerifySerializer,
 )
 from .services import OrderService
 
 from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
+logger = logging.getLogger(__name__)
+
 ORDER_ERROR_SCHEMA = ERROR_SCHEMA
 ORDER_DETAIL_RESPONSE_SCHEMA = api_response(OrderDetailSerializer, "OrderDetailResponse")
-ORDER_LIST_RESPONSE_SCHEMA = api_response(OrderListSerializer, "OrderListResponse", many=True)
+STORE_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "StoreOrderPaginatedResponse")
 CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
 CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
 BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
-    inline_serializer(name="BulkOrderUpdateData", fields={"updated_count": serializers.IntegerField()}),
+    inline_serializer(
+        name="BulkOrderUpdateData",
+        fields={
+            "updated_count": serializers.IntegerField(),
+            "updated_ids": serializers.ListField(child=serializers.IntegerField()),
+            "errors": serializers.ListField(),
+        },
+    ),
     "BulkOrderUpdateResponse",
+)
+REORDER_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="ReorderResponseData",
+        fields={
+            "reordered_items_count": serializers.IntegerField(),
+            "skipped_items": serializers.ListField(),
+        },
+    ),
+    "ReorderResponse",
 )
 
 
@@ -72,7 +104,11 @@ class BaseOrderView(APIView):
         return store, membership, None
 
 
-class OrderListCreateView(BaseOrderView):
+# ==============================================================================
+# SELLER STORE ORDER MANAGEMENT VIEWS
+# ==============================================================================
+
+class OrderListView(BaseOrderView):
     pagination_class = StorePagination
 
     @extend_schema(
@@ -84,7 +120,7 @@ class OrderListCreateView(BaseOrderView):
             OpenApiParameter(name="status", description="Filter by OrderStatus", required=False, type=str),
             OpenApiParameter(name="search", description="Search by customer name, email, or order number", required=False, type=str),
         ],
-        responses={200: ORDER_LIST_RESPONSE_SCHEMA},
+        responses={200: STORE_ORDER_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
         store, _, err = self._get_store_and_check(request.user, pk, require_active=False)
@@ -119,42 +155,8 @@ class OrderListCreateView(BaseOrderView):
             },
         )
 
-    @extend_schema(
-        operation_id="seller_store_order_create",
-        tags=["Store - Orders"],
-        summary="Create a new order",
-        description="Creates a new customer order and reserves inventory.",
-        request=OrderCreateSerializer,
-        responses={201: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
-    )
-    def post(self, request, pk):
-        self.throttle_scope = "store_write"
-        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
-        if err:
-            return err
 
-        serializer = OrderCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        order = OrderService.create_order(
-            store=store,
-            customer_data={
-                "customer_name": data["customer_name"],
-                "customer_email": data["customer_email"],
-                "customer_phone": data["customer_phone"],
-                "shipping_address": data["shipping_address"],
-                "notes": data.get("notes", ""),
-            },
-            items_data=data["items"],
-            user=request.user,
-        )
-
-        return success_response(
-            message=f"Order {order.order_number} created successfully.",
-            data=OrderDetailSerializer(order).data,
-            status_code=status.HTTP_201_CREATED,
-        )
+OrderListCreateView = OrderListView
 
 
 class OrderDetailView(BaseOrderView):
@@ -192,8 +194,8 @@ class OrderStatusUpdateView(BaseOrderView):
 
     @extend_schema(
         tags=["Store - Orders"],
-        summary="Update order status",
-        description="Advances or transitions an order status according to the lifecycle state machine.",
+        summary="Update order status (Seller)",
+        description="Transitions an order status according to the lifecycle state machine (e.g. SHIPPED, DELIVERED).",
         request=OrderStatusUpdateSerializer,
         responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
@@ -214,21 +216,22 @@ class OrderStatusUpdateView(BaseOrderView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        updated_order = OrderService.update_order_status(
-            order=order,
-            new_status=data["status"],
-            user=request.user,
-            notes=data.get("notes", ""),
-            tracking_number=data.get("tracking_number", ""),
-            tracking_url=data.get("tracking_url", ""),
-        )
+        try:
+            updated_order = OrderService.update_order_status(
+                order=order,
+                new_status=data["status"],
+                user=request.user,
+                notes=data.get("notes", ""),
+                tracking_number=data.get("tracking_number", ""),
+                tracking_url=data.get("tracking_url", ""),
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), code="INVALID_TRANSITION", status_code=status.HTTP_400_BAD_REQUEST)
 
         return success_response(
             message=f"Order status updated to {updated_order.status}.",
             data=OrderDetailSerializer(updated_order).data,
         )
-
-
 
 
 class OrderDeliverView(BaseOrderView):
@@ -237,7 +240,7 @@ class OrderDeliverView(BaseOrderView):
     @extend_schema(
         tags=["Store - Orders"],
         summary="Mark order as delivered",
-        description="Seller endpoint to mark an order as DELIVERED. Updates status, records delivered_at timestamp, and logs status history.",
+        description="Shortcut to transition an order from SHIPPED directly to DELIVERED status.",
         request=OrderDeliverSerializer,
         responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
@@ -254,20 +257,25 @@ class OrderDeliverView(BaseOrderView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = OrderDeliverSerializer(data=request.data or {})
+        serializer = OrderDeliverSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         notes = serializer.validated_data.get("notes", "")
 
-        delivered_order = OrderService.mark_order_delivered(
-            order=order,
-            user=request.user,
-            notes=notes,
-        )
+        try:
+            delivered_order = OrderService.update_order_status(
+                order=order,
+                new_status=OrderStatus.DELIVERED,
+                user=request.user,
+                notes=notes or "Order marked as delivered.",
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), code="DELIVERY_TRANSITION_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
 
         return success_response(
-            message=f"Order {delivered_order.order_number} marked as delivered.",
+            message=f"Order {delivered_order.order_number} marked as DELIVERED successfully.",
             data=OrderDetailSerializer(delivered_order).data,
         )
+
 
 class BulkOrderStatusUpdateView(BaseOrderView):
     throttle_scope = "store_write"
@@ -307,61 +315,298 @@ class BulkOrderStatusUpdateView(BaseOrderView):
                 errors.append({"order_id": order.id, "error": str(exc)})
 
         return success_response(
-            message=f"Updated {len(updated)} order(s).",
+            message=f"Bulk update completed: {len(updated)} updated, {len(errors)} errors.",
             data={
+                "updated_count": len(updated),
                 "updated_ids": updated,
                 "errors": errors,
             },
         )
 
 
+class StoreOrderRefundApproveView(BaseOrderView):
+    throttle_scope = "store_write"
+
+    @extend_schema(
+        tags=["Store - Orders"],
+        summary="Approve customer refund request (Seller)",
+        description="Approves a return/refund request for a delivered order. Triggers Razorpay refund and restocks variant items.",
+        request=OrderRefundApproveSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, order_id):
+        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
+        if err:
+            return err
+
+        order = Order.objects.filter(store=store, pk=order_id).first()
+        if not order:
+            return error_response("Order not found in this store.", "ORDER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderRefundApproveSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        notes = serializer.validated_data.get("notes", "")
+
+        try:
+            refunded_order = OrderService.approve_refund(order=order, actor_user=request.user, notes=notes)
+        except ValidationError as exc:
+            return error_response(str(exc), code="REFUND_APPROVAL_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message=f"Order {refunded_order.order_number} refund approved and processed.",
+            data=OrderDetailSerializer(refunded_order).data,
+        )
+
+
+class StoreOrderRefundRejectView(BaseOrderView):
+    throttle_scope = "store_write"
+
+    @extend_schema(
+        tags=["Store - Orders"],
+        summary="Reject customer refund request (Seller)",
+        description="Rejects a return/refund request and reverts the order status back to DELIVERED.",
+        request=OrderRefundApproveSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, order_id):
+        store, _, err = self._get_store_and_check(request.user, pk, require_active=True)
+        if err:
+            return err
+
+        order = Order.objects.filter(store=store, pk=order_id).first()
+        if not order:
+            return error_response("Order not found in this store.", "ORDER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderRefundApproveSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        notes = serializer.validated_data.get("notes", "")
+
+        try:
+            reverted_order = OrderService.reject_refund(order=order, actor_user=request.user, notes=notes)
+        except ValidationError as exc:
+            return error_response(str(exc), code="REFUND_REJECTION_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message=f"Order {reverted_order.order_number} refund request rejected.",
+            data=OrderDetailSerializer(reverted_order).data,
+        )
+
+
 # ==============================================================================
-# CUSTOMER ORDER TRACKING & HISTORY VIEWS
+# CONSUMER ORDER CHECKOUT, PAYMENT & SELF-SERVICE VIEWS
 # ==============================================================================
 
+class BuyNowView(APIView):
+    """
+    Direct 'Buy Now' purchase skipping the cart. Reserves stock for 5 minutes
+    and returns a Razorpay order payload.
+    """
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Buy Now (Instant Order Placement)",
+        description="Directly places an order for a single variant item with 5-minute stock reservation. Returns Razorpay order details for immediate checkout.",
+        request=BuyNowSerializer,
+        responses={201: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        user = request.user
+        serializer = BuyNowSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        product_id = data["product_id"]
+        product = Product.objects.select_related("store").filter(pk=product_id).first()
+        if not product:
+            return error_response("Product not found.", "PRODUCT_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+        address_id = data.get("address_id")
+        customer_name = data.get("customer_name") or getattr(user, "name", "") or user.email.split("@")[0]
+        customer_email = data.get("customer_email") or user.email
+        customer_phone = data.get("customer_phone") or getattr(user, "phone", "0000000000")
+        shipping_address = data.get("shipping_address") or ""
+        notes = data.get("notes", "")
+
+        if address_id:
+            addr = Address.objects.filter(user=user, pk=address_id).first()
+            if not addr:
+                return error_response(f"Address ID {address_id} not found.", "ADDRESS_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+            customer_name = addr.recipient_name or customer_name
+            customer_phone = addr.phone or customer_phone
+            shipping_address = f"{addr.address_line_1}, {addr.address_line_2 or ''}, {addr.city}, {addr.state} {addr.postal_code}, {addr.country}".replace(" ,", "")
+        elif not shipping_address:
+            addr = Address.objects.filter(user=user, is_default=True).first() or Address.objects.filter(user=user).first()
+            if addr:
+                customer_name = addr.recipient_name or customer_name
+                customer_phone = addr.phone or customer_phone
+                shipping_address = f"{addr.address_line_1}, {addr.address_line_2 or ''}, {addr.city}, {addr.state} {addr.postal_code}, {addr.country}".replace(" ,", "")
+
+        if not shipping_address:
+            return error_response("Shipping address is required.", "SHIPPING_ADDRESS_REQUIRED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        customer_data = {
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "customer_phone": customer_phone,
+            "shipping_address": shipping_address,
+            "notes": notes,
+        }
+
+        items_payload = [
+            {
+                "product_id": product.id,
+                "variant_id": data.get("variant_id"),
+                "size": data.get("size", ""),
+                "quantity": data.get("quantity", 1),
+            }
+        ]
+
+        try:
+            order = OrderService.create_order(
+                store=product.store,
+                customer_data=customer_data,
+                items_data=items_payload,
+                user=user,
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), code="ORDER_CREATION_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message="Order placed with 5-minute stock reservation. Complete payment via Razorpay.",
+            data=OrderDetailSerializer(order).data,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class PaymentVerifyView(APIView):
+    """
+    Verifies Razorpay payment signature after customer completes payment in frontend SDK.
+    Advances order from PENDING to CONFIRMED.
+    """
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Verify Razorpay payment",
+        description="Verifies the HMAC SHA256 payment signature from Razorpay SDK. Advances order from PENDING to CONFIRMED.",
+        request=PaymentVerifySerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        serializer = PaymentVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            order = OrderService.verify_payment(
+                order_id=data["order_id"],
+                razorpay_payment_id=data["razorpay_payment_id"],
+                razorpay_order_id=data.get("razorpay_order_id", ""),
+                razorpay_signature=data["razorpay_signature"],
+                user=request.user,
+            )
+        except ValidationError as exc:
+            return error_response(str(exc), code=getattr(exc, "code", "PAYMENT_VERIFICATION_FAILED"), status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message="Payment verified successfully. Order confirmed.",
+            data=OrderDetailSerializer(order).data,
+        )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class RazorpayWebhookView(APIView):
+    """
+    Async webhook receiver for Razorpay events (payment.captured, payment.failed, refund.processed).
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(exclude=True)
+    def post(self, request):
+        signature = request.headers.get("X-Razorpay-Signature", "")
+        body_bytes = request.body
+
+        if not RazorpayService.verify_webhook_signature(body_bytes, signature):
+            logger.warning("Invalid Razorpay webhook signature received.")
+            return error_response("Invalid webhook signature.", "INVALID_WEBHOOK_SIGNATURE", status.HTTP_400_BAD_REQUEST)
+
+        try:
+            event_data = json.loads(body_bytes.decode("utf-8"))
+        except Exception:
+            return error_response("Malformed webhook JSON payload.", "INVALID_PAYLOAD", status.HTTP_400_BAD_REQUEST)
+
+        event = event_data.get("event")
+        payload = event_data.get("payload", {})
+        payment_entity = payload.get("payment", {}).get("entity", {})
+        rzp_order_id = payment_entity.get("order_id")
+        rzp_payment_id = payment_entity.get("id")
+
+        logger.info("Razorpay webhook event: %s for rzp_order: %s", event, rzp_order_id)
+
+        if event == "payment.captured" and rzp_order_id:
+            order = Order.objects.filter(razorpay_order_id=rzp_order_id).first()
+            if order and order.status == OrderStatus.PENDING:
+                try:
+                    OrderService.verify_payment(
+                        order_id=order.id,
+                        razorpay_payment_id=rzp_payment_id,
+                        razorpay_order_id=rzp_order_id,
+                        razorpay_signature="mock_signature",
+                    )
+                except Exception as exc:
+                    logger.exception("Error processing webhook payment capture for order %s: %s", order.id, exc)
+
+        return success_response(message="Webhook processed successfully.")
+
+
 class CustomerOrderListView(APIView):
-    """
-    Returns paginated list of orders placed by the authenticated customer.
-    """
     throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
     pagination_class = StorePagination
 
     @extend_schema(
-        operation_id="customer_order_list",
-        tags=["Customer Orders"],
+        operation_id="customer_orders_list",
+        tags=["Orders - Consumer"],
         summary="List customer orders",
-        description="Returns orders placed by the authenticated customer. Supports filtering by status.",
-        parameters=[
-            OpenApiParameter(name="status", description="Filter by OrderStatus (PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED)", required=False, type=str),
-        ],
-        responses={200: ORDER_LIST_RESPONSE_SCHEMA},
+        description="Returns paginated list of all orders placed by the current customer.",
+        responses={200: CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request):
-        queryset = Order.objects.filter(user=request.user).prefetch_related("items").order_by("-created_at")
-
-        status_param = request.query_params.get("status")
-        if status_param and status_param.upper() in OrderStatus.values:
-            queryset = queryset.filter(status=status_param.upper())
+        queryset = (
+            Order.objects.filter(user=request.user)
+            .select_related("store")
+            .prefetch_related("items")
+            .order_by("-created_at")
+        )
 
         paginator = self.pagination_class()
-        paginated_orders = paginator.paginate_queryset(queryset, request)
-        serializer = OrderListSerializer(paginated_orders, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = OrderListSerializer(page, many=True)
+
+        return success_response(
+            message="Customer orders fetched successfully.",
+            data={
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
+        )
 
 
 class CustomerOrderDetailView(APIView):
-    """
-    Returns full order details for an order placed by the authenticated customer.
-    """
     throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        operation_id="customer_order_detail",
-        tags=["Customer Orders"],
+        operation_id="customer_orders_detail",
+        tags=["Orders - Consumer"],
         summary="Get customer order detail",
-        description="Returns detailed information for a specific order owned by the customer, including itemized products, delivery details, and status history.",
+        description="Returns complete details, line items, and tracking status for a customer's order.",
         responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
     def get(self, request, order_id):
@@ -372,28 +617,110 @@ class CustomerOrderDetailView(APIView):
             .first()
         )
         if not order:
-            return error_response(
-                message="Order not found.",
-                code="ORDER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+            return error_response("Order not found.", "ORDER_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
         return success_response(
-            message="Order details retrieved successfully.",
+            message="Order details fetched successfully.",
             data=OrderDetailSerializer(order).data,
         )
 
 
+class CustomerOrderCancelView(APIView):
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Cancel customer order (Pre-shipment)",
+        description="Cancels an order if it has not yet reached SHIPPED status. Automatically initiates Razorpay refund and restores reserved inventory.",
+        request=OrderCancelSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, order_id):
+        order = Order.objects.filter(user=request.user, pk=order_id).first()
+        if not order:
+            return error_response("Order not found.", "ORDER_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderCancelSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+
+        try:
+            cancelled_order = OrderService.cancel_order(order=order, user=request.user, reason=reason)
+        except ValidationError as exc:
+            return error_response(str(exc), code="ORDER_CANNOT_BE_CANCELLED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message=f"Order {cancelled_order.order_number} has been cancelled successfully. Any payment captured has been refunded.",
+            data=OrderDetailSerializer(cancelled_order).data,
+        )
+
+
+class CustomerOrderRefundRequestView(APIView):
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Request refund / return (Post-delivery)",
+        description="Customer requests return and refund for a delivered order. Allowed only within 10 days of delivery, and only for products with is_refundable == True.",
+        request=OrderRefundRequestSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, order_id):
+        order = Order.objects.filter(user=request.user, pk=order_id).first()
+        if not order:
+            return error_response("Order not found.", "ORDER_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderRefundRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data["reason"]
+
+        try:
+            updated_order = OrderService.request_refund(order=order, user=request.user, reason=reason)
+        except ValidationError as exc:
+            return error_response(str(exc), code="REFUND_REQUEST_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
+
+        return success_response(
+            message="Refund request submitted successfully. Awaiting seller review.",
+            data=OrderDetailSerializer(updated_order).data,
+        )
+
+
+class CustomerOrderReorderView(APIView):
+    throttle_scope = "user_detail"
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Re-add order items to cart",
+        description="Re-adds in-stock variant items from a past order back into the customer's active shopping cart.",
+        request=None,
+        responses={200: REORDER_RESPONSE_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, order_id):
+        order = Order.objects.filter(user=request.user, pk=order_id).first()
+        if not order:
+            return error_response("Order not found.", "ORDER_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        result = CartService.reorder(order=order, user=request.user)
+
+        return success_response(
+            message=f"Reordered {result['reordered_items_count']} item(s) to cart.",
+            data={
+                "reordered_items_count": result["reordered_items_count"],
+                "skipped_items": result["skipped_items"],
+            },
+        )
+
+
 class CustomerOrderTrackView(APIView):
-    """
-    Returns live tracking status and timeline for an order by internal order ID.
-    """
     throttle_scope = "user_detail"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
         operation_id="customer_orders_track_by_id",
-        tags=["Customer Orders"],
+        tags=["Orders - Consumer"],
         summary="Track order status by order ID",
         description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by internal database order ID.",
         parameters=[
@@ -431,55 +758,10 @@ class CustomerOrderTrackView(APIView):
         )
 
 
-class CustomerOrderCancelView(APIView):
-    """
-    Allows customer to cancel an order if it is still in PENDING or CONFIRMED status.
-    """
-    throttle_scope = "user_detail"
-    permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        tags=["Customer Orders"],
-        summary="Cancel customer order",
-        description="Cancels an order if it has not yet reached PROCESSING or SHIPPED status, restoring item inventory.",
-        request=None,
-        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
-    )
-    def post(self, request, order_id):
-        order = Order.objects.filter(user=request.user, pk=order_id).first()
-        if not order:
-            return error_response(
-                message="Order not found.",
-                code="ORDER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-
-        if order.status not in {OrderStatus.PENDING, OrderStatus.CONFIRMED}:
-            return error_response(
-                message=f"Cannot cancel order in '{order.status}' status. Only PENDING or CONFIRMED orders can be cancelled.",
-                code="ORDER_CANNOT_BE_CANCELLED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        cancelled_order = OrderService.update_order_status(
-            order=order,
-            new_status=OrderStatus.CANCELLED,
-            user=request.user,
-            notes="Cancelled by customer.",
-        )
-
-        return success_response(
-            message=f"Order {cancelled_order.order_number} has been cancelled successfully.",
-            data=OrderDetailSerializer(cancelled_order).data,
-        )
-
 class CustomerOrderTrackByNumberView(CustomerOrderTrackView):
-    """
-    Returns live tracking status and timeline for an order by public order number.
-    """
     @extend_schema(
         operation_id="customer_orders_track_by_order_number",
-        tags=["Customer Orders"],
+        tags=["Orders - Consumer"],
         summary="Track order status by order number",
         description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by order number (e.g. ORD-20261022-A1B2C3).",
         parameters=[

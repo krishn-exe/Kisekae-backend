@@ -40,6 +40,9 @@ class CartItemProductSerializer(serializers.ModelSerializer):
 
 class CartItemSerializer(serializers.ModelSerializer):
     product = CartItemProductSerializer(read_only=True)
+    variant_id = serializers.IntegerField(source="variant.id", read_only=True, allow_null=True)
+    color_name = serializers.CharField(source="variant.color_name", read_only=True, allow_null=True)
+    color_hex = serializers.CharField(source="variant.color_hex", read_only=True, allow_null=True)
     size = serializers.CharField(read_only=True)
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
@@ -50,6 +53,9 @@ class CartItemSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "product",
+            "variant_id",
+            "color_name",
+            "color_hex",
             "size",
             "quantity",
             "unit_price",
@@ -84,6 +90,12 @@ class CartSerializer(serializers.ModelSerializer):
 
 class AddToCartSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1, help_text="ID of the product to add.")
+    variant_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Optional ID of the specific color variant. If omitted, defaults to first active variant.",
+    )
     size = serializers.CharField(
         max_length=20,
         required=False,
@@ -146,6 +158,8 @@ class CheckoutOrderSummarySerializer(serializers.Serializer):
     currency = serializers.CharField()
     items_count = serializers.IntegerField()
     status = serializers.CharField()
+    razorpay_order_id = serializers.CharField(allow_blank=True, default="")
+    expires_at = serializers.DateTimeField(allow_null=True)
 
 
 class CartCheckoutResponseSerializer(serializers.Serializer):

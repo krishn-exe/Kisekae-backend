@@ -64,6 +64,14 @@ class CartItem(models.Model):
         on_delete=models.CASCADE,
         related_name="cart_items",
     )
+    variant = models.ForeignKey(
+        "products.ProductVariant",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="cart_items",
+        help_text="Selected color variant.",
+    )
     size = models.CharField(
         max_length=20,
         blank=True,
@@ -78,14 +86,15 @@ class CartItem(models.Model):
         ordering = ["created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["cart", "product", "size"],
-                name="unique_cart_product_size",
+                fields=["cart", "product", "variant", "size"],
+                name="unique_cart_product_variant_size",
             )
         ]
 
     def __str__(self):
-        size_label = f" ({self.size})" if self.size else ""
-        return f"{self.product.name}{size_label} x {self.quantity}"
+        variant_label = f" ({self.variant.color_name})" if self.variant else ""
+        size_label = f" [{self.size}]" if self.size else ""
+        return f"{self.product.name}{variant_label}{size_label} x {self.quantity}"
 
     @property
     def unit_price(self):
@@ -104,7 +113,18 @@ class CartItem(models.Model):
         )
         if not base_ok:
             return False
+
+        if self.variant:
+            if not self.variant.is_active:
+                return False
+            if self.size:
+                size_obj = self.variant.sizes.filter(size=self.size).first()
+                return size_obj is not None and size_obj.stock >= self.quantity
+            total_variant_stock = sum(s.stock for s in self.variant.sizes.all())
+            return total_variant_stock >= self.quantity
+
         if self.size and self.product.sizes.exists():
             size_obj = self.product.sizes.filter(size=self.size).first()
             return size_obj is not None and size_obj.stock >= self.quantity
+
         return self.product.stock >= self.quantity

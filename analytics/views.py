@@ -184,7 +184,7 @@ class OrderMetricsView(BaseAnalyticsView):
         tags=["Store - Analytics"],
         summary="Store order metrics & fulfillment velocity",
         description=(
-            "Aggregates order counts across all 6 lifecycle statuses (PENDING, CONFIRMED, PROCESSING, SHIPPED, "
+            "Aggregates order counts across lifecycle statuses (PENDING, CONFIRMED, SHIPPED, "
             "DELIVERED, CANCELLED), calculates cancellation percentage, "
             "and measures average fulfillment duration in hours for delivered orders."
         ),

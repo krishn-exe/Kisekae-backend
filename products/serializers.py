@@ -266,6 +266,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "ar_status",
             "average_rating",
             "review_count",
+            "is_refundable",
             "status",
             "created_at",
             "updated_at",
@@ -286,6 +287,11 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "FOOTWEAR (Footwear), HEADWEAR (Headwear), EYEWEAR (Eyewear), "
             "OUTERWEAR (Outerwear), ACCESSORIES (Accessories)."
         ),
+    )
+    is_refundable = serializers.BooleanField(
+        default=True,
+        required=False,
+        help_text="Seller option: whether this product allows customer returns/refunds post-delivery (up to 10 days).",
     )
     variants = serializers.ListField(
         child=VariantInputSerializer(),
@@ -312,6 +318,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "compare_at_price",
             "currency",
             "sku",
+            "is_refundable",
             "status",
             "variants",
             "sizes",
@@ -410,6 +417,7 @@ class BulkProductItemUpdateSerializer(serializers.Serializer):
     category = serializers.ChoiceField(choices=ProductCategory.choices, required=False)
     product_type = serializers.ChoiceField(choices=ProductType.choices, required=False)
     color = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    is_refundable = serializers.BooleanField(required=False)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     compare_at_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
 

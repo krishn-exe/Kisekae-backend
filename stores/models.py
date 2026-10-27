@@ -331,6 +331,8 @@ class StoreMembership(models.Model):
 
 
 class BusinessVerification(models.Model):
+    Status = VerificationStatus
+
     store = models.OneToOneField(
         Store,
         on_delete=models.CASCADE,

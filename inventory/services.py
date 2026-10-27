@@ -1,13 +1,230 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Case, F, IntegerField, Value, When
 from django.utils import timezone
 
-from products.models import Product
-
+from products.models import Product, ProductSize, ProductVariant
 from .models import StockAlert, StockChangeReason, StockUpdate
 
 
 class InventoryService:
+    @staticmethod
+    @transaction.atomic
+    def add_stock(
+        product,
+        delta,
+        variant_id=None,
+        size=None,
+        reason=StockChangeReason.RESTOCK,
+        notes="",
+        user=None,
+    ):
+        """
+        Atomically adds stock units (+delta) to a product or specific variant size
+        under a select_for_update() row lock, preventing race conditions.
+        """
+        if delta <= 0:
+            raise ValidationError("Stock delta to add must be a positive integer greater than zero.")
+
+        locked_product = Product.objects.select_for_update().get(pk=product.pk)
+        variant = None
+        size_obj = None
+
+        if variant_id:
+            variant = locked_product.variants.filter(pk=variant_id).first()
+            if not variant:
+                raise ValidationError(f"Variant ID {variant_id} not found for this product.")
+        else:
+            variant = locked_product.variants.first()
+
+        clean_size = (size or "").strip().upper()
+        if variant and variant.sizes.exists():
+            if clean_size:
+                size_obj = variant.sizes.select_for_update().filter(size=clean_size).first()
+            else:
+                size_obj = variant.sizes.select_for_update().filter(size="").first()
+                if not size_obj and variant.sizes.count() == 1:
+                    size_obj = variant.sizes.select_for_update().first()
+        elif locked_product.sizes.exists():
+            if clean_size:
+                size_obj = locked_product.sizes.select_for_update().filter(size=clean_size).first()
+            else:
+                size_obj = locked_product.sizes.select_for_update().filter(size="").first()
+                if not size_obj and locked_product.sizes.count() == 1:
+                    size_obj = locked_product.sizes.select_for_update().first()
+
+        if size_obj:
+            prev_stock = size_obj.stock
+            new_stock = prev_stock + delta
+            size_obj.stock = new_stock
+            size_obj.save(update_fields=["stock", "updated_at"])
+
+            update_record = StockUpdate.objects.create(
+                product=locked_product,
+                variant=variant,
+                variant_size=size_obj,
+                previous_stock=prev_stock,
+                new_stock=new_stock,
+                change_amount=delta,
+                reason=reason,
+                notes=notes,
+                created_by=user,
+            )
+            locked_product.sync_total_stock()
+            return locked_product, update_record
+
+        # General product stock addition
+        prev_stock = locked_product.stock
+        new_stock = prev_stock + delta
+        locked_product.stock = new_stock
+        locked_product.save(update_fields=["stock", "updated_at"])
+
+        update_record = StockUpdate.objects.create(
+            product=locked_product,
+            variant=variant,
+            variant_size=None,
+            previous_stock=prev_stock,
+            new_stock=new_stock,
+            change_amount=delta,
+            reason=reason,
+            notes=notes,
+            created_by=user,
+        )
+        return locked_product, update_record
+
+    @staticmethod
+    @transaction.atomic
+    def remove_stock(
+        product,
+        delta,
+        variant_id=None,
+        size=None,
+        reason=StockChangeReason.MANUAL_ADJUSTMENT,
+        notes="",
+        user=None,
+    ):
+        """
+        Atomically removes stock units (-delta) from a product or specific variant size
+        under a select_for_update() row lock, verifying sufficient stock exists.
+        """
+        if delta <= 0:
+            raise ValidationError("Stock delta to remove must be a positive integer greater than zero.")
+
+        locked_product = Product.objects.select_for_update().get(pk=product.pk)
+        variant = None
+        size_obj = None
+
+        if variant_id:
+            variant = locked_product.variants.filter(pk=variant_id).first()
+            if not variant:
+                raise ValidationError(f"Variant ID {variant_id} not found for this product.")
+        else:
+            variant = locked_product.variants.first()
+
+        clean_size = (size or "").strip().upper()
+        if variant and variant.sizes.exists():
+            if clean_size:
+                size_obj = variant.sizes.select_for_update().filter(size=clean_size).first()
+            else:
+                size_obj = variant.sizes.select_for_update().filter(size="").first()
+                if not size_obj and variant.sizes.count() == 1:
+                    size_obj = variant.sizes.select_for_update().first()
+        elif locked_product.sizes.exists():
+            if clean_size:
+                size_obj = locked_product.sizes.select_for_update().filter(size=clean_size).first()
+            else:
+                size_obj = locked_product.sizes.select_for_update().filter(size="").first()
+                if not size_obj and locked_product.sizes.count() == 1:
+                    size_obj = locked_product.sizes.select_for_update().first()
+
+        if size_obj:
+            if size_obj.stock < delta:
+                raise ValidationError(
+                    f"Cannot remove {delta} units. Available stock is only {size_obj.stock}."
+                )
+            prev_stock = size_obj.stock
+            new_stock = prev_stock - delta
+            size_obj.stock = new_stock
+            size_obj.save(update_fields=["stock", "updated_at"])
+
+            update_record = StockUpdate.objects.create(
+                product=locked_product,
+                variant=variant,
+                variant_size=size_obj,
+                previous_stock=prev_stock,
+                new_stock=new_stock,
+                change_amount=-delta,
+                reason=reason,
+                notes=notes,
+                created_by=user,
+            )
+            locked_product.sync_total_stock()
+            InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock)
+            return locked_product, update_record
+
+        if locked_product.stock < delta:
+            raise ValidationError(
+                f"Cannot remove {delta} units. Available product stock is only {locked_product.stock}."
+            )
+        prev_stock = locked_product.stock
+        new_stock = prev_stock - delta
+        locked_product.stock = new_stock
+        locked_product.save(update_fields=["stock", "updated_at"])
+
+        update_record = StockUpdate.objects.create(
+            product=locked_product,
+            variant=variant,
+            variant_size=None,
+            previous_stock=prev_stock,
+            new_stock=new_stock,
+            change_amount=-delta,
+            reason=reason,
+            notes=notes,
+            created_by=user,
+        )
+        InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock)
+        return locked_product, update_record
+
+    @staticmethod
+    @transaction.atomic
+    def bulk_delta_stock(store, items_data, user=None):
+        """
+        Applies atomic positive or negative stock deltas across multiple products/variants.
+        """
+        results = []
+        for item in items_data:
+            product_id = item["product_id"]
+            product = Product.objects.filter(store=store, pk=product_id).first()
+            if not product:
+                raise ValidationError(f"Product ID {product_id} not found in this store.")
+
+            delta = item.get("delta", 0)
+            if delta > 0:
+                prod, update_rec = InventoryService.add_stock(
+                    product=product,
+                    delta=delta,
+                    variant_id=item.get("variant_id"),
+                    size=item.get("size"),
+                    reason=item.get("reason", StockChangeReason.RESTOCK),
+                    notes=item.get("notes", ""),
+                    user=user,
+                )
+            elif delta < 0:
+                prod, update_rec = InventoryService.remove_stock(
+                    product=product,
+                    delta=abs(delta),
+                    variant_id=item.get("variant_id"),
+                    size=item.get("size"),
+                    reason=item.get("reason", StockChangeReason.MANUAL_ADJUSTMENT),
+                    notes=item.get("notes", ""),
+                    user=user,
+                )
+            else:
+                continue
+
+            results.append((prod, update_rec))
+        return results
+
     @staticmethod
     @transaction.atomic
     def update_stock(
@@ -18,49 +235,54 @@ class InventoryService:
         notes="",
         user=None,
     ):
-        locked_product = Product.objects.select_for_update().get(pk=product.pk)
-        previous_stock = locked_product.stock
-
+        """
+        Maintained for backwards compatibility: sets absolute stock or signed adjustment.
+        """
         if adjustment is not None:
-            computed_stock = previous_stock + adjustment
-            if computed_stock < 0:
-                raise ValidationError(
-                    f"Adjustment of {adjustment} would reduce stock below zero (current: {previous_stock})."
+            if adjustment >= 0:
+                return InventoryService.add_stock(
+                    product=product,
+                    delta=adjustment,
+                    reason=reason,
+                    notes=notes,
+                    user=user,
                 )
-            target_stock = computed_stock
-            change_amount = adjustment
-        elif new_stock is not None:
-            if new_stock < 0:
-                raise ValidationError("Stock cannot be negative.")
-            target_stock = new_stock
-            change_amount = new_stock - previous_stock
-        else:
-            raise ValidationError("Either new_stock or adjustment must be specified.")
+            return InventoryService.remove_stock(
+                product=product,
+                delta=abs(adjustment),
+                reason=reason,
+                notes=notes,
+                user=user,
+            )
 
-        locked_product.stock = target_stock
+        if new_stock is None or new_stock < 0:
+            raise ValidationError("Valid non-negative stock count must be provided.")
+
+        locked_product = Product.objects.select_for_update().get(pk=product.pk)
+        prev_stock = locked_product.stock
+        delta = new_stock - prev_stock
+
+        if locked_product.sizes.exists():
+            # If product has sizes, adjust the primary size
+            primary_size = locked_product.sizes.select_for_update().first()
+            if primary_size:
+                primary_size.stock = max(0, primary_size.stock + delta)
+                primary_size.save(update_fields=["stock", "updated_at"])
+                locked_product.sync_total_stock()
+
+        locked_product.stock = new_stock
         locked_product.save(update_fields=["stock", "updated_at"])
 
         update_record = StockUpdate.objects.create(
             product=locked_product,
-            previous_stock=previous_stock,
-            new_stock=target_stock,
-            change_amount=change_amount,
+            previous_stock=prev_stock,
+            new_stock=new_stock,
+            change_amount=delta,
             reason=reason,
             notes=notes,
             created_by=user,
         )
-
-        # Check and trigger stock alert if applicable
-        alert = StockAlert.objects.filter(product=locked_product, is_active=True).first()
-        if alert and target_stock <= alert.threshold:
-            alert.last_triggered_at = timezone.now()
-            alert.save(update_fields=["last_triggered_at", "updated_at"])
-            from notifications.tasks import send_seller_low_stock_alert_task
-            prod_id_val = locked_product.id
-            curr_stock_val = target_stock
-            thresh_val = alert.threshold
-            transaction.on_commit(lambda: send_seller_low_stock_alert_task.delay(prod_id_val, current_stock=curr_stock_val, threshold=thresh_val))
-
+        InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock)
         return locked_product, update_record
 
     @staticmethod
@@ -82,8 +304,26 @@ class InventoryService:
                 user=user,
             )
             results.append((updated_product, update_record))
-
         return results
+
+    @staticmethod
+    def _check_stock_alert(product, prev_stock, new_stock):
+        """
+        Debounced alert trigger: sends an alert only when crossing the threshold downward.
+        """
+        alert = StockAlert.objects.filter(product=product, is_active=True).first()
+        if alert and prev_stock > alert.threshold >= new_stock:
+            alert.last_triggered_at = timezone.now()
+            alert.save(update_fields=["last_triggered_at", "updated_at"])
+            from notifications.tasks import send_seller_low_stock_alert_task
+            prod_id_val = product.id
+            curr_stock_val = new_stock
+            thresh_val = alert.threshold
+            transaction.on_commit(
+                lambda: send_seller_low_stock_alert_task.delay(
+                    prod_id_val, current_stock=curr_stock_val, threshold=thresh_val
+                )
+            )
 
     @staticmethod
     def set_alert(product, threshold=5, is_active=True):
@@ -93,25 +333,54 @@ class InventoryService:
             product=product,
             defaults={"threshold": threshold, "is_active": is_active},
         )
+        # Immediately check if current stock is below the newly configured threshold
+        if is_active and product.stock <= threshold:
+            alert.last_triggered_at = timezone.now()
+            alert.save(update_fields=["last_triggered_at", "updated_at"])
+            from notifications.tasks import send_seller_low_stock_alert_task
+            prod_id_val = product.id
+            curr_stock_val = product.stock
+            thresh_val = threshold
+            transaction.on_commit(
+                lambda: send_seller_low_stock_alert_task.delay(
+                    prod_id_val, current_stock=curr_stock_val, threshold=thresh_val
+                )
+            )
         return alert
+
+    @staticmethod
+    def get_low_stock_products_queryset(store):
+        """
+        Scalable database SQL query replacing Python in-memory looping (BUG-17 fix).
+        """
+        return (
+            Product.objects.filter(store=store)
+            .select_related("stock_alert")
+            .annotate(
+                effective_threshold=Case(
+                    When(stock_alert__isnull=False, stock_alert__is_active=True, then=F("stock_alert__threshold")),
+                    default=Value(5),
+                    output_field=IntegerField(),
+                )
+            )
+            .filter(stock__lte=F("effective_threshold"))
+            .order_by("stock", "name")
+        )
 
     @staticmethod
     def get_low_stock_products(store):
         """
-        Returns all products in the store whose current stock is at or below
-        their configured alert threshold, or at or below default threshold (5).
+        Returns low-stock product list dictionary for reporting/analytics.
         """
-        products = Product.objects.filter(store=store).select_related("stock_alert")
-        low_stock = []
-        for p in products:
-            threshold = p.stock_alert.threshold if hasattr(p, "stock_alert") and p.stock_alert.is_active else 5
-            if p.stock <= threshold:
-                low_stock.append({
-                    "product_id": p.id,
-                    "product_name": p.name,
-                    "sku": p.sku,
-                    "current_stock": p.stock,
-                    "threshold": threshold,
-                    "status": p.status,
-                })
-        return low_stock
+        qs = InventoryService.get_low_stock_products_queryset(store)
+        return [
+            {
+                "product_id": p.id,
+                "product_name": p.name,
+                "sku": p.sku,
+                "current_stock": p.stock,
+                "threshold": getattr(p, "effective_threshold", 5),
+                "status": p.status,
+            }
+            for p in qs
+        ]

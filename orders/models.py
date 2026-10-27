@@ -7,20 +7,31 @@ from django.utils import timezone
 class OrderStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     CONFIRMED = "CONFIRMED", "Confirmed"
-    PROCESSING = "PROCESSING", "Processing"
     SHIPPED = "SHIPPED", "Shipped"
     DELIVERED = "DELIVERED", "Delivered"
     CANCELLED = "CANCELLED", "Cancelled"
+    REFUND_REQUESTED = "REFUND_REQUESTED", "Refund Requested"
+    REFUNDED = "REFUNDED", "Refunded"
+    FAILED = "FAILED", "Failed"
+
+
+class PaymentStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    PAID = "PAID", "Paid"
+    FAILED = "FAILED", "Failed"
+    REFUNDED = "REFUNDED", "Refunded"
 
 
 # Valid state transitions
 VALID_TRANSITIONS = {
-    OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
-    OrderStatus.CONFIRMED: {OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
-    OrderStatus.PROCESSING: {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
+    OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.CANCELLED},
+    OrderStatus.CONFIRMED: {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
     OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
-    OrderStatus.DELIVERED: set(),
+    OrderStatus.DELIVERED: {OrderStatus.REFUND_REQUESTED},
+    OrderStatus.REFUND_REQUESTED: {OrderStatus.REFUNDED, OrderStatus.DELIVERED},
     OrderStatus.CANCELLED: set(),
+    OrderStatus.REFUNDED: set(),
+    OrderStatus.FAILED: set(),
 }
 
 
@@ -69,6 +80,58 @@ class Order(models.Model):
         blank=True,
         help_text="Timestamp when order was delivered to the customer.",
     )
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Timestamp when the 5-minute pending payment reservation expires.",
+    )
+    razorpay_order_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Razorpay Order ID generated for payment capture.",
+    )
+    razorpay_payment_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Captured payment transaction ID from Razorpay.",
+    )
+    razorpay_signature = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Cryptographic signature verification token from Razorpay.",
+    )
+    payment_status = models.CharField(
+        max_length=30,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING,
+        db_index=True,
+    )
+    refund_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Razorpay refund transaction ID.",
+    )
+    refund_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Total refund amount processed.",
+    )
+    refund_reason = models.TextField(
+        blank=True,
+        default="",
+        help_text="Reason provided for refund request or cancellation.",
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -81,6 +144,26 @@ class Order(models.Model):
     def can_transition_to(self, new_status):
         allowed = VALID_TRANSITIONS.get(self.status, set())
         return new_status in allowed
+
+    def check_refund_eligibility(self):
+        """
+        Validates whether this order can be returned for a refund:
+        1. Must be DELIVERED.
+        2. Must be within 10 days of delivery.
+        3. All ordered products must have is_refundable == True.
+        """
+        if self.status != OrderStatus.DELIVERED or not self.delivered_at:
+            return False, "Order must be in DELIVERED status to request a refund."
+
+        cutoff = self.delivered_at + timezone.timedelta(days=10)
+        if timezone.now() > cutoff:
+            return False, "Return window has expired. Refunds can only be requested within 10 days of delivery."
+
+        for item in self.items.select_related("product").all():
+            if item.product and not item.product.is_refundable:
+                return False, f"Product '{item.product_name}' is non-refundable per seller policy."
+
+        return True, ""
 
 
 class OrderItem(models.Model):
@@ -96,8 +179,26 @@ class OrderItem(models.Model):
         blank=True,
         related_name="order_items",
     )
+    variant = models.ForeignKey(
+        "products.ProductVariant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_items",
+        help_text="Associated color variant purchased.",
+    )
+    variant_size = models.ForeignKey(
+        "products.ProductSize",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_items",
+        help_text="Associated variant inventory size record.",
+    )
     product_name = models.CharField(max_length=255)
     product_sku = models.CharField(max_length=100, blank=True, default="")
+    color_name = models.CharField(max_length=50, blank=True, default="")
+    color_hex = models.CharField(max_length=7, blank=True, default="")
     size = models.CharField(
         max_length=20,
         blank=True,

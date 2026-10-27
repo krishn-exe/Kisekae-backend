@@ -745,7 +745,7 @@ class ProductBulkUpdateView(APIView):
                     errors.append({"product_id": item["product_id"], "error": "Product not found"})
                     continue
                 update_data = {}
-                for field in ["status", "price", "compare_at_price", "category", "product_type", "color"]:
+                for field in ["status", "price", "compare_at_price", "category", "product_type", "color", "is_refundable"]:
                     if field in item:
                         update_data[field] = item[field]
                 if update_data:

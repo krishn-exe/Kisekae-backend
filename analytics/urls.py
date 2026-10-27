@@ -9,9 +9,9 @@ from .views import (
 )
 
 urlpatterns = [
-    path("analytics/dashboard/", AnalyticsDashboardView.as_view(), name="store-analytics-dashboard"),
-    path("analytics/revenue/", RevenueAnalyticsView.as_view(), name="store-analytics-revenue"),
-    path("analytics/products/", ProductPerformanceView.as_view(), name="store-analytics-products"),
-    path("analytics/orders/", OrderMetricsView.as_view(), name="store-analytics-orders"),
-    path("analytics/reports/download/", ReportDownloadView.as_view(), name="store-analytics-reports-download"),
+    path("dashboard/", AnalyticsDashboardView.as_view(), name="store-analytics-dashboard"),
+    path("revenue/", RevenueAnalyticsView.as_view(), name="store-analytics-revenue"),
+    path("products/", ProductPerformanceView.as_view(), name="store-analytics-products"),
+    path("orders/", OrderMetricsView.as_view(), name="store-analytics-orders"),
+    path("reports/download/", ReportDownloadView.as_view(), name="store-analytics-reports-download"),
 ]

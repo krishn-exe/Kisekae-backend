@@ -7,7 +7,10 @@ class StockChangeReason(models.TextChoices):
     RESTOCK = "RESTOCK", "Restock"
     ORDER_PLACED = "ORDER_PLACED", "Order Placed"
     ORDER_CANCELLED = "ORDER_CANCELLED", "Order Cancelled"
+    RESERVATION_HOLD = "RESERVATION_HOLD", "Reservation Hold"
+    RESERVATION_RELEASE = "RESERVATION_RELEASE", "Reservation Released"
     RETURN_RESTOCK = "RETURN_RESTOCK", "Return Restocked"
+    REFUND_RESTOCK = "REFUND_RESTOCK", "Refund Restocked"
     DAMAGED_OR_LOST = "DAMAGED_OR_LOST", "Damaged or Lost"
     AUDIT_CORRECTION = "AUDIT_CORRECTION", "Audit Correction"
 
@@ -17,6 +20,22 @@ class StockUpdate(models.Model):
         "products.Product",
         on_delete=models.CASCADE,
         related_name="stock_updates",
+    )
+    variant = models.ForeignKey(
+        "products.ProductVariant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stock_updates",
+        help_text="Variant associated with stock adjustment.",
+    )
+    variant_size = models.ForeignKey(
+        "products.ProductSize",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stock_updates",
+        help_text="Specific variant size associated with stock adjustment.",
     )
     previous_stock = models.PositiveIntegerField()
     new_stock = models.PositiveIntegerField()

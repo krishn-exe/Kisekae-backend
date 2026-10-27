@@ -46,6 +46,7 @@ class BaseCartView(APIView):
         return (
             Cart.objects.filter(pk=cart_id)
             .prefetch_related(
+                "items__variant",
                 "items__product__store",
                 "items__product__images",
                 "items__product__sizes",
@@ -103,10 +104,11 @@ class AddToCartView(BaseCartView):
 
         cart = self._get_cart(request)
         product_id = serializer.validated_data["product_id"]
+        variant_id = serializer.validated_data.get("variant_id")
         quantity = serializer.validated_data.get("quantity", 1)
         size = serializer.validated_data.get("size", "")
 
-        CartService.add_item(cart=cart, product_id=product_id, quantity=quantity, size=size)
+        CartService.add_item(cart=cart, product_id=product_id, variant_id=variant_id, quantity=quantity, size=size)
 
         cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
@@ -201,10 +203,10 @@ class CartValidateView(BaseCartView):
 
 class CartCheckoutView(APIView):
     """
-    Converts active shopping cart into confirmed order(s).
+    Converts active shopping cart into orders with 5-minute stock reservation.
     Requires customer authentication.
     Resolves shipping details from saved Address ID or provided request payload.
-    Payment gateway capture is skipped for PoC; orders are placed directly into CONFIRMED status.
+    Returns Razorpay order IDs for payment verification.
     """
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated]
@@ -212,9 +214,9 @@ class CartCheckoutView(APIView):
     @extend_schema(
         tags=["Cart & Checkout"],
         summary="Checkout shopping cart into orders",
-        description="Converts the user's shopping cart into confirmed orders grouped by store. Accepts saved address_id or inline shipping details. Automatically decrements inventory and empties the cart.",
+        description="Converts the user's shopping cart into orders grouped by store with 5-minute stock reservation and Razorpay payment details. Automatically decrements inventory and clears cart.",
         request=CartCheckoutSerializer,
-        responses={200: CART_CHECKOUT_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
+        responses={201: CART_CHECKOUT_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
     )
     def post(self, request):
         user = request.user
@@ -294,6 +296,8 @@ class CartCheckoutView(APIView):
                 "currency": o.currency,
                 "items_count": o.items.count(),
                 "status": o.status,
+                "razorpay_order_id": o.razorpay_order_id,
+                "expires_at": o.expires_at,
             }
             for o in orders
         ]

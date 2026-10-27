@@ -1,5 +1,6 @@
 from django.urls import path
 
+from cart.views import CartCheckoutView
 from .views import (
     BuyNowView,
     CustomerOrderCancelView,
@@ -16,6 +17,8 @@ from .views import (
 urlpatterns = [
     # Customer Orders List & Detail
     path("", CustomerOrderListView.as_view(), name="customer-order-list"),
+    path("checkout/", CartCheckoutView.as_view(), name="order-checkout"),
+    path("cart-checkout/", CartCheckoutView.as_view(), name="order-cart-checkout"),
     path("buy-now/", BuyNowView.as_view(), name="order-buy-now"),
     path("verify-payment/", PaymentVerifyView.as_view(), name="order-verify-payment"),
     path("webhook/razorpay/", RazorpayWebhookView.as_view(), name="order-razorpay-webhook"),

@@ -422,37 +422,11 @@ class BuyNowView(APIView):
         if not product:
             return error_response("Product not found.", "PRODUCT_NOT_FOUND", status.HTTP_404_NOT_FOUND)
 
-        address_id = data.get("address_id")
-        customer_name = data.get("customer_name") or getattr(user, "name", "") or user.email.split("@")[0]
-        customer_email = data.get("customer_email") or user.email
-        customer_phone = data.get("customer_phone") or getattr(user, "phone", "0000000000")
-        shipping_address = data.get("shipping_address") or ""
-        notes = data.get("notes", "")
-
-        if address_id:
-            addr = Address.objects.filter(user=user, pk=address_id).first()
-            if not addr:
-                return error_response(f"Address ID {address_id} not found.", "ADDRESS_NOT_FOUND", status.HTTP_404_NOT_FOUND)
-            customer_name = addr.recipient_name or customer_name
-            customer_phone = addr.phone or customer_phone
-            shipping_address = f"{addr.address_line_1}, {addr.address_line_2 or ''}, {addr.city}, {addr.state} {addr.postal_code}, {addr.country}".replace(" ,", "")
-        elif not shipping_address:
-            addr = Address.objects.filter(user=user, is_default=True).first() or Address.objects.filter(user=user).first()
-            if addr:
-                customer_name = addr.recipient_name or customer_name
-                customer_phone = addr.phone or customer_phone
-                shipping_address = f"{addr.address_line_1}, {addr.address_line_2 or ''}, {addr.city}, {addr.state} {addr.postal_code}, {addr.country}".replace(" ,", "")
-
-        if not shipping_address:
-            return error_response("Shipping address is required.", "SHIPPING_ADDRESS_REQUIRED", status_code=status.HTTP_400_BAD_REQUEST)
-
-        customer_data = {
-            "customer_name": customer_name,
-            "customer_email": customer_email,
-            "customer_phone": customer_phone,
-            "shipping_address": shipping_address,
-            "notes": notes,
-        }
+        try:
+            customer_data = OrderService.resolve_shipping_for_user(user, address_id=data.get("address_id"))
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(msg, code=getattr(exc, "code", "SHIPPING_ADDRESS_REQUIRED"), status_code=status.HTTP_400_BAD_REQUEST)
 
         items_payload = [
             {

@@ -11,6 +11,13 @@ from accounts.views import (
     WishlistBulkMoveToCartView,
     WishlistMoveToCartView,
 )
+from cart.views import (
+    AddToCartView,
+    CartClearView,
+    CartDetailView,
+    CartItemDetailView,
+    CartValidateView,
+)
 from tryon.views import (
     ComboDetailView,
     ComboItemAddView,
@@ -36,6 +43,13 @@ urlpatterns = [
     path("wishlist/<int:product_id>/", WishlistDetailView.as_view(), name="profile-wishlist-detail"),
     path("wishlist/move-to-cart/", WishlistBulkMoveToCartView.as_view(), name="wishlist-bulk-move-to-cart"),
     path("wishlist/<int:product_id>/move-to-cart/", WishlistMoveToCartView.as_view(), name="wishlist-move-to-cart"),
+
+    # Customer Shopping Cart
+    path("cart/", CartDetailView.as_view(), name="profile-cart-detail"),
+    path("cart/clear/", CartClearView.as_view(), name="profile-cart-clear"),
+    path("cart/items/", AddToCartView.as_view(), name="profile-cart-add-item"),
+    path("cart/items/<int:item_id>/", CartItemDetailView.as_view(), name="profile-cart-item-detail"),
+    path("cart/validate/", CartValidateView.as_view(), name="profile-cart-validate"),
 
     # Customer Saved AR Looks / Combos
     path("combos/", ComboListCreateView.as_view(), name="combo-list-create"),

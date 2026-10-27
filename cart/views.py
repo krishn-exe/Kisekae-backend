@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -62,7 +63,7 @@ class CartDetailView(BaseCartView):
     """
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Get current cart",
         description="Returns the contents, item count, and subtotal of the active cart with item sizes and thumbnails.",
         parameters=[
@@ -92,7 +93,7 @@ class AddToCartView(BaseCartView):
     """
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Add item to cart",
         description="Adds a product to the cart with an optional size. Validates product status, store availability, and size-specific stock.",
         request=AddToCartSerializer,
@@ -124,7 +125,7 @@ class CartItemDetailView(BaseCartView):
     """
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Update item quantity in cart",
         description="Updates the quantity of an existing cart item. Setting quantity to 0 removes the item.",
         request=UpdateCartItemSerializer,
@@ -145,7 +146,7 @@ class CartItemDetailView(BaseCartView):
         )
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Remove item from cart",
         description="Removes an item completely from the cart.",
         responses={200: CART_DETAIL_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 404: CART_ERROR_SCHEMA},
@@ -166,7 +167,7 @@ class CartClearView(BaseCartView):
     """
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Clear all items from cart",
         description="Empties the current cart of all items.",
         responses={200: CART_DETAIL_RESPONSE_SCHEMA},
@@ -187,7 +188,7 @@ class CartValidateView(BaseCartView):
     """
 
     @extend_schema(
-        tags=["Cart"],
+        tags=["Profile - Cart"],
         summary="Validate cart before checkout",
         description="Checks all items in the cart for store availability and size-specific stock. Returns issues if any items are invalid.",
         responses={200: CART_VALIDATE_RESPONSE_SCHEMA},
@@ -205,16 +206,16 @@ class CartCheckoutView(APIView):
     """
     Converts active shopping cart into orders with 5-minute stock reservation.
     Requires customer authentication.
-    Resolves shipping details from saved Address ID or provided request payload.
+    Resolves shipping details strictly from saved Address ID or user default profile address.
     Returns Razorpay order IDs for payment verification.
     """
     throttle_scope = "store_write"
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        tags=["Cart & Checkout"],
+        tags=["Orders - Consumer"],
         summary="Checkout shopping cart into orders",
-        description="Converts the user's shopping cart into orders grouped by store with 5-minute stock reservation and Razorpay payment details. Automatically decrements inventory and clears cart.",
+        description="Converts the user's active shopping cart into orders grouped by store with 5-minute stock reservations and Razorpay payment details. Resolves delivery details strictly from saved profile address.",
         request=CartCheckoutSerializer,
         responses={201: CART_CHECKOUT_RESPONSE_SCHEMA, 400: CART_ERROR_SCHEMA, 401: CART_ERROR_SCHEMA},
     )
@@ -223,62 +224,12 @@ class CartCheckoutView(APIView):
         serializer = CartCheckoutSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
 
-        data = serializer.validated_data
-        address_id = data.get("address_id")
-
-        customer_name = data.get("customer_name") or ""
-        customer_email = data.get("customer_email") or user.email
-        customer_phone = data.get("customer_phone") or getattr(user, "phone", "")
-        shipping_address = data.get("shipping_address") or ""
-        notes = data.get("notes") or ""
-
-        # Resolve address from saved address if provided or fallback
-        from accounts.models import Address
-        address_obj = None
-        if address_id:
-            address_obj = Address.objects.filter(user=user, pk=address_id).first()
-            if not address_obj:
-                return error_response(
-                    message=f"Saved address ID {address_id} not found on your profile.",
-                    code="ADDRESS_NOT_FOUND",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
-        elif not shipping_address:
-            # Check for user default address
-            address_obj = Address.objects.filter(user=user, is_default=True).first() or Address.objects.filter(user=user).first()
-
-        if address_obj:
-            customer_name = customer_name or address_obj.recipient_name or getattr(user, "name", "") or user.email.split("@")[0]
-            customer_phone = customer_phone or address_obj.phone or getattr(user, "phone", "0000000000")
-            full_addr_parts = [
-                address_obj.address_line_1,
-                address_obj.address_line_2,
-                address_obj.city,
-                address_obj.state,
-                address_obj.postal_code,
-                address_obj.country,
-            ]
-            shipping_address = ", ".join([p for p in full_addr_parts if p])
-
-        if not customer_name:
-            customer_name = getattr(user, "name", "") or user.email.split("@")[0]
-        if not customer_phone:
-            customer_phone = getattr(user, "phone", "0000000000") or "0000000000"
-
-        if not shipping_address:
-            return error_response(
-                message="Shipping address is required. Please provide shipping_address or a valid address_id.",
-                code="SHIPPING_ADDRESS_REQUIRED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        customer_data = {
-            "customer_name": customer_name,
-            "customer_email": customer_email,
-            "customer_phone": customer_phone,
-            "shipping_address": shipping_address,
-            "notes": notes,
-        }
+        from orders.services import OrderService
+        try:
+            customer_data = OrderService.resolve_shipping_for_user(user, address_id=serializer.validated_data.get("address_id"))
+        except ValidationError as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            return error_response(msg, code=getattr(exc, "code", "SHIPPING_ADDRESS_REQUIRED"), status_code=status.HTTP_400_BAD_REQUEST)
 
         cart = CartService.get_or_create_cart(user=user)
         orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data)

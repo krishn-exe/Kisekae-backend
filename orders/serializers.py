@@ -119,15 +119,15 @@ class OrderDeliverSerializer(serializers.Serializer):
 
 class BuyNowSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1, help_text="ID of product to buy directly.")
-    variant_id = serializers.IntegerField(required=False, allow_null=True, default=None, help_text="Specific color variant ID.")
+    variant_id = serializers.IntegerField(required=False, allow_null=True, default=None, help_text="Specific color variant ID (defaults to primary active variant).")
     size = serializers.CharField(required=False, allow_blank=True, default="", help_text="Apparel/shoe size.")
     quantity = serializers.IntegerField(default=1, min_value=1, help_text="Quantity to purchase.")
-    address_id = serializers.IntegerField(required=False, allow_null=True, help_text="Saved profile address ID.")
-    customer_name = serializers.CharField(required=False, allow_blank=True)
-    customer_email = serializers.EmailField(required=False, allow_blank=True)
-    customer_phone = serializers.CharField(required=False, allow_blank=True)
-    shipping_address = serializers.CharField(required=False, allow_blank=True)
-    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    address_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Optional ID of saved delivery address. If omitted, user's default profile address is used.",
+    )
 
 
 class PaymentVerifySerializer(serializers.Serializer):

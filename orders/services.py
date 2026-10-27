@@ -22,6 +22,56 @@ logger = logging.getLogger(__name__)
 
 class OrderService:
     @staticmethod
+    def resolve_shipping_for_user(user, address_id=None):
+        """
+        Resolves customer delivery details strictly from the authenticated user's
+        saved address records, preventing manual/redundant data entry.
+        """
+        from accounts.models import Address
+
+        if not user or not user.is_authenticated:
+            raise ValidationError("Authentication required to resolve delivery address.", code="AUTHENTICATION_REQUIRED")
+
+        addr = None
+        if address_id:
+            addr = Address.objects.filter(user=user, pk=address_id).first()
+            if not addr:
+                raise ValidationError(f"Saved address ID {address_id} not found on your profile.", code="ADDRESS_NOT_FOUND")
+        else:
+            addr = Address.objects.filter(user=user, is_default=True).first() or Address.objects.filter(user=user).first()
+            if not addr:
+                raise ValidationError(
+                    "No delivery address found. Please add a shipping address to your profile before checkout.",
+                    code="NO_SHIPPING_ADDRESS",
+                )
+
+        customer_name = addr.recipient_name or getattr(user, "name", "") or user.email.split("@")[0]
+        customer_phone = addr.phone or getattr(user, "phone", "") or "0000000000"
+        customer_email = user.email
+
+        parts = [addr.address_line_1]
+        if addr.address_line_2:
+            parts.append(addr.address_line_2)
+        if addr.city:
+            parts.append(addr.city)
+        if addr.state:
+            parts.append(addr.state)
+        if addr.postal_code:
+            parts.append(addr.postal_code)
+        if addr.country:
+            parts.append(addr.country)
+        shipping_address = ", ".join([p for p in parts if p])
+
+        return {
+            "customer_name": customer_name,
+            "customer_email": customer_email,
+            "customer_phone": customer_phone,
+            "shipping_address": shipping_address,
+            "notes": "",
+            "address": addr,
+        }
+
+    @staticmethod
     @transaction.atomic
     def create_order(store, customer_data, items_data, user=None):
         """

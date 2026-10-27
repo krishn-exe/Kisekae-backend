@@ -85,13 +85,6 @@ class ReviewUpdateSerializer(serializers.Serializer):
     )
 
 
-class RatingBreakdownSerializer(serializers.Serializer):
-    star_5 = serializers.IntegerField(source="5", default=0, help_text="Number of 5-star reviews.")
-    star_4 = serializers.IntegerField(source="4", default=0, help_text="Number of 4-star reviews.")
-    star_3 = serializers.IntegerField(source="3", default=0, help_text="Number of 3-star reviews.")
-    star_2 = serializers.IntegerField(source="2", default=0, help_text="Number of 2-star reviews.")
-    star_1 = serializers.IntegerField(source="1", default=0, help_text="Number of 1-star reviews.")
-
 
 class RatingSummarySerializer(serializers.Serializer):
     average_rating = serializers.FloatField(help_text="Average product rating (0.0 to 5.0).")

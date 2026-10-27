@@ -7,12 +7,7 @@ from .models import (
     ARStatus,
     Combo,
     ComboItem,
-    TRYON_SUPPORTED_CATEGORIES,
-    TRYON_UNSUPPORTED_CATEGORIES,
-    TryOnAngle,
-    TryOnProductAsset,
     TryOnRequest,
-    TryOnRequestStatus,
 )
 from .services import ComboValidationService
 

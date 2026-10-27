@@ -2,7 +2,7 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from products.models import Product, ProductSize, ProductStatus
+from products.models import Product, ProductStatus
 from stores.models import StoreStatus
 
 from .models import Cart, CartItem

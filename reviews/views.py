@@ -1,4 +1,3 @@
-from decimal import Decimal
 from django.db.models import Avg, Count
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status

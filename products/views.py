@@ -1,8 +1,7 @@
 from decimal import Decimal
-from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models import Case, Count, FloatField, Prefetch, Q, Value, When
-from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from pgvector.django import CosineDistance
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -13,18 +12,14 @@ from accounts.responses import error_response, success_response
 from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
-from stores.validators import validate_store_image, MAX_LOGO_SIZE
+from stores.validators import validate_store_image
 
 from .models import (
     Product,
     ProductCategory,
     ProductImage,
-    ProductSize,
     ProductStatus,
-    ProductView,
-    SearchHistory,
-    UserTasteProfile,
-)
+    SearchHistory)
 from .serializers import (
     BulkProductUpdateSerializer,
     CategoryItemSerializer,
@@ -35,152 +30,38 @@ from .serializers import (
     ProductSerializer,
     ProductUpdateSerializer,
     PublicProductDetailSerializer,
-    PublicProductSerializer,
-    SearchHistorySerializer,
-)
+    SearchHistorySerializer)
 from .embedding_service import EmbeddingService
 from .recommendation_service import RecommendationService
 from .services import MAX_IMAGES_PER_PRODUCT, ProductService
 from .tasks import record_product_view_task, record_search_query_task
 
-PRODUCT_ERROR_SCHEMA = inline_serializer(
-    name="ProductErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="ProductErrorDetail",
-            fields={
-                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. PRODUCT_NOT_FOUND, STORE_ARCHIVED)."),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
-PRODUCT_ACTION_SUCCESS_SCHEMA = inline_serializer(
-    name="ProductActionSuccessResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": serializers.JSONField(default=None, allow_null=True),
-    },
+PRODUCT_ERROR_SCHEMA = ERROR_SCHEMA
+PRODUCT_ACTION_SUCCESS_SCHEMA = api_response(serializers.JSONField(default=None, allow_null=True), "ProductActionSuccessResponse")
+STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProductDetailResponse")
+STORE_PRODUCT_LIST_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProductListResponse", many=True)
+CATEGORY_LIST_RESPONSE_SCHEMA = api_response(CategoryItemSerializer, "CategoryListResponse", many=True, message="Categories fetched successfully.")
+PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA = api_response(ProductImageSerializer, "ProductImageListResponse", many=True)
+PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = api_response(ProductListingStatusSerializer, "ProductListingStatusResponse")
+PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "ProductListPaginatedData")
+PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="ProductSearchPaginatedData",
+        fields={
+            "query": serializers.CharField(allow_null=True, help_text="Search query string executed."),
+            "count": serializers.IntegerField(help_text="Total search results count."),
+            "next": serializers.CharField(allow_null=True, help_text="URL for next page of search results."),
+            "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of search results."),
+            "results": ProductCardSerializer(many=True),
+        },
+    ),
+    "ProductSearchPaginatedResponse",
 )
-
-STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreProductDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ProductSerializer(),
-    },
-)
-
-STORE_PRODUCT_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreProductListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ProductSerializer(many=True),
-    },
-)
-
-CATEGORY_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="CategoryListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(default="Categories fetched successfully."),
-        "data": CategoryItemSerializer(many=True),
-    },
-)
-
-PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="ProductImageListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ProductImageSerializer(many=True),
-    },
-)
-
-PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = inline_serializer(
-    name="ProductListingStatusResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ProductListingStatusSerializer(),
-    },
-)
-
-PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
-    name="ProductListPaginatedResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="ProductListPaginatedData",
-            fields={
-                "count": serializers.IntegerField(help_text="Total active matching products count."),
-                "next": serializers.CharField(allow_null=True, help_text="URL for next page of products."),
-                "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of products."),
-                "results": ProductCardSerializer(many=True),
-            },
-        ),
-    },
-)
-
-PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
-    name="ProductSearchPaginatedResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="ProductSearchPaginatedData",
-            fields={
-                "query": serializers.CharField(allow_null=True, help_text="Search query string executed."),
-                "count": serializers.IntegerField(help_text="Total search results count."),
-                "next": serializers.CharField(allow_null=True, help_text="URL for next page of search results."),
-                "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of search results."),
-                "results": ProductCardSerializer(many=True),
-            },
-        ),
-    },
-)
-
-PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="PublicProductDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": PublicProductDetailSerializer(),
-    },
-)
-
-SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="SearchHistoryListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": SearchHistorySerializer(many=True),
-    },
-)
-
-RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
-    name="RecommendationFeedPaginatedResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="RecommendationFeedPaginatedData",
-            fields={
-                "count": serializers.IntegerField(help_text="Total recommended products count."),
-                "next": serializers.CharField(allow_null=True),
-                "previous": serializers.CharField(allow_null=True),
-                "results": ProductCardSerializer(many=True),
-            },
-        ),
-    },
-)
+PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(PublicProductDetailSerializer, "PublicProductDetailResponse")
+SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = api_response(SearchHistorySerializer, "SearchHistoryListResponse", many=True)
+RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "RecommendationFeedPaginatedData")
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
@@ -214,13 +95,11 @@ def get_optimized_product_queryset():
         Product.objects.filter(
             status=ProductStatus.ACTIVE,
             store__status=StoreStatus.ACTIVE,
-            store__archived_at__isnull=True,
-        )
+            store__archived_at__isnull=True)
         .select_related("store")
         .prefetch_related(
             Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-            "sizes",
-        )
+            "sizes")
     )
 
 
@@ -294,38 +173,13 @@ class CategoryListView(APIView):
             "The 'code' field corresponds to the ProductCategory enum value (ONE_PIECE, TOP, BOTTOM, FOOTWEAR, "
             "HEADWEAR, EYEWEAR, OUTERWEAR, ACCESSORIES) and is used for filtering products via '?category=<code>' or '?type=<code>'."
         ),
-        responses={200: CATEGORY_LIST_RESPONSE_SCHEMA},
-        examples=[
-            OpenApiExample(
-                name="CategoryListSuccessExample",
-                summary="Product Categories with Active Product Counts",
-                description="List of fashion categories with category code enum and active inventory product count.",
-                value={
-                    "success": True,
-                    "message": "Categories fetched successfully.",
-                    "data": [
-                        {"code": "ONE_PIECE", "name": "One-Piece", "products_count": 5},
-                        {"code": "TOP", "name": "Top", "products_count": 24},
-                        {"code": "BOTTOM", "name": "Bottom", "products_count": 18},
-                        {"code": "FOOTWEAR", "name": "Footwear", "products_count": 10},
-                        {"code": "HEADWEAR", "name": "Headwear", "products_count": 4},
-                        {"code": "EYEWEAR", "name": "Eyewear", "products_count": 3},
-                        {"code": "OUTERWEAR", "name": "Outerwear", "products_count": 8},
-                        {"code": "ACCESSORIES", "name": "Accessories", "products_count": 15},
-                    ],
-                },
-                response_only=True,
-                status_codes=["200"],
-            )
-        ],
-    )
+        responses={200: CATEGORY_LIST_RESPONSE_SCHEMA})
     def get(self, request):
         active_counts = dict(
             Product.objects.filter(
                 status=ProductStatus.ACTIVE,
                 store__status=StoreStatus.ACTIVE,
-                store__archived_at__isnull=True,
-            )
+                store__archived_at__isnull=True)
             .values("category")
             .annotate(cnt=Count("id"))
             .values_list("category", "cnt")
@@ -342,8 +196,7 @@ class CategoryListView(APIView):
 
         return success_response(
             message="Categories fetched successfully.",
-            data=categories_data,
-        )
+            data=categories_data)
 
 
 # ============================================================================
@@ -365,39 +218,33 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 name="status",
                 description="Filter by product status (DRAFT, ACTIVE, INACTIVE)",
                 required=False,
-                type=str,
-            ),
+                type=str),
             OpenApiParameter(
                 name="category",
                 description="Filter by category (e.g. TOP, BOTTOM, FOOTWEAR)",
                 required=False,
-                type=str,
-            ),
+                type=str),
             OpenApiParameter(
                 name="search",
                 description="Search products by name or SKU",
                 required=False,
-                type=str,
-            ),
+                type=str),
         ],
-        responses={200: STORE_PRODUCT_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: STORE_PRODUCT_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
             return error_response(
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         queryset = (
             Product.objects.for_store(store)
             .select_related("store")
             .prefetch_related(
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-                "sizes",
-            )
+                "sizes")
         )
 
         status_filter = request.query_params.get("status")
@@ -425,8 +272,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
                 "results": serializer.data,
-            },
-        )
+            })
 
     @extend_schema(
         operation_id="seller_store_product_create",
@@ -439,59 +285,44 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             400: PRODUCT_ERROR_SCHEMA,
             403: PRODUCT_ERROR_SCHEMA,
             404: PRODUCT_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
             return error_response(
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if store.is_archived:
             return error_response(
                 message="Cannot add products to an archived store.",
                 code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
         if store.status == StoreStatus.SUSPENDED:
             return error_response(
                 message="Cannot add products to a suspended store.",
                 code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         if not store.is_business_verified:
             return error_response(
                 message="Store business verification must be completed before adding products.",
                 code="BUSINESS_VERIFICATION_REQUIRED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         serializer = ProductCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            product = ProductService.create_product(
-                store=store,
-                user=request.user,
-                **serializer.validated_data,
-            )
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="PRODUCT_CREATE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        product = ProductService.create_product(
+            store=store,
+            user=request.user,
+            **serializer.validated_data)
 
         return success_response(
             message="Product created successfully.",
             data=ProductSerializer(product).data,
-            status_code=status.HTTP_201_CREATED,
-        )
+            status_code=status.HTTP_201_CREATED)
 
 
 class ProductDetailView(ProductMethodThrottleMixin, APIView):
@@ -507,8 +338,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             .select_related("store")
             .prefetch_related(
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-                "sizes",
-            )
+                "sizes")
             .first()
         )
         return store, membership, product
@@ -518,27 +348,23 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
         tags=["Products"],
         summary="Get product details",
         description="Returns details of a specific product with its images and size stocks.",
-        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
         if not store:
             return error_response(
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         if not product:
             return error_response(
                 message="Product not found.",
                 code="PRODUCT_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         return success_response(
             message="Product details fetched successfully.",
-            data=ProductSerializer(product).data,
-        )
+            data=ProductSerializer(product).data)
 
     @extend_schema(
         tags=["Products"],
@@ -549,93 +375,73 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             200: ProductSerializer,
             400: PRODUCT_ERROR_SCHEMA,
             404: PRODUCT_ERROR_SCHEMA,
-        },
-    )
+        })
     def patch(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
         if not store:
             return error_response(
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         if not product:
             return error_response(
                 message="Product not found.",
                 code="PRODUCT_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if store.is_archived:
             return error_response(
                 message="Cannot modify products in an archived store.",
                 code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
         if store.status == StoreStatus.SUSPENDED:
             return error_response(
                 message="Cannot modify products in a suspended store.",
                 code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         serializer = ProductUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            updated_product = ProductService.update_product(product, **serializer.validated_data)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="PRODUCT_UPDATE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_product = ProductService.update_product(product, **serializer.validated_data)
 
         return success_response(
             message="Product updated successfully.",
-            data=ProductSerializer(updated_product).data,
-        )
+            data=ProductSerializer(updated_product).data)
 
     @extend_schema(
         tags=["Products"],
         summary="Delete a product",
         description="Permanently deletes a product and cleans up gallery images.",
-        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def delete(self, request, pk, product_pk):
         store, _, product = self._get_product(request.user, pk, product_pk)
         if not store:
             return error_response(
                 message="Store not found.",
                 code="STORE_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         if not product:
             return error_response(
                 message="Product not found.",
                 code="PRODUCT_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if store.is_archived:
             return error_response(
                 message="Cannot delete products from an archived store.",
                 code="STORE_ARCHIVED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
         if store.status == StoreStatus.SUSPENDED:
             return error_response(
                 message="Cannot delete products from a suspended store.",
                 code="STORE_SUSPENDED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         ProductService.delete_product(product)
         return success_response(
             message="Product deleted successfully.",
-            data=None,
-        )
+            data=None)
 
 
 # ============================================================================
@@ -668,8 +474,7 @@ class ProductMultipleImageView(APIView):
         tags=["Products"],
         summary="List all product images",
         description="Returns list of all images for this product (up to 10 images).",
-        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, pk, product_pk):
         product, err = self._get_product(request.user, pk, product_pk)
         if err:
@@ -677,8 +482,7 @@ class ProductMultipleImageView(APIView):
         images = product.images.all()
         return success_response(
             message="Product images fetched successfully.",
-            data=ProductImageSerializer(images, many=True).data,
-        )
+            data=ProductImageSerializer(images, many=True).data)
 
     @extend_schema(
         tags=["Products"],
@@ -686,10 +490,8 @@ class ProductMultipleImageView(APIView):
         description="Uploads one or multiple images to the product image gallery (JPEG, PNG, WEBP; max 5MB each). Maximum 10 images per product.",
         request=inline_serializer(
             name="ProductMultiImageUpload",
-            fields={"images": serializers.ListField(child=serializers.ImageField(), required=False), "file": serializers.ImageField(required=False)},
-        ),
-        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+            fields={"images": serializers.ListField(child=serializers.ImageField(), required=False), "file": serializers.ImageField(required=False)}),
+        responses={200: PRODUCT_IMAGE_LIST_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def post(self, request, pk, product_pk):
         product, err = self._get_product(request.user, pk, product_pk)
         if err:
@@ -709,15 +511,10 @@ class ProductMultipleImageView(APIView):
             return error_response(
                 f"Cannot upload {len(uploaded_files)} image(s). Product currently has {current_count}/{MAX_IMAGES_PER_PRODUCT} images.",
                 "MAX_IMAGES_EXCEEDED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         for f in uploaded_files:
-            try:
-                validate_store_image(f, MAX_PRODUCT_IMAGE_SIZE, "product image")
-            except ValidationError as e:
-                msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-                return error_response(msg, "INVALID_IMAGE", status_code=status.HTTP_400_BAD_REQUEST)
+            validate_store_image(f, MAX_PRODUCT_IMAGE_SIZE, "product image")
 
         added = []
         for f in uploaded_files:
@@ -727,8 +524,7 @@ class ProductMultipleImageView(APIView):
         return success_response(
             message=f"{len(added)} image(s) added successfully.",
             data=ProductImageSerializer(product.images.all(), many=True).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class ProductImageDetailView(APIView):
@@ -740,8 +536,7 @@ class ProductImageDetailView(APIView):
         tags=["Products"],
         summary="Delete a specific product image",
         description="Deletes a specific gallery image by ID. If thumbnail was deleted, promotes the next available image.",
-        responses={200: inline_serializer(name="ProductImageDeleteSuccess", fields={"success": serializers.BooleanField()}), 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: inline_serializer(name="ProductImageDeleteSuccess", fields={"success": serializers.BooleanField()}), 404: PRODUCT_ERROR_SCHEMA})
     def delete(self, request, pk, product_pk, image_id):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -750,11 +545,7 @@ class ProductImageDetailView(APIView):
         if not product:
             return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        try:
-            ProductService.remove_gallery_image(product, image_id)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(msg, "IMAGE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        ProductService.remove_gallery_image(product, image_id)
 
         return success_response(message="Product image removed successfully.")
 
@@ -771,10 +562,8 @@ class ProductImageView(APIView):
         description="Uploads or replaces the primary product thumbnail image (JPEG, PNG, WEBP; max 5MB).",
         request=inline_serializer(
             name="ProductImageUpload",
-            fields={"file": serializers.ImageField()},
-        ),
-        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+            fields={"file": serializers.ImageField()}),
+        responses={200: STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def put(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -792,24 +581,18 @@ class ProductImageView(APIView):
         if not image_file:
             return error_response("Image file is required.", "VALIDATION_ERROR", status_code=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            validate_store_image(image_file, MAX_PRODUCT_IMAGE_SIZE, "product image")
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(msg, "INVALID_IMAGE", status_code=status.HTTP_400_BAD_REQUEST)
+        validate_store_image(image_file, MAX_PRODUCT_IMAGE_SIZE, "product image")
 
         updated = ProductService.set_product_image(product, image_file)
         return success_response(
             message="Product image uploaded successfully.",
-            data=ProductSerializer(updated).data,
-        )
+            data=ProductSerializer(updated).data)
 
     @extend_schema(
         tags=["Products"],
         summary="Remove primary product image",
         description="Removes the primary product image.",
-        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: PRODUCT_ACTION_SUCCESS_SCHEMA, 400: PRODUCT_ERROR_SCHEMA, 403: PRODUCT_ERROR_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def delete(self, request, pk, product_pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -830,8 +613,7 @@ class ProductListingStatusView(APIView):
         tags=["Products"],
         summary="Get catalog listing status overview",
         description="Returns breakdown of product counts by status (ACTIVE, DRAFT, INACTIVE) and stock health.",
-        responses={200: PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -844,13 +626,11 @@ class ProductListingStatusView(APIView):
             draft=Count("id", filter=Q(status=ProductStatus.DRAFT)),
             inactive=Count("id", filter=Q(status=ProductStatus.INACTIVE)),
             in_stock=Count("id", filter=Q(stock__gt=0)),
-            out_of_stock=Count("id", filter=Q(stock=0)),
-        )
+            out_of_stock=Count("id", filter=Q(stock=0)))
 
         return success_response(
             message="Listing status fetched successfully.",
-            data=counts,
-        )
+            data=counts)
 
 
 class ProductBulkUpdateView(APIView):
@@ -869,11 +649,8 @@ class ProductBulkUpdateView(APIView):
                 "message": serializers.CharField(),
                 "data": inline_serializer(
                     name="BulkProductUpdateData",
-                    fields={"updated_count": serializers.IntegerField()},
-                ),
-            },
-        ), 400: PRODUCT_ERROR_SCHEMA},
-    )
+                    fields={"updated_count": serializers.IntegerField()}),
+            }), 400: PRODUCT_ERROR_SCHEMA})
     def patch(self, request, pk):
         store, _ = get_store_membership(request.user, pk)
         if not store:
@@ -907,8 +684,7 @@ class ProductBulkUpdateView(APIView):
 
         return success_response(
             message=f"Bulk update completed: {len(updated_ids)} updated, {len(errors)} errors.",
-            data={"updated_count": len(updated_ids), "updated_ids": updated_ids, "errors": errors},
-        )
+            data={"updated_count": len(updated_ids), "updated_ids": updated_ids, "errors": errors})
 
 
 # ============================================================================
@@ -944,8 +720,7 @@ class PublicProductListView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
-    )
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA})
     def get(self, request):
         queryset = get_optimized_product_queryset()
 
@@ -995,8 +770,7 @@ class PublicProductListView(APIView):
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
                 "results": serializer.data,
-            },
-        )
+            })
 
 
 class ProductSearchView(APIView):
@@ -1031,8 +805,7 @@ class ProductSearchView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
-    )
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA})
     def get(self, request):
         query = (
             request.query_params.get("q")
@@ -1098,18 +871,18 @@ class ProductSearchView(APIView):
         ordering = request.query_params.get("ordering", default_ordering).strip().lower()
 
         valid_orderings = {
-            "name": ("name",),
-            "-name": ("-name",),
-            "a-z": ("name",),
-            "z-a": ("-name",),
-            "price": ("price",),
-            "price_asc": ("price",),
-            "-price": ("-price",),
-            "price_desc": ("-price",),
-            "created_at": ("created_at",),
-            "oldest": ("created_at",),
-            "-created_at": ("-created_at",),
-            "newest": ("-created_at",),
+            "name": ("name"),
+            "-name": ("-name"),
+            "a-z": ("name"),
+            "z-a": ("-name"),
+            "price": ("price"),
+            "price_asc": ("price"),
+            "-price": ("-price"),
+            "price_desc": ("-price"),
+            "created_at": ("created_at"),
+            "oldest": ("created_at"),
+            "-created_at": ("-created_at"),
+            "newest": ("-created_at"),
         }
 
         if ordering == "relevance" and has_vector_search:
@@ -1119,11 +892,9 @@ class ProductSearchView(APIView):
                     When(name__istartswith=query, then=Value(0.1)),
                     When(name__icontains=query, then=Value(0.2)),
                     default=Value(1.0),
-                    output_field=FloatField(),
-                ),
+                    output_field=FloatField()),
                 "distance",
-                "-created_at",
-            )
+                "-created_at")
         elif ordering in valid_orderings:
             queryset = queryset.order_by(*valid_orderings[ordering])
         else:
@@ -1152,8 +923,7 @@ class ProductSearchView(APIView):
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
                 "results": serializer.data,
-            },
-        )
+            })
 
 
 class PublicProductDetailView(APIView):
@@ -1169,37 +939,32 @@ class PublicProductDetailView(APIView):
         tags=["Public Products"],
         summary="Get public product detail",
         description="Returns full details for an active product, including all gallery images (up to 10), category, color, and size breakdown.",
-        responses={200: PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, product_pk):
         product = (
             Product.objects.filter(
                 pk=product_pk,
                 status=ProductStatus.ACTIVE,
                 store__status=StoreStatus.ACTIVE,
-                store__archived_at__isnull=True,
-            )
+                store__archived_at__isnull=True)
             .select_related("store")
             .prefetch_related(
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-                "sizes",
-            )
+                "sizes")
             .first()
         )
         if not product:
             return error_response(
                 message="Product not found or unavailable.",
                 code="PRODUCT_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if request.user and request.user.is_authenticated:
             record_product_view_task.delay(request.user.id, product.id)
 
         return success_response(
             message="Product details fetched successfully.",
-            data=PublicProductDetailSerializer(product).data,
-        )
+            data=PublicProductDetailSerializer(product).data)
 
 
 
@@ -1219,27 +984,23 @@ class SearchHistoryListView(APIView):
         tags=["Search History"],
         summary="List user's search history",
         description="Returns the user's recent search queries. These queries feed directly into the recommendation ML taste profile.",
-        responses={200: SEARCH_HISTORY_LIST_RESPONSE_SCHEMA},
-    )
+        responses={200: SEARCH_HISTORY_LIST_RESPONSE_SCHEMA})
     def get(self, request):
         history = SearchHistory.objects.filter(user=request.user).order_by("-last_searched_at")[:30]
         return success_response(
             message="Search history fetched successfully.",
-            data=SearchHistorySerializer(history, many=True).data,
-        )
+            data=SearchHistorySerializer(history, many=True).data)
 
     @extend_schema(
         operation_id="clear_all_search_history",
         tags=["Search History"],
         summary="Clear user's search history",
         description="Clears all stored search queries for the authenticated user and excludes them from future ML taste profile refreshes.",
-        responses={200: inline_serializer(name="SearchHistoryClearResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()})},
-    )
+        responses={200: inline_serializer(name="SearchHistoryClearResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()})})
     def delete(self, request):
         SearchHistory.objects.filter(user=request.user).delete()
         return success_response(
-            message="Search history cleared successfully.",
-        )
+            message="Search history cleared successfully.")
 
 
 class SearchHistoryDetailView(APIView):
@@ -1254,19 +1015,16 @@ class SearchHistoryDetailView(APIView):
         tags=["Search History"],
         summary="Delete a search history entry",
         description="Removes a specific search query from the user's history.",
-        responses={200: inline_serializer(name="SearchHistoryDeleteResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()}), 404: PRODUCT_ERROR_SCHEMA},
-    )
+        responses={200: inline_serializer(name="SearchHistoryDeleteResponse", fields={"success": serializers.BooleanField(), "message": serializers.CharField()}), 404: PRODUCT_ERROR_SCHEMA})
     def delete(self, request, history_id):
         deleted, _ = SearchHistory.objects.filter(user=request.user, pk=history_id).delete()
         if not deleted:
             return error_response(
                 message="Search history entry not found.",
                 code="NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         return success_response(
-            message="Search history entry removed successfully.",
-        )
+            message="Search history entry removed successfully.")
 
 
 class RecommendedFeedView(APIView):
@@ -1295,8 +1053,7 @@ class RecommendedFeedView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA},
-    )
+        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA})
     def get(self, request):
         exclude_cart_param = request.query_params.get("exclude_cart", "true").strip().lower()
         exclude_cart = exclude_cart_param in ("true", "1", "yes")
@@ -1307,8 +1064,7 @@ class RecommendedFeedView(APIView):
             user=user,
             limit=100,
             exclude_cart=exclude_cart,
-            category=category,
-        )
+            category=category)
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)
@@ -1321,5 +1077,4 @@ class RecommendedFeedView(APIView):
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
                 "results": serializer.data,
-            },
-        )
+            })

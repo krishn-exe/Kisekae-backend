@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
@@ -19,10 +19,10 @@ from django.db.models import Q
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from cart.services import CartService
-from products.models import Product, ProductStatus
+from products.models import Product
 
 from .otp import RedisOTP
-from .models import Address, AddressTitle, UserSettings, WishlistItem
+from .models import Address, UserSettings, WishlistItem
 from .responses import error_response, success_response
 from .serializers import (
     AddressSerializer,
@@ -38,12 +38,9 @@ from .serializers import (
     RegisterSerializer,
     ResetPasswordSerializer,
     UpdateWishlistNoteSerializer,
-    UserProfileSerializer,
     UserSettingsSerializer,
     UserUpdateSerializer,
-    WishlistItemSerializer,
-    WishlistProductSerializer,
-)
+    WishlistItemSerializer)
 from .social import process_social_login
 from .tasks import send_otp_email_task
 
@@ -66,10 +63,8 @@ COMMON_ERROR_SCHEMA = inline_serializer(
             fields={
                 "code": serializers.CharField(help_text="Standardized error code identifying failure (e.g. VALIDATION_ERROR, INVALID_CREDENTIALS, NOT_FOUND)."),
                 "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+            }),
+    })
 
 USER_SETTINGS_RESPONSE_SCHEMA = inline_serializer(
     name="UserSettingsResponse",
@@ -77,8 +72,7 @@ USER_SETTINGS_RESPONSE_SCHEMA = inline_serializer(
         "success": serializers.BooleanField(default=True),
         "message": serializers.CharField(),
         "data": UserSettingsSerializer(),
-    },
-)
+    })
 
 
 class RegisterView(APIView):
@@ -109,74 +103,13 @@ class RegisterView(APIView):
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
                             "is_seller": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             409: COMMON_ERROR_SCHEMA,
             429: COMMON_ERROR_SCHEMA,
             503: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="RegisterRequestExample",
-                summary="Valid Registration Request",
-                value={
-                    "name": "Krishn Sharma",
-                    "email": "user@example.com",
-                    "password": "StrongPassword123!",
-                    "is_seller": False,
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="RegisterSuccessExample",
-                summary="Successful Registration (201 Created)",
-                value={
-                    "success": True,
-                    "message": "User registered successfully. A verification code has been sent to your email.",
-                    "data": {
-                        "name": "Krishn Sharma",
-                        "email": "user@example.com",
-                        "is_seller": False,
-                    },
-                },
-                response_only=True,
-                status_codes=["201"],
-            ),
-            OpenApiExample(
-                name="RegisterValidationErrorExample",
-                summary="Validation Error (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Validation failed",
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "details": {
-                            "email": ["Enter a valid email address."],
-                        },
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-            OpenApiExample(
-                name="RegisterPendingExample",
-                summary="Registration Already Pending (409 Conflict)",
-                value={
-                    "success": False,
-                    "message": "A registration is already pending for this email. Please wait 850 seconds or verify the code sent.",
-                    "error": {
-                        "code": "REGISTRATION_PENDING",
-                        "details": {"ttl": 850},
-                    },
-                },
-                response_only=True,
-                status_codes=["409"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -195,8 +128,7 @@ class RegisterView(APIView):
                     "email": email,
                     "is_seller": is_seller,
                 },
-                status_code=status.HTTP_201_CREATED,
-            )
+                status_code=status.HTTP_201_CREATED)
 
         hashed_password = make_password(password) if password else None
         pending_data = {
@@ -215,8 +147,7 @@ class RegisterView(APIView):
                 message=f"A registration is already pending for this email. Please wait {ttl} seconds or verify the code sent.",
                 code="REGISTRATION_PENDING",
                 details={"ttl": ttl},
-                status_code=status.HTTP_409_CONFLICT,
-            )
+                status_code=status.HTTP_409_CONFLICT)
 
         otp = RedisOTP(email=email, purpose="verify_email")
         can_send, wait_secs = otp.can_issue()
@@ -225,8 +156,7 @@ class RegisterView(APIView):
                 message=f"Please wait {wait_secs} seconds before requesting a new code.",
                 code="RATE_LIMIT_EXCEEDED",
                 details={"wait_seconds": wait_secs},
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS)
 
         raw_code = otp.issue()
         try:
@@ -236,8 +166,7 @@ class RegisterView(APIView):
             return error_response(
                 message="Unable to send verification code. Please try again later.",
                 code="SERVICE_UNAVAILABLE",
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         return success_response(
             message="User registered successfully. A verification code has been sent to your email.",
@@ -246,8 +175,7 @@ class RegisterView(APIView):
                 "email": email,
                 "is_seller": is_seller,
             },
-            status_code=status.HTTP_201_CREATED,
-        )
+            status_code=status.HTTP_201_CREATED)
 
 
 class LoginPasswordView(APIView):
@@ -281,60 +209,12 @@ class LoginPasswordView(APIView):
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(),
                                     "is_seller": serializers.BooleanField(),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(help_text="JWT access token"),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="LoginRequestExample",
-                summary="Valid Login Request",
-                value={
-                    "email": "user@example.com",
-                    "password": "StrongPassword123!",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="LoginSuccessExample",
-                summary="Successful Login (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Login successful",
-                    "data": {
-                        "user": {
-                            "id": 123,
-                            "name": "Krishn Sharma",
-                            "email": "user@example.com",
-                            "is_seller": False,
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="LoginErrorExample",
-                summary="Invalid Credentials (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Incorrect password.",
-                    "error": {
-                        "code": "INVALID_CREDENTIALS",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -351,8 +231,7 @@ class LoginPasswordView(APIView):
                 }
             },
             tokens=tokens_for_user(user),
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class OTPRequestView(APIView):
@@ -377,49 +256,11 @@ class OTPRequestView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             429: COMMON_ERROR_SCHEMA,
             503: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="OTPRequestExample",
-                summary="OTP Request Example",
-                value={
-                    "email": "user@example.com",
-                    "purpose": "login",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="OTPRequestSuccessExample",
-                summary="OTP Code Dispatched (200 OK)",
-                value={
-                    "success": True,
-                    "message": "A code has been sent.",
-                    "data": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="OTPRequestRateLimitExample",
-                summary="Cooldown In Effect (429 Too Many Requests)",
-                value={
-                    "success": False,
-                    "message": "Please wait 45 seconds before requesting a new code.",
-                    "error": {
-                        "code": "RATE_LIMIT_EXCEEDED",
-                        "details": {"wait_seconds": 45},
-                    },
-                },
-                response_only=True,
-                status_codes=["429"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -446,8 +287,7 @@ class OTPRequestView(APIView):
                     message=f"Please wait {wait_secs} seconds before requesting a new code.",
                     code="RATE_LIMIT_EXCEEDED",
                     details={"wait_seconds": wait_secs},
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                )
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS)
 
             raw_code = otp.issue()
             target_email = user.email if user else email
@@ -458,14 +298,12 @@ class OTPRequestView(APIView):
                 return error_response(
                     message="Unable to send verification code. Please try again later.",
                     code="SERVICE_UNAVAILABLE",
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         return success_response(
             message="A code has been sent.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @staticmethod
     def _send_code(target_email, raw_code, purpose="login"):
@@ -509,100 +347,15 @@ class OTPVerifyView(APIView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(required=False, allow_null=True, help_text="JWT access token"),
                             "reset_token": serializers.CharField(required=False, allow_null=True, help_text="Single-use password reset token"),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="OTPVerifyLoginRequestExample",
-                summary="OTP Verification Request (Login)",
-                value={
-                    "email": "user@example.com",
-                    "code": "123456",
-                    "purpose": "login",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="OTPVerifyPasswordResetRequestExample",
-                summary="OTP Verification Request (Password Reset)",
-                value={
-                    "email": "user@example.com",
-                    "code": "123456",
-                    "purpose": "password_reset",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="OTPVerifyLoginSuccessExample",
-                summary="Successful Verification for Login (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Verification successful",
-                    "data": {
-                        "user": {
-                            "id": 123,
-                            "name": "Krishn Sharma",
-                            "email": "user@example.com",
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="OTPVerifyPasswordResetSuccessExample",
-                summary="Successful Verification for Password Reset (200 OK)",
-                value={
-                    "success": True,
-                    "message": "OTP verified successfully. Use the reset token to set a new password.",
-                    "data": {
-                        "reset_token": "wE9fXz2b_example_reset_token_xyz123",
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="OTPVerifyInvalidExample",
-                summary="Invalid/Expired Code (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Invalid or expired code.",
-                    "error": {
-                        "code": "INVALID_OTP",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-            OpenApiExample(
-                name="OTPVerifyRegistrationExpiredExample",
-                summary="Registration Expired (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Registration session expired or not found. Please register again.",
-                    "error": {
-                        "code": "REGISTRATION_EXPIRED",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -623,8 +376,7 @@ class OTPVerifyView(APIView):
             return error_response(
                 message="Invalid or expired code.",
                 code="INVALID_OTP",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.filter(email__iexact=email).first()
 
@@ -634,8 +386,7 @@ class OTPVerifyView(APIView):
                     return error_response(
                         message="This account is inactive.",
                         code="ACCOUNT_INACTIVE",
-                        status_code=status.HTTP_403_FORBIDDEN,
-                    )
+                        status_code=status.HTTP_403_FORBIDDEN)
                 if not user.is_email_verified:
                     user.is_email_verified = True
                     user.save(update_fields=["is_email_verified"])
@@ -650,8 +401,7 @@ class OTPVerifyView(APIView):
                         }
                     },
                     tokens=tokens_for_user(user),
-                    status_code=status.HTTP_200_OK,
-                )
+                    status_code=status.HTTP_200_OK)
 
             # User not in DB yet - check pending registration in Redis
             pending_data = cache.get(f"pending_registration:{email}")
@@ -659,16 +409,14 @@ class OTPVerifyView(APIView):
                 return error_response(
                     message="Registration session expired or not found. Please register again.",
                     code="REGISTRATION_EXPIRED",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
+                    status_code=status.HTTP_400_BAD_REQUEST)
 
             user = User(
                 email=pending_data["email"],
                 name=pending_data.get("name", ""),
                 is_seller=pending_data.get("is_seller", False),
                 is_email_verified=True,
-                is_active=True,
-            )
+                is_active=True)
             pwd = pending_data.get("password")
             if pwd:
                 user.password = pwd
@@ -688,43 +436,37 @@ class OTPVerifyView(APIView):
                     }
                 },
                 tokens=tokens_for_user(user),
-                status_code=status.HTTP_200_OK,
-            )
+                status_code=status.HTTP_200_OK)
 
         if not user:
             return error_response(
                 message="No account found with that email address.",
                 code="USER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         if purpose == "password_reset":
             if not user.is_email_verified:
                 return error_response(
                     message="Email is not verified.",
                     code="EMAIL_NOT_VERIFIED",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
+                    status_code=status.HTTP_403_FORBIDDEN)
             reset_token = secrets.token_urlsafe(32)
             cache.set(
                 f"password_reset_token:{reset_token}",
                 {"user_id": user.id, "email": user.email},
-                timeout=300,
-            )
+                timeout=300)
             return success_response(
                 message="OTP verified successfully. Use the reset token to set a new password.",
                 data={
                     "reset_token": reset_token,
                 },
-                status_code=status.HTTP_200_OK,
-            )
+                status_code=status.HTTP_200_OK)
 
         if not user.is_email_verified:
             user.is_email_verified = True
@@ -740,8 +482,7 @@ class OTPVerifyView(APIView):
                 }
             },
             tokens=tokens_for_user(user),
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class LogoutView(APIView):
@@ -765,46 +506,9 @@ class LogoutView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="LogoutRequestExample",
-                summary="Logout Request",
-                value={
-                    "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_refresh_token",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="LogoutSuccessExample",
-                summary="Logout Success (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Successfully logged out.",
-                    "data": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="LogoutErrorExample",
-                summary="Invalid Refresh Token (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Invalid or expired refresh token",
-                    "error": {
-                        "code": "INVALID_TOKEN",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
         if "refresh" not in data and "refresh_token" in request.COOKIES:
@@ -819,8 +523,7 @@ class LogoutView(APIView):
         response = success_response(
             message="Successfully logged out.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
         response.delete_cookie(key="refresh_token", path="/")
         return response
 
@@ -839,8 +542,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         ),
         request=inline_serializer(
             name="TokenRefreshRequest",
-            fields={"refresh": serializers.CharField(required=False, help_text="Optional if refresh_token cookie is present")},
-        ),
+            fields={"refresh": serializers.CharField(required=False, help_text="Optional if refresh_token cookie is present")}),
         responses={
             200: inline_serializer(
                 name="TokenRefreshResponse",
@@ -851,51 +553,11 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
                         name="TokenRefreshData",
                         fields={
                             "access": serializers.CharField(help_text="Newly issued JWT access token"),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="TokenRefreshRequestExample",
-                summary="Token Refresh Request (Optional body)",
-                value={
-                    "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_refresh_token",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="TokenRefreshSuccessExample",
-                summary="Token Refreshed (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Token refreshed successfully",
-                    "data": {
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_new_access_token",
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="TokenRefreshErrorExample",
-                summary="Invalid/Expired Token (401 Unauthorized)",
-                value={
-                    "success": False,
-                    "message": "Token is invalid",
-                    "error": {
-                        "code": "INVALID_TOKEN",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["401"],
-            ),
-        ],
-    )
+        })
     def post(self, request, *args, **kwargs):
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
         if "refresh" not in data and "refresh_token" in request.COOKIES:
@@ -913,8 +575,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
         response = success_response(
             message="Token refreshed successfully",
             data={"access": tokens["access"]},
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
         refresh = tokens.get("refresh") or data.get("refresh")
         if refresh:
             response.set_cookie(
@@ -923,8 +584,7 @@ class TokenRefreshView(SimpleJWTTokenRefreshView):
                 httponly=True,
                 samesite=getattr(settings, "AUTH_COOKIE_SAMESITE", "Lax"),
                 secure=getattr(settings, "AUTH_COOKIE_SECURE", getattr(settings, "SESSION_COOKIE_SECURE", False)),
-                path="/",
-            )
+                path="/")
         return response
 
 
@@ -949,64 +609,22 @@ class ChangePasswordView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="ChangePasswordRequestExample",
-                summary="Change Password Request",
-                value={
-                    "old_password": "OldStrongPassword123!",
-                    "new_password": "NewStrongPassword456!",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="ChangePasswordSuccessExample",
-                summary="Password Changed (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Password changed successfully.",
-                    "data": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="ChangePasswordWrongOldExample",
-                summary="Incorrect Old Password (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Old password is incorrect.",
-                    "error": {
-                        "code": "VALIDATION_ERROR",
-                        "details": {
-                            "old_password": ["Old password is incorrect."],
-                        },
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         if not request.user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         if not request.user.is_email_verified:
             return error_response(
                 message="Email is not verified.",
                 code="EMAIL_NOT_VERIFIED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         serializer = self.serializer_class(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -1014,8 +632,7 @@ class ChangePasswordView(APIView):
         return success_response(
             message="Password changed successfully.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class ResetPasswordView(APIView):
@@ -1040,49 +657,11 @@ class ResetPasswordView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="ResetPasswordRequestExample",
-                summary="Reset Password Request",
-                value={
-                    "token": "wE9fXz2b_example_reset_token_xyz123",
-                    "new_password": "NewStrongPassword456!",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="ResetPasswordSuccessExample",
-                summary="Password Reset Success (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Password reset successfully. Please login with your new password.",
-                    "data": None,
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="ResetPasswordInvalidTokenExample",
-                summary="Invalid or Expired Token (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Invalid or expired reset token.",
-                    "error": {
-                        "code": "INVALID_TOKEN",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1097,8 +676,7 @@ class ResetPasswordView(APIView):
             return error_response(
                 message="Invalid or expired reset token.",
                 code="INVALID_TOKEN",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         user_id = token_data.get("user_id") if isinstance(token_data, dict) else token_data
         user = User.objects.filter(id=user_id).first()
@@ -1106,30 +684,26 @@ class ResetPasswordView(APIView):
             return error_response(
                 message="No account found for this reset token.",
                 code="USER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         if not user.is_email_verified:
             return error_response(
                 message="Email is not verified.",
                 code="EMAIL_NOT_VERIFIED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         user.set_password(new_password)
         user.save(update_fields=["password"])
 
         from rest_framework_simplejwt.token_blacklist.models import (
             BlacklistedToken,
-            OutstandingToken,
-        )
+            OutstandingToken)
 
         outstanding_tokens = OutstandingToken.objects.filter(user=user)
         existing_ids = set(
@@ -1150,8 +724,7 @@ class ResetPasswordView(APIView):
         return success_response(
             message="Password reset successfully. Please login with your new password.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class BaseOAuthView(APIView):
@@ -1177,22 +750,19 @@ class BaseOAuthView(APIView):
                 callback_url=callback_url,
                 access_token=access_token,
                 code_verifier=code_verifier,
-                client_id=client_id,
-            )
+                client_id=client_id)
 
             if not user.is_active:
                 return error_response(
                     message="This account is inactive.",
                     code="ACCOUNT_INACTIVE",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
+                    status_code=status.HTTP_403_FORBIDDEN)
 
             if not user.is_email_verified:
                 return error_response(
                     message="Email is not verified.",
                     code="EMAIL_NOT_VERIFIED",
-                    status_code=status.HTTP_403_FORBIDDEN,
-                )
+                    status_code=status.HTTP_403_FORBIDDEN)
 
             status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
             message = (
@@ -1211,21 +781,18 @@ class BaseOAuthView(APIView):
                     "created": created,
                 },
                 tokens=tokens_for_user(user),
-                status_code=status_code,
-            )
+                status_code=status_code)
         except ValueError as exc:
             return error_response(
                 message=str(exc),
                 code=f"INVALID_{self.provider_name.upper()}_AUTH",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
             logger.exception("Unexpected error in %s OAuth: %s", self.provider_name, exc)
             return error_response(
                 message=f"Authentication with {self.provider_name} failed.",
                 code="AUTHENTICATION_FAILED",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class GoogleOAuthView(BaseOAuthView):
@@ -1262,14 +829,11 @@ class GoogleOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             201: inline_serializer(
                 name="GoogleOAuthCreatedResponse",
                 fields={
@@ -1284,93 +848,15 @@ class GoogleOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             500: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="GoogleOAuthRequestExample",
-                summary="Google OAuth Request (Web Flow)",
-                value={
-                    "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
-                    "callback_url": "kisekae://auth/google/callback",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="GoogleOAuthPKCERequestExample",
-                summary="Google OAuth PKCE Request (Mobile: Android & iOS)",
-                value={
-                    "code": "4/0AdQt8ug_example_google_auth_code_xyz123",
-                    "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJu1p1r_wW1gFWFOEjXk-abcdef1234567890",
-                    "client_id": "1234567890-example.apps.googleusercontent.com",
-                    "callback_url": "kisekae://auth/google/callback",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="GoogleOAuthLoginSuccessExample",
-                summary="Existing User Login (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Google authentication successful",
-                    "data": {
-                        "user": {
-                            "id": 123,
-                            "name": "Jane Google",
-                            "email": "user@example.com",
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                        "created": False,
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="GoogleOAuthRegisterSuccessExample",
-                summary="New User Created (201 Created)",
-                value={
-                    "success": True,
-                    "message": "Account created and authenticated via Google",
-                    "data": {
-                        "user": {
-                            "id": 124,
-                            "name": "Jane Google",
-                            "email": "newuser@example.com",
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                        "created": True,
-                    },
-                },
-                response_only=True,
-                status_codes=["201"],
-            ),
-            OpenApiExample(
-                name="GoogleOAuthErrorExample",
-                summary="Invalid Code (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Invalid or expired Google authorization code.",
-                    "error": {
-                        "code": "INVALID_GOOGLE_AUTH",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         return super().post(request)
 
@@ -1407,14 +893,11 @@ class GitHubOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             201: inline_serializer(
                 name="GitHubOAuthCreatedResponse",
                 fields={
@@ -1429,82 +912,15 @@ class GitHubOAuthView(BaseOAuthView):
                                     "id": serializers.IntegerField(),
                                     "name": serializers.CharField(),
                                     "email": serializers.EmailField(allow_null=True),
-                                },
-                            ),
+                                }),
                             "access": serializers.CharField(help_text="JWT access token"),
                             "created": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             500: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="GitHubOAuthRequestExample",
-                summary="GitHub OAuth Request",
-                value={
-                    "code": "gho_12345678abcdef_example_github_auth_code",
-                    "callback_url": "kisekae://auth/github/callback",
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                name="GitHubOAuthLoginSuccessExample",
-                summary="Existing User Login (200 OK)",
-                value={
-                    "success": True,
-                    "message": "GitHub authentication successful",
-                    "data": {
-                        "user": {
-                            "id": 123,
-                            "name": "Jane GitHub",
-                            "email": "user@example.com",
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                        "created": False,
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="GitHubOAuthRegisterSuccessExample",
-                summary="New User Created (201 Created)",
-                value={
-                    "success": True,
-                    "message": "Account created and authenticated via GitHub",
-                    "data": {
-                        "user": {
-                            "id": 124,
-                            "name": "Jane GitHub",
-                            "email": "newuser@example.com",
-                        },
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example_access_token",
-                        "created": True,
-                    },
-                },
-                response_only=True,
-                status_codes=["201"],
-            ),
-            OpenApiExample(
-                name="GitHubOAuthErrorExample",
-                summary="Invalid Code (400 Bad Request)",
-                value={
-                    "success": False,
-                    "message": "Invalid or expired GitHub authorization code.",
-                    "error": {
-                        "code": "INVALID_GITHUB_AUTH",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["400"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         return super().post(request)
 
@@ -1537,13 +953,10 @@ class BecomeSellerView(APIView):
                             "name": serializers.CharField(),
                             "email": serializers.EmailField(),
                             "is_seller": serializers.BooleanField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             403: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request):
         user = request.user
 
@@ -1551,15 +964,13 @@ class BecomeSellerView(APIView):
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         if not user.is_email_verified:
             return error_response(
                 message="Email must be verified before becoming a seller.",
                 code="EMAIL_NOT_VERIFIED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         if user.is_seller:
             return success_response(
@@ -1570,8 +981,7 @@ class BecomeSellerView(APIView):
                     "email": user.email,
                     "is_seller": user.is_seller,
                 },
-                status_code=status.HTTP_200_OK,
-            )
+                status_code=status.HTTP_200_OK)
 
         user.is_seller = True
         user.save(update_fields=["is_seller"])
@@ -1584,8 +994,7 @@ class BecomeSellerView(APIView):
                 "email": user.email,
                 "is_seller": user.is_seller,
             },
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class UserDetailView(APIView):
@@ -1613,64 +1022,23 @@ class UserDetailView(APIView):
                             "date_joined": serializers.DateTimeField(allow_null=True),
                             "addresses_count": serializers.IntegerField(),
                             "wishlist_items_count": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="UserDetailSuccessExample",
-                summary="Current Customer Profile (200 OK)",
-                value={
-                    "success": True,
-                    "message": "User profile fetched successfully.",
-                    "data": {
-                        "id": 123,
-                        "name": "Krishn Sharma",
-                        "email": "user@example.com",
-                        "is_email_verified": True,
-                        "is_seller": False,
-                        "date_joined": "2026-10-01T12:00:00Z",
-                        "addresses_count": 2,
-                        "wishlist_items_count": 5,
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-            OpenApiExample(
-                name="UserDetailUnauthenticatedExample",
-                summary="Unauthenticated Request (401 Unauthorized)",
-                value={
-                    "success": False,
-                    "message": "Authentication credentials were not provided.",
-                    "error": {
-                        "code": "NOT_AUTHENTICATED",
-                        "details": None,
-                    },
-                },
-                response_only=True,
-                status_codes=["401"],
-            ),
-        ],
-    )
+        })
     def get(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         if not user.is_email_verified:
             return error_response(
                 message="Email is not verified.",
                 code="EMAIL_NOT_VERIFIED",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         return success_response(
             message="User profile fetched successfully.",
             data={
@@ -1683,8 +1051,7 @@ class UserDetailView(APIView):
                 "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
                 "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
             },
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         tags=["Customer Profile"],
@@ -1708,45 +1075,19 @@ class UserDetailView(APIView):
                             "date_joined": serializers.DateTimeField(allow_null=True),
                             "addresses_count": serializers.IntegerField(),
                             "wishlist_items_count": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="UserUpdateSuccessExample",
-                summary="Customer Name Updated (200 OK)",
-                value={
-                    "success": True,
-                    "message": "User profile updated successfully.",
-                    "data": {
-                        "id": 123,
-                        "name": "Jane Sharma",
-                        "email": "user@example.com",
-                        "is_email_verified": True,
-                        "is_seller": False,
-                        "date_joined": "2026-10-01T12:00:00Z",
-                        "addresses_count": 2,
-                        "wishlist_items_count": 5,
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-        ],
-    )
+        })
     def patch(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         serializer = UserUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user.name = serializer.validated_data["name"]
@@ -1763,8 +1104,7 @@ class UserDetailView(APIView):
                 "addresses_count": user.addresses.count() if hasattr(user, "addresses") else 0,
                 "wishlist_items_count": user.wishlist_items.count() if hasattr(user, "wishlist_items") else 0,
             },
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         tags=["Customer Profile"],
@@ -1788,15 +1128,12 @@ class UserDetailView(APIView):
                             "date_joined": serializers.DateTimeField(allow_null=True),
                             "addresses_count": serializers.IntegerField(),
                             "wishlist_items_count": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def put(self, request):
         return self.patch(request)
 
@@ -1804,8 +1141,7 @@ class UserDetailView(APIView):
         tags=["Customer Profile"],
         summary="Delete / deactivate customer account",
         description="Deactivates the authenticated user's account and clears refresh token cookies.",
-        responses={200: inline_serializer(name="UserDeleteResponse", fields={"message": serializers.CharField()})},
-    )
+        responses={200: inline_serializer(name="UserDeleteResponse", fields={"message": serializers.CharField()})})
     def delete(self, request):
         user = request.user
         user.is_active = False
@@ -1813,8 +1149,7 @@ class UserDetailView(APIView):
         response = success_response(
             message="Account has been deactivated successfully.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
         response.delete_cookie(key="refresh_token", path="/")
         return response
 
@@ -1827,22 +1162,19 @@ class UserSettingsView(APIView):
         tags=["Accounts"],
         summary="Get user notification and app settings",
         description="Retrieves the authenticated user's notification preferences and application settings.",
-        responses={200: USER_SETTINGS_RESPONSE_SCHEMA},
-    )
+        responses={200: USER_SETTINGS_RESPONSE_SCHEMA})
     def get(self, request):
         settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
         return success_response(
             message="Settings fetched successfully.",
-            data=UserSettingsSerializer(settings_obj).data,
-        )
+            data=UserSettingsSerializer(settings_obj).data)
 
     @extend_schema(
         tags=["Accounts"],
         summary="Update user notification and app settings",
         description="Updates the authenticated user's notification preferences and application settings (partial update supported).",
         request=UserSettingsSerializer,
-        responses={200: USER_SETTINGS_RESPONSE_SCHEMA, 400: COMMON_ERROR_SCHEMA},
-    )
+        responses={200: USER_SETTINGS_RESPONSE_SCHEMA, 400: COMMON_ERROR_SCHEMA})
     def patch(self, request):
         settings_obj, _ = UserSettings.objects.get_or_create(user=request.user)
         serializer = UserSettingsSerializer(settings_obj, data=request.data, partial=True)
@@ -1850,8 +1182,7 @@ class UserSettingsView(APIView):
         serializer.save()
         return success_response(
             message="Settings updated successfully.",
-            data=serializer.data,
-        )
+            data=serializer.data)
 
 
 # ============================================================================
@@ -1877,77 +1208,23 @@ class AddressListCreateView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.ListSerializer(child=AddressSerializer()),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="AddressListSuccessExample",
-                summary="List Customer Addresses (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Addresses retrieved successfully.",
-                    "data": [
-                        {
-                            "id": 1,
-                            "title": "Home",
-                            "recipient_name": "Krishn Sharma",
-                            "phone": "+919876543210",
-                            "address_line_1": "Flat 402, Sunshine Heights",
-                            "address_line_2": "Near Metro Station, Indiranagar",
-                            "city": "Bengaluru",
-                            "state": "Karnataka",
-                            "postal_code": "560038",
-                            "pin_code": "560038",
-                            "country": "India",
-                            "latitude": "12.978369",
-                            "longitude": "77.640835",
-                            "is_default": True,
-                            "created_at": "2026-10-15T10:00:00Z",
-                            "updated_at": "2026-10-15T10:00:00Z",
-                        },
-                        {
-                            "id": 2,
-                            "title": "Office",
-                            "recipient_name": "Krishn Sharma",
-                            "phone": "+919876543210",
-                            "address_line_1": "Tower B, 5th Floor, Cyber Tech Park",
-                            "address_line_2": "Outer Ring Road",
-                            "city": "Bengaluru",
-                            "state": "Karnataka",
-                            "postal_code": "560103",
-                            "pin_code": "560103",
-                            "country": "India",
-                            "latitude": "12.925007",
-                            "longitude": "77.684128",
-                            "is_default": False,
-                            "created_at": "2026-10-16T08:30:00Z",
-                            "updated_at": "2026-10-16T08:30:00Z",
-                        },
-                    ],
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-        ],
-    )
+        })
     def get(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         addresses = user.addresses.all()
         serializer = AddressSerializer(addresses, many=True)
         return success_response(
             message="Addresses retrieved successfully.",
             data=serializer.data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_address_create",
@@ -1967,59 +1244,25 @@ class AddressListCreateView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": AddressSerializer(),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="AddressCreateSuccessExample",
-                summary="Address Created (201 Created)",
-                value={
-                    "success": True,
-                    "message": "Address added successfully.",
-                    "data": {
-                        "id": 3,
-                        "title": "Home",
-                        "recipient_name": "Krishn Sharma",
-                        "phone": "+919876543210",
-                        "address_line_1": "Flat 402, Sunshine Heights",
-                        "address_line_2": "Near Metro Station, Indiranagar",
-                        "city": "Bengaluru",
-                        "state": "Karnataka",
-                        "postal_code": "560038",
-                        "pin_code": "560038",
-                        "country": "India",
-                        "latitude": "12.978369",
-                        "longitude": "77.640835",
-                        "is_default": True,
-                        "created_at": "2026-10-16T15:30:00Z",
-                        "updated_at": "2026-10-16T15:30:00Z",
-                    },
-                },
-                response_only=True,
-                status_codes=["201"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         serializer = AddressSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         address = serializer.save()
         return success_response(
             message="Address added successfully.",
             data=AddressSerializer(address).data,
-            status_code=status.HTTP_201_CREATED,
-        )
+            status_code=status.HTTP_201_CREATED)
 
 
 class AddressDetailView(APIView):
@@ -2034,15 +1277,13 @@ class AddressDetailView(APIView):
             return None, error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         address = user.addresses.filter(pk=address_id).first()
         if not address:
             return None, error_response(
                 message="Address not found.",
                 code="ADDRESS_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         return address, None
 
     @extend_schema(
@@ -2057,43 +1298,11 @@ class AddressDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": AddressSerializer(),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="AddressDetailSuccessExample",
-                summary="Address Retrieved (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Address retrieved successfully.",
-                    "data": {
-                        "id": 1,
-                        "title": "Home",
-                        "recipient_name": "Krishn Sharma",
-                        "phone": "+919876543210",
-                        "address_line_1": "Flat 402, Sunshine Heights",
-                        "address_line_2": "Near Metro Station, Indiranagar",
-                        "city": "Bengaluru",
-                        "state": "Karnataka",
-                        "postal_code": "560038",
-                        "pin_code": "560038",
-                        "country": "India",
-                        "latitude": "12.978369",
-                        "longitude": "77.640835",
-                        "is_default": True,
-                        "created_at": "2026-10-15T10:00:00Z",
-                        "updated_at": "2026-10-15T10:00:00Z",
-                    },
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-        ],
-    )
+        })
     def get(self, request, address_id):
         address, err = self._get_address(request.user, address_id)
         if err:
@@ -2101,8 +1310,7 @@ class AddressDetailView(APIView):
         return success_response(
             message="Address retrieved successfully.",
             data=AddressSerializer(address).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_address_replace",
@@ -2117,14 +1325,12 @@ class AddressDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": AddressSerializer(),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def put(self, request, address_id):
         address, err = self._get_address(request.user, address_id)
         if err:
@@ -2135,8 +1341,7 @@ class AddressDetailView(APIView):
         return success_response(
             message="Address updated successfully.",
             data=AddressSerializer(updated).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_address_update",
@@ -2151,14 +1356,12 @@ class AddressDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": AddressSerializer(),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def patch(self, request, address_id):
         address, err = self._get_address(request.user, address_id)
         if err:
@@ -2169,8 +1372,7 @@ class AddressDetailView(APIView):
         return success_response(
             message="Address updated successfully.",
             data=AddressSerializer(updated).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_address_destroy",
@@ -2184,13 +1386,11 @@ class AddressDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def delete(self, request, address_id):
         address, err = self._get_address(request.user, address_id)
         if err:
@@ -2205,8 +1405,7 @@ class AddressDetailView(APIView):
         return success_response(
             message="Address deleted successfully.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class AddressSetDefaultView(APIView):
@@ -2229,35 +1428,30 @@ class AddressSetDefaultView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": AddressSerializer(),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request, address_id):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         address = user.addresses.filter(pk=address_id).first()
         if not address:
             return error_response(
                 message="Address not found.",
                 code="ADDRESS_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         address.is_default = True
         address.save()
         return success_response(
             message="Default address updated successfully.",
             data=AddressSerializer(address).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 # ============================================================================
@@ -2283,64 +1477,23 @@ class WishlistListCreateView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.ListSerializer(child=WishlistItemSerializer()),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="WishlistListSuccessExample",
-                summary="Customer Wishlist Items (200 OK)",
-                value={
-                    "success": True,
-                    "message": "Wishlist items retrieved successfully.",
-                    "data": [
-                        {
-                            "id": 10,
-                            "note": "Gift for friend",
-                            "created_at": "2026-10-15T14:20:00Z",
-                            "product": {
-                                "id": 42,
-                                "name": "Classic Oversized Cotton Hoodie",
-                                "slug": "classic-oversized-cotton-hoodie",
-                                "price": "1899.00",
-                                "compare_at_price": "2499.00",
-                                "currency": "INR",
-                                "image_url": "https://example.com/media/products/hoodie.jpg",
-                                "sku": "HOD-COT-01",
-                                "stock": 18,
-                                "is_in_stock": True,
-                                "status": "ACTIVE",
-                                "store": {
-                                    "id": 2,
-                                    "name": "Urban Apparel",
-                                    "slug": "urban-apparel",
-                                },
-                            },
-                        }
-                    ],
-                },
-                response_only=True,
-                status_codes=["200"],
-            ),
-        ],
-    )
+        })
     def get(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         items = user.wishlist_items.select_related("product", "product__store").all()
         serializer = WishlistItemSerializer(items, many=True)
         return success_response(
             message="Wishlist items retrieved successfully.",
             data=serializer.data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_wishlist_add",
@@ -2355,56 +1508,18 @@ class WishlistListCreateView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": WishlistItemSerializer(),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-        examples=[
-            OpenApiExample(
-                name="WishlistAddSuccessExample",
-                summary="Product Added to Wishlist (201 Created)",
-                value={
-                    "success": True,
-                    "message": "Product added to wishlist successfully.",
-                    "data": {
-                        "id": 11,
-                        "note": "Buy on payday",
-                        "created_at": "2026-10-16T10:00:00Z",
-                        "product": {
-                            "id": 42,
-                            "name": "Classic Oversized Cotton Hoodie",
-                            "slug": "classic-oversized-cotton-hoodie",
-                            "price": "1899.00",
-                            "compare_at_price": "2499.00",
-                            "currency": "INR",
-                            "image_url": "https://example.com/media/products/hoodie.jpg",
-                            "sku": "HOD-COT-01",
-                            "stock": 18,
-                            "is_in_stock": True,
-                            "status": "ACTIVE",
-                            "store": {
-                                "id": 2,
-                                "name": "Urban Apparel",
-                                "slug": "urban-apparel",
-                            },
-                        },
-                    },
-                },
-                response_only=True,
-                status_codes=["201"],
-            ),
-        ],
-    )
+        })
     def post(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         serializer = AddWishlistSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         product_id = serializer.validated_data["product_id"]
@@ -2414,8 +1529,7 @@ class WishlistListCreateView(APIView):
         item, created = WishlistItem.objects.get_or_create(
             user=user,
             product=product,
-            defaults={"note": note},
-        )
+            defaults={"note": note})
         if not created and note:
             item.note = note
             item.save(update_fields=["note"])
@@ -2426,8 +1540,7 @@ class WishlistListCreateView(APIView):
         return success_response(
             message=msg,
             data=WishlistItemSerializer(item).data,
-            status_code=stat,
-        )
+            status_code=stat)
 
     @extend_schema(
         operation_id="customer_wishlist_clear",
@@ -2441,26 +1554,22 @@ class WishlistListCreateView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def delete(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         user.wishlist_items.all().delete()
         return success_response(
             message="Wishlist cleared successfully.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class WishlistDetailView(APIView):
@@ -2492,22 +1601,18 @@ class WishlistDetailView(APIView):
                         fields={
                             "is_in_wishlist": serializers.BooleanField(),
                             "item": WishlistItemSerializer(allow_null=True),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def get(self, request, product_id):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         item = self._get_item(user, product_id)
         if item:
             return success_response(
@@ -2516,16 +1621,14 @@ class WishlistDetailView(APIView):
                     "is_in_wishlist": True,
                     "item": WishlistItemSerializer(item).data,
                 },
-                status_code=status.HTTP_200_OK,
-            )
+                status_code=status.HTTP_200_OK)
         return success_response(
             message="Product is not in your wishlist.",
             data={
                 "is_in_wishlist": False,
                 "item": None,
             },
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_wishlist_update_note",
@@ -2540,29 +1643,25 @@ class WishlistDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": WishlistItemSerializer(),
-                },
-            ),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def patch(self, request, product_id):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         item = self._get_item(user, product_id)
         if not item:
             return error_response(
                 message="Product not found in your wishlist.",
                 code="WISHLIST_ITEM_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         serializer = UpdateWishlistNoteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         item.note = serializer.validated_data["note"]
@@ -2570,8 +1669,7 @@ class WishlistDetailView(APIView):
         return success_response(
             message="Wishlist item note updated successfully.",
             data=WishlistItemSerializer(item).data,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
     @extend_schema(
         operation_id="customer_wishlist_remove",
@@ -2585,34 +1683,29 @@ class WishlistDetailView(APIView):
                     "success": serializers.BooleanField(),
                     "message": serializers.CharField(),
                     "data": serializers.JSONField(allow_null=True),
-                },
-            ),
+                }),
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def delete(self, request, product_id):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         item = self._get_item(user, product_id)
         if not item:
             return error_response(
                 message="Product not found in your wishlist.",
                 code="WISHLIST_ITEM_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
         item.delete()
         return success_response(
             message="Product removed from wishlist successfully.",
             data=None,
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 class WishlistMoveToCartView(APIView):
@@ -2641,24 +1734,20 @@ class WishlistMoveToCartView(APIView):
                             "product_id": serializers.IntegerField(),
                             "cart_item_id": serializers.IntegerField(),
                             "cart_id": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
             403: COMMON_ERROR_SCHEMA,
             404: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request, product_id):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
         item = user.wishlist_items.select_related("product", "product__store").filter(
             Q(product_id=product_id) | Q(id=product_id)
         ).first()
@@ -2666,8 +1755,7 @@ class WishlistMoveToCartView(APIView):
             return error_response(
                 message="Product not found in your wishlist.",
                 code="WISHLIST_ITEM_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+                status_code=status.HTTP_404_NOT_FOUND)
 
         product = item.product
         try:
@@ -2679,8 +1767,7 @@ class WishlistMoveToCartView(APIView):
             return error_response(
                 message=msg,
                 code="CART_ADDITION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         return success_response(
             message=f"'{product.name}' moved to cart successfully.",
@@ -2689,8 +1776,7 @@ class WishlistMoveToCartView(APIView):
                 "cart_item_id": cart_item.id,
                 "cart_id": cart.id,
             },
-            status_code=status.HTTP_200_OK,
-        )
+            status_code=status.HTTP_200_OK)
 
 
 
@@ -2724,22 +1810,18 @@ class WishlistBulkMoveToCartView(APIView):
                             "skipped_items": serializers.ListField(),
                             "cart_id": serializers.IntegerField(allow_null=True),
                             "total_cart_items": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request):
         user = request.user
         if not user.is_active:
             return error_response(
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
+                status_code=status.HTTP_403_FORBIDDEN)
 
         serializer = BulkMoveWishlistToCartSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
@@ -2760,8 +1842,7 @@ class WishlistBulkMoveToCartView(APIView):
                     "skipped_items": [],
                     "cart_id": None,
                     "total_cart_items": 0,
-                },
-            )
+                })
 
         cart = CartService.get_or_create_cart(user=user)
         moved_items = []
@@ -2796,8 +1877,7 @@ class WishlistBulkMoveToCartView(APIView):
                 "skipped_items": skipped_items,
                 "cart_id": cart.id,
                 "total_cart_items": cart.total_items,
-            },
-        )
+            })
 
 
 class WishlistBulkMoveToCartAliasView(WishlistBulkMoveToCartView):
@@ -2824,13 +1904,10 @@ class WishlistBulkMoveToCartAliasView(WishlistBulkMoveToCartView):
                             "skipped_items": serializers.ListField(),
                             "cart_id": serializers.IntegerField(allow_null=True),
                             "total_cart_items": serializers.IntegerField(),
-                        },
-                    ),
-                },
-            ),
+                        }),
+                }),
             400: COMMON_ERROR_SCHEMA,
             401: COMMON_ERROR_SCHEMA,
-        },
-    )
+        })
     def post(self, request):
         return super().post(request)

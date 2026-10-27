@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from django.db.models import Count
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -19,7 +18,7 @@ from .models import (
     VerificationStatus,
 )
 from .pagination import StorePagination
-from .permissions import IsBusinessVerified, IsSeller, get_store_membership
+from .permissions import IsSeller, get_store_membership
 from .serializers import (
     AcceptTokenSerializer,
     AddMemberSerializer,
@@ -37,92 +36,17 @@ from .serializers import (
 from .services import StoreService
 from .validators import MAX_BANNER_SIZE, MAX_LOGO_SIZE, validate_store_image
 
-STORE_ERROR_SCHEMA = inline_serializer(
-    name="StoreErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="StoreErrorDetail",
-            fields={
-                "code": serializers.CharField(help_text="Machine-readable error code identifying failure reason (e.g. STORE_NOT_FOUND, INSUFFICIENT_PERMISSIONS)."),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
 
-STORE_ACTION_SUCCESS_SCHEMA = inline_serializer(
-    name="StoreActionSuccessResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": serializers.JSONField(default=None, allow_null=True),
-    },
-)
-
-STORE_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreSerializer(),
-    },
-)
-
-STORE_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreSerializer(many=True),
-    },
-)
-
-STORE_MEMBER_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreMemberDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreMemberSerializer(),
-    },
-)
-
-STORE_MEMBER_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreMemberListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreMemberSerializer(many=True),
-    },
-)
-
-STORE_INVITATION_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreInvitationDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreInvitationSerializer(),
-    },
-)
-
-STORE_INVITATION_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="StoreInvitationListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StoreInvitationSerializer(many=True),
-    },
-)
-
-BUSINESS_VERIFICATION_RESPONSE_SCHEMA = inline_serializer(
-    name="BusinessVerificationResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": BusinessVerificationSerializer(),
-    },
-)
+STORE_ERROR_SCHEMA = ERROR_SCHEMA
+STORE_ACTION_SUCCESS_SCHEMA = api_response(serializers.JSONField(default=None, allow_null=True), "StoreActionSuccessResponse")
+STORE_DETAIL_RESPONSE_SCHEMA = api_response(StoreSerializer, "StoreDetailResponse")
+STORE_LIST_RESPONSE_SCHEMA = api_response(StoreSerializer, "StoreListResponse", many=True)
+STORE_MEMBER_DETAIL_RESPONSE_SCHEMA = api_response(StoreMemberSerializer, "StoreMemberDetailResponse")
+STORE_MEMBER_LIST_RESPONSE_SCHEMA = api_response(StoreMemberSerializer, "StoreMemberListResponse", many=True)
+STORE_INVITATION_DETAIL_RESPONSE_SCHEMA = api_response(StoreInvitationSerializer, "StoreInvitationDetailResponse")
+STORE_INVITATION_LIST_RESPONSE_SCHEMA = api_response(StoreInvitationSerializer, "StoreInvitationListResponse", many=True)
+BUSINESS_VERIFICATION_RESPONSE_SCHEMA = api_response(BusinessVerificationSerializer, "BusinessVerificationResponse")
 
 
 class StoreMethodThrottleMixin:
@@ -397,19 +321,11 @@ class StoreTransferOwnershipView(APIView):
         serializer = TransferOwnershipSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            StoreService.transfer_ownership(
-                store=store,
-                current_owner=request.user,
-                new_owner_member_id=serializer.validated_data["member_id"],
-            )
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="TRANSFER_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        StoreService.transfer_ownership(
+            store=store,
+            current_owner=request.user,
+            new_owner_member_id=serializer.validated_data["member_id"],
+        )
 
         return success_response(
             message="Store ownership transferred successfully.",
@@ -462,19 +378,11 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
         serializer.is_valid(raise_exception=True)
         target_user = serializer.context["target_user"]
 
-        try:
-            new_membership = StoreService.add_member(
-                store=store,
-                user=target_user,
-                role=StoreRole.MANAGER,
-            )
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="ADD_MEMBER_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        new_membership = StoreService.add_member(
+            store=store,
+            user=target_user,
+            role=StoreRole.MANAGER,
+        )
 
         return success_response(
             message="Member added successfully.",
@@ -502,19 +410,11 @@ class StoreMemberDeleteView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            StoreService.remove_member(
-                store=store,
-                member_id=member_id,
-                actor_user=request.user,
-            )
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="REMOVE_MEMBER_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        StoreService.remove_member(
+            store=store,
+            member_id=member_id,
+            actor_user=request.user,
+        )
 
         return success_response(
             message="Member removed successfully.",
@@ -542,15 +442,7 @@ class StoreLeaveView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            StoreService.leave_store(store=store, user=request.user)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="LEAVE_STORE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        StoreService.leave_store(store=store, user=request.user)
 
         return success_response(
             message="You have successfully left the store.",
@@ -619,19 +511,11 @@ class StoreInvitationListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         email = serializer.validated_data["email"]
 
-        try:
-            invitation, _ = StoreService.create_invitation(
-                store=store,
-                email=email,
-                invited_by=request.user,
-            )
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="INVITATION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        invitation, _ = StoreService.create_invitation(
+            store=store,
+            email=email,
+            invited_by=request.user,
+        )
 
         return success_response(
             message=f"Invitation sent to {email}.",
@@ -667,15 +551,7 @@ class StoreInvitationRevokeView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            StoreService.revoke_invitation(invitation)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="REVOKE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        StoreService.revoke_invitation(invitation)
 
         return success_response(
             message="Invitation revoked successfully.",
@@ -711,15 +587,7 @@ class StoreInvitationResendView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            invitation, _ = StoreService.resend_invitation(invitation, invited_by=request.user)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="RESEND_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        invitation, _ = StoreService.resend_invitation(invitation, invited_by=request.user)
 
         return success_response(
             message="Invitation resent successfully.",
@@ -780,15 +648,7 @@ class InviteeInvitationAcceptView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            membership = StoreService.accept_invitation(invitation, user=request.user)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="ACCEPT_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        membership = StoreService.accept_invitation(invitation, user=request.user)
 
         return success_response(
             message="Invitation accepted successfully. You are now a manager of this store.",
@@ -816,15 +676,7 @@ class InviteeInvitationDeclineView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            StoreService.decline_invitation(invitation, user=request.user)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="DECLINE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        StoreService.decline_invitation(invitation, user=request.user)
 
         return success_response(
             message="Invitation declined.",
@@ -848,15 +700,7 @@ class InviteeInvitationTokenAcceptView(APIView):
         serializer.is_valid(raise_exception=True)
         raw_token = serializer.validated_data["token"]
 
-        try:
-            membership = StoreService.accept_invitation_by_token(raw_token, user=request.user)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="ACCEPT_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        membership = StoreService.accept_invitation_by_token(raw_token, user=request.user)
 
         return success_response(
             message="Invitation accepted successfully. You are now a manager of this store.",
@@ -905,15 +749,7 @@ class StoreLogoView(APIView):
         serializer.is_valid(raise_exception=True)
         image_file = serializer.validated_data["file"]
 
-        try:
-            validate_store_image(image_file, MAX_LOGO_SIZE, "logo")
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="INVALID_IMAGE",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        validate_store_image(image_file, MAX_LOGO_SIZE, "logo")
 
         updated_store = StoreService.set_store_logo(store, image_file)
         return success_response(
@@ -995,15 +831,7 @@ class StoreBannerView(APIView):
         serializer.is_valid(raise_exception=True)
         image_file = serializer.validated_data["file"]
 
-        try:
-            validate_store_image(image_file, MAX_BANNER_SIZE, "banner")
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="INVALID_IMAGE",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        validate_store_image(image_file, MAX_BANNER_SIZE, "banner")
 
         updated_store = StoreService.set_store_banner(store, image_file)
         return success_response(

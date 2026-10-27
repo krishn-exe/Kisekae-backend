@@ -3,7 +3,7 @@ from django.db import transaction
 
 from stores.models import StoreStatus
 
-from .models import Product, ProductImage, ProductSize, ProductStatus
+from .models import Product, ProductImage, ProductSize
 from .tasks import generate_product_embedding_task
 
 MAX_IMAGES_PER_PRODUCT = 10
@@ -166,7 +166,7 @@ class ProductService:
     def remove_gallery_image(product, image_id):
         img_obj = product.images.filter(pk=image_id).first()
         if not img_obj:
-            raise ValidationError("Product image not found.")
+            raise ValidationError("Product image not found.", code="IMAGE_NOT_FOUND")
 
         if img_obj.image:
             img_obj.image.delete(save=False)

@@ -2,7 +2,6 @@ import logging
 from typing import Tuple
 
 import requests
-from allauth.socialaccount.adapter import get_adapter as get_socialaccount_adapter
 from allauth.socialaccount.models import SocialAccount
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client, OAuth2Error
 from django.conf import settings

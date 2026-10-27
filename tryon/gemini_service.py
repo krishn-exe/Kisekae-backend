@@ -4,7 +4,7 @@ import logging
 import mimetypes
 import os
 import requests
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

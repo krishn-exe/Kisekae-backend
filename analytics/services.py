@@ -3,12 +3,11 @@ import io
 from datetime import datetime
 from decimal import Decimal
 
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, F, Sum
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
-from django.utils import timezone
 
 from inventory.services import InventoryService
-from orders.models import Order, OrderItem, OrderStatus, OrderStatusHistory
+from orders.models import Order, OrderItem, OrderStatus
 from products.models import Product
 
 

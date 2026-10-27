@@ -22,68 +22,16 @@ from .serializers import (
 )
 from .services import OrderService
 
-ORDER_ERROR_SCHEMA = inline_serializer(
-    name="OrderErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="OrderErrorDetail",
-            fields={
-                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. ORDER_NOT_FOUND, STATUS_TRANSITION_FAILED)."),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
-ORDER_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="OrderDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": OrderDetailSerializer(),
-    },
-)
-
-ORDER_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="OrderListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": OrderListSerializer(many=True),
-    },
-)
-
-CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
-    name="CustomerOrderPaginatedResponse",
-    fields={
-        "count": serializers.IntegerField(help_text="Total customer orders count placed."),
-        "next": serializers.CharField(allow_null=True, help_text="Next page URL."),
-        "previous": serializers.CharField(allow_null=True, help_text="Previous page URL."),
-        "results": OrderListSerializer(many=True),
-    },
-)
-
-CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = inline_serializer(
-    name="CustomerOrderTrackResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": CustomerOrderTrackSerializer(),
-    },
-)
-
-BULK_ORDER_UPDATE_RESPONSE_SCHEMA = inline_serializer(
-    name="BulkOrderUpdateResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="BulkOrderUpdateData",
-            fields={"updated_count": serializers.IntegerField()},
-        ),
-    },
+ORDER_ERROR_SCHEMA = ERROR_SCHEMA
+ORDER_DETAIL_RESPONSE_SCHEMA = api_response(OrderDetailSerializer, "OrderDetailResponse")
+ORDER_LIST_RESPONSE_SCHEMA = api_response(OrderListSerializer, "OrderListResponse", many=True)
+CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
+CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
+BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
+    inline_serializer(name="BulkOrderUpdateData", fields={"updated_count": serializers.IntegerField()}),
+    "BulkOrderUpdateResponse",
 )
 
 
@@ -189,26 +137,18 @@ class OrderListCreateView(BaseOrderView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        try:
-            order = OrderService.create_order(
-                store=store,
-                customer_data={
-                    "customer_name": data["customer_name"],
-                    "customer_email": data["customer_email"],
-                    "customer_phone": data["customer_phone"],
-                    "shipping_address": data["shipping_address"],
-                    "notes": data.get("notes", ""),
-                },
-                items_data=data["items"],
-                user=request.user,
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="ORDER_CREATION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        order = OrderService.create_order(
+            store=store,
+            customer_data={
+                "customer_name": data["customer_name"],
+                "customer_email": data["customer_email"],
+                "customer_phone": data["customer_phone"],
+                "shipping_address": data["shipping_address"],
+                "notes": data.get("notes", ""),
+            },
+            items_data=data["items"],
+            user=request.user,
+        )
 
         return success_response(
             message=f"Order {order.order_number} created successfully.",
@@ -274,22 +214,14 @@ class OrderStatusUpdateView(BaseOrderView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        try:
-            updated_order = OrderService.update_order_status(
-                order=order,
-                new_status=data["status"],
-                user=request.user,
-                notes=data.get("notes", ""),
-                tracking_number=data.get("tracking_number", ""),
-                tracking_url=data.get("tracking_url", ""),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="STATUS_TRANSITION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_order = OrderService.update_order_status(
+            order=order,
+            new_status=data["status"],
+            user=request.user,
+            notes=data.get("notes", ""),
+            tracking_number=data.get("tracking_number", ""),
+            tracking_url=data.get("tracking_url", ""),
+        )
 
         return success_response(
             message=f"Order status updated to {updated_order.status}.",
@@ -326,19 +258,11 @@ class OrderDeliverView(BaseOrderView):
         serializer.is_valid(raise_exception=True)
         notes = serializer.validated_data.get("notes", "")
 
-        try:
-            delivered_order = OrderService.mark_order_delivered(
-                order=order,
-                user=request.user,
-                notes=notes,
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="DELIVERY_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        delivered_order = OrderService.mark_order_delivered(
+            order=order,
+            user=request.user,
+            notes=notes,
+        )
 
         return success_response(
             message=f"Order {delivered_order.order_number} marked as delivered.",
@@ -537,20 +461,12 @@ class CustomerOrderCancelView(APIView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            cancelled_order = OrderService.update_order_status(
-                order=order,
-                new_status=OrderStatus.CANCELLED,
-                user=request.user,
-                notes="Cancelled by customer.",
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="CANCELLATION_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        cancelled_order = OrderService.update_order_status(
+            order=order,
+            new_status=OrderStatus.CANCELLED,
+            user=request.user,
+            notes="Cancelled by customer.",
+        )
 
         return success_response(
             message=f"Order {cancelled_order.order_number} has been cancelled successfully.",

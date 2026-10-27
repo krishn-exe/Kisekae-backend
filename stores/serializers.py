@@ -7,9 +7,7 @@ from .models import (
     Store,
     StoreInvitation,
     StoreMembership,
-    StoreRole,
     StoreStatus,
-    VerificationStatus,
 )
 from .validators import gst_validator, pan_validator, phone_validator
 
@@ -200,29 +198,23 @@ class BusinessVerificationSerializer(serializers.ModelSerializer):
         ]
 
 
-class BusinessVerificationSubmitSerializer(serializers.Serializer):
-    pan_number = serializers.CharField(
-        max_length=10,
-        validators=[pan_validator],
-        help_text="10-character PAN number (e.g. ABCDE1234F).",
-    )
-    gst_number = serializers.CharField(
-        max_length=15,
-        validators=[gst_validator],
-        help_text="15-character GSTIN (e.g. 22AAAAA0000A1Z5).",
-    )
-    business_address = serializers.CharField(
-        min_length=5,
-        help_text="Registered business address.",
-    )
-    business_phone = serializers.CharField(
-        max_length=20,
-        validators=[phone_validator],
-        help_text="Contact phone number (10-15 digits).",
-    )
-    business_email = serializers.EmailField(
-        help_text="Contact business email address.",
-    )
+class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessVerification
+        fields = [
+            "pan_number",
+            "gst_number",
+            "business_address",
+            "business_phone",
+            "business_email",
+        ]
+        extra_kwargs = {
+            "pan_number": {"max_length": 10, "validators": [pan_validator]},
+            "gst_number": {"max_length": 15, "validators": [gst_validator]},
+            "business_address": {"min_length": 5, "trim_whitespace": True},
+            "business_phone": {"max_length": 20, "validators": [phone_validator], "trim_whitespace": True},
+            "business_email": {"trim_whitespace": True},
+        }
 
     def validate_pan_number(self, value):
         val = value.strip().upper()
@@ -243,15 +235,6 @@ class BusinessVerificationSubmitSerializer(serializers.Serializer):
         if qs.exists():
             raise serializers.ValidationError("This GSTIN is already registered with another store.")
         return val
-
-    def validate_business_address(self, value):
-        val = value.strip()
-        if len(val) < 5:
-            raise serializers.ValidationError("Business address must be at least 5 characters.")
-        return val
-
-    def validate_business_phone(self, value):
-        return value.strip()
 
     def validate_business_email(self, value):
         return value.strip().lower()

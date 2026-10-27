@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from django.db.models import Prefetch
 from django.http import HttpResponseRedirect
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
@@ -8,7 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from products.models import Product, ProductStatus
+from products.models import Product
 from products.views import ProductPagination
 from stores.permissions import IsSeller, get_store_membership
 from .models import (
@@ -18,14 +17,12 @@ from .models import (
     TRYON_SUPPORTED_CATEGORIES,
     TRYON_UNSUPPORTED_CATEGORIES,
     TryOnAngle,
-    TryOnProductAsset,
     TryOnRequest,
     TryOnRequestStatus,
 )
 from .serializers import (
     ComboAddItemSerializer,
     ComboCreateSerializer,
-    ComboItemSerializer,
     ComboSerializer,
     ComboUpdateSerializer,
     SellerProductARStatusSerializer,
@@ -36,106 +33,21 @@ from .serializers import (
 from .services import ComboService
 from .tasks import generate_tryon_task
 
-COMBO_RESPONSE_SCHEMA = inline_serializer(
-    name="ComboResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ComboSerializer(),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
-COMBO_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="ComboListResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": ComboSerializer(many=True),
-    },
-)
+COMBO_RESPONSE_SCHEMA = api_response(ComboSerializer, "ComboResponseEnvelope")
+COMBO_LIST_RESPONSE_SCHEMA = api_response(ComboSerializer, "ComboListResponseEnvelope", many=True)
+SHARED_COMBO_RESPONSE_SCHEMA = api_response(SharedComboSerializer, "SharedComboResponseEnvelope")
+COMBO_ERROR_SCHEMA = ERROR_SCHEMA
 
-SHARED_COMBO_RESPONSE_SCHEMA = inline_serializer(
-    name="SharedComboResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": SharedComboSerializer(),
-    },
+SELLER_AR_STATUS_LIST_SCHEMA = paginated_response(SellerProductARStatusSerializer, "SellerARStatusPaginatedData")
+SELLER_AR_STATUS_DETAIL_SCHEMA = api_response(SellerProductARStatusSerializer, "SellerARStatusDetailEnvelope")
+TRYON_GENERATE_RESPONSE_SCHEMA = api_response(
+    inline_serializer(name="TryOnGenerateResponseData", fields={"request_id": serializers.UUIDField(), "status": serializers.CharField()}),
+    "TryOnGenerateResponseEnvelope",
 )
-
-COMBO_ERROR_SCHEMA = inline_serializer(
-    name="ComboErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="ComboErrorDetail",
-            fields={
-                "code": serializers.CharField(),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
-
-SELLER_AR_STATUS_LIST_SCHEMA = inline_serializer(
-    name="SellerARStatusListEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="SellerARStatusPaginatedData",
-            fields={
-                "count": serializers.IntegerField(),
-                "next": serializers.CharField(allow_null=True),
-                "previous": serializers.CharField(allow_null=True),
-                "results": SellerProductARStatusSerializer(many=True),
-            },
-        ),
-    },
-)
-
-SELLER_AR_STATUS_DETAIL_SCHEMA = inline_serializer(
-    name="SellerARStatusDetailEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": SellerProductARStatusSerializer(),
-    },
-)
-
-TRYON_GENERATE_RESPONSE_SCHEMA = inline_serializer(
-    name="TryOnGenerateResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="TryOnGenerateResponseData",
-            fields={
-                "request_id": serializers.UUIDField(),
-                "status": serializers.CharField(),
-            },
-        ),
-    },
-)
-
-TRYON_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="TryOnDetailResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": TryOnRequestDetailSerializer(),
-    },
-)
-
-TRYON_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="TryOnListResponseEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": TryOnRequestDetailSerializer(many=True),
-    },
-)
+TRYON_DETAIL_RESPONSE_SCHEMA = api_response(TryOnRequestDetailSerializer, "TryOnDetailResponseEnvelope")
+TRYON_LIST_RESPONSE_SCHEMA = api_response(TryOnRequestDetailSerializer, "TryOnListResponseEnvelope", many=True)
 
 
 
@@ -202,20 +114,11 @@ class ComboListCreateView(BaseComboView):
         serializer = ComboCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            combo = ComboService.create_combo(
-                user=request.user,
-                name=serializer.validated_data.get("name"),
-                product_ids=serializer.validated_data.get("product_ids"),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            code = getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR"
-            return error_response(
-                message=msg,
-                code=str(code).upper(),
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        combo = ComboService.create_combo(
+            user=request.user,
+            name=serializer.validated_data.get("name"),
+            product_ids=serializer.validated_data.get("product_ids"),
+        )
 
         combo_detail = self.get_combo(request.user, combo.pk)
         return success_response(
@@ -270,20 +173,11 @@ class ComboDetailView(BaseComboView):
         serializer = ComboUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            updated_combo = ComboService.update_combo(
-                combo=combo,
-                name=serializer.validated_data.get("name"),
-                product_ids=serializer.validated_data.get("product_ids"),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            code = getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR"
-            return error_response(
-                message=msg,
-                code=str(code).upper(),
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_combo = ComboService.update_combo(
+            combo=combo,
+            name=serializer.validated_data.get("name"),
+            product_ids=serializer.validated_data.get("product_ids"),
+        )
 
         combo_detail = self.get_combo(request.user, updated_combo.pk)
         return success_response(
@@ -342,19 +236,10 @@ class ComboItemAddView(BaseComboView):
         serializer = ComboAddItemSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        try:
-            ComboService.add_item_to_combo(
-                combo=combo,
-                product_id=serializer.validated_data["product_id"],
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            code = getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR"
-            return error_response(
-                message=msg,
-                code=str(code).upper(),
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        ComboService.add_item_to_combo(
+            combo=combo,
+            product_id=serializer.validated_data["product_id"],
+        )
 
         combo_detail = self.get_combo(request.user, combo.pk)
         return success_response(
@@ -391,16 +276,7 @@ class ComboItemDeleteView(BaseComboView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        try:
-            ComboService.remove_item_from_combo(combo=combo, item_id=item_id)
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            code = getattr(exc, "code", "ITEM_NOT_FOUND") or "ITEM_NOT_FOUND"
-            return error_response(
-                message=msg,
-                code=str(code).upper(),
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
+        ComboService.remove_item_from_combo(combo=combo, item_id=item_id)
 
         return success_response(message="Item removed from combo successfully.")
 
@@ -485,20 +361,10 @@ class SharedComboSaveView(APIView):
         responses={201: COMBO_RESPONSE_SCHEMA, 400: COMBO_ERROR_SCHEMA, 404: COMBO_ERROR_SCHEMA},
     )
     def post(self, request, share_code: str):
-        try:
-            cloned_combo = ComboService.clone_shared_combo(
-                user=request.user,
-                share_code=share_code.strip(),
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            code = getattr(exc, "code", "VALIDATION_ERROR") or "VALIDATION_ERROR"
-            status_code = status.HTTP_404_NOT_FOUND if code == "COMBO_NOT_FOUND" else status.HTTP_400_BAD_REQUEST
-            return error_response(
-                message=msg,
-                code=str(code).upper(),
-                status_code=status_code,
-            )
+        cloned_combo = ComboService.clone_shared_combo(
+            user=request.user,
+            share_code=share_code.strip(),
+        )
 
         combo_detail = (
             Combo.objects.filter(pk=cloned_combo.pk, user=request.user)

@@ -1,4 +1,3 @@
-from decimal import Decimal
 from rest_framework import serializers
 
 from .models import Order, OrderItem, OrderStatus, OrderStatusHistory
@@ -102,16 +101,26 @@ class OrderItemInputSerializer(serializers.Serializer):
     size = serializers.CharField(required=False, allow_blank=True, default="")
 
 
-class OrderCreateSerializer(serializers.Serializer):
-    customer_name = serializers.CharField(max_length=150)
-    customer_email = serializers.EmailField()
-    customer_phone = serializers.CharField(max_length=20)
-    shipping_address = serializers.CharField(min_length=5)
-    notes = serializers.CharField(required=False, allow_blank=True, default="")
+class OrderCreateSerializer(serializers.ModelSerializer):
     items = serializers.ListField(
         child=OrderItemInputSerializer(),
         allow_empty=False,
     )
+
+    class Meta:
+        model = Order
+        fields = [
+            "customer_name",
+            "customer_email",
+            "customer_phone",
+            "shipping_address",
+            "notes",
+            "items",
+        ]
+        extra_kwargs = {
+            "shipping_address": {"min_length": 5},
+            "notes": {"required": False, "allow_blank": True, "default": ""},
+        }
 
 
 class OrderStatusUpdateSerializer(serializers.Serializer):

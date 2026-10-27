@@ -18,7 +18,6 @@ from .embedding_service import EmbeddingService
 from .models import (
     Product,
     ProductCategory,
-    ProductEmbedding,
     ProductStatus,
     ProductView,
     SearchHistory,

@@ -5,7 +5,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Address, AddressTitle, UserSettings, WishlistItem
+from .models import Address, UserSettings, WishlistItem
 from products.models import Product, ProductStatus
 from stores.models import StoreStatus
 from .utils import (
@@ -340,17 +340,13 @@ class GitHubOAuthSerializer(OAuthLoginSerializer):
     pass
 
 
-class UserUpdateSerializer(serializers.Serializer):
-    name = serializers.CharField(
-        max_length=150,
-        required=True,
-        validators=[name_validator],
-    )
-
-    def validate_name(self, value):
-        val = value.strip()
-        name_validator(val)
-        return val
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["name"]
+        extra_kwargs = {
+            "name": {"required": True, "validators": [name_validator], "trim_whitespace": True}
+        }
 
 
 class UserSettingsSerializer(serializers.ModelSerializer):
@@ -426,9 +422,11 @@ class AddressSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {
-            "postal_code": {"required": False},
-            "address_line_1": {"required": True},
-            "state": {"required": True},
+            "postal_code": {"required": False, "min_length": 3, "max_length": 20},
+            "address_line_1": {"required": True, "allow_blank": False, "trim_whitespace": True},
+            "state": {"required": True, "allow_blank": False, "trim_whitespace": True},
+            "latitude": {"min_value": -90, "max_value": 90},
+            "longitude": {"min_value": -180, "max_value": 180},
         }
 
     def to_internal_value(self, data):
@@ -442,30 +440,6 @@ class AddressSerializer(serializers.ModelSerializer):
         val = str(value).strip()
         if not val:
             raise serializers.ValidationError("Postal code / PIN code is required.")
-        if len(val) < 3 or len(val) > 20:
-            raise serializers.ValidationError("Postal code must be between 3 and 20 characters.")
-        return val
-
-    def validate_latitude(self, value):
-        if value is not None and (value < -90 or value > 90):
-            raise serializers.ValidationError("Latitude must be between -90.0 and 90.0 degrees.")
-        return value
-
-    def validate_longitude(self, value):
-        if value is not None and (value < -180 or value > 180):
-            raise serializers.ValidationError("Longitude must be between -180.0 and 180.0 degrees.")
-        return value
-
-    def validate_address_line_1(self, value):
-        val = str(value).strip()
-        if not val:
-            raise serializers.ValidationError("Address line 1 is required.")
-        return val
-
-    def validate_state(self, value):
-        val = str(value).strip()
-        if not val:
-            raise serializers.ValidationError("State is required.")
         return val
 
     def validate(self, attrs):

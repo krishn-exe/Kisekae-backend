@@ -1,6 +1,6 @@
 from rest_framework.permissions import BasePermission
 
-from .models import StoreMembership, StoreRole
+from .models import StoreMembership
 
 
 class IsSeller(BasePermission):

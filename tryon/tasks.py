@@ -2,7 +2,6 @@ import logging
 from typing import Any
 from celery import shared_task
 from django.core.files.base import ContentFile
-from django.db import transaction
 from django.utils import timezone
 
 from products.models import Product, ProductCategory
@@ -16,7 +15,7 @@ from .models import (
     TryOnRequest,
     TryOnRequestStatus,
 )
-from .vertex_service import VertexAITryOnError, VertexAIVirtualTryOnClient
+from .vertex_service import VertexAIVirtualTryOnClient
 
 logger = logging.getLogger(__name__)
 

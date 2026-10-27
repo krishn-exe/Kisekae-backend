@@ -56,7 +56,7 @@ urlpatterns = [
     # Store Inventory & Stock Management
     path("<int:pk>/", include("inventory.urls")),
 
-    # Store Orders & Returns Management
+    # Store Orders Management
     path("<int:pk>/", include("orders.urls")),
 
     # Store Analytics & Reporting

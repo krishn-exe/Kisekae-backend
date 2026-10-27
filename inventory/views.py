@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -22,97 +21,29 @@ from .serializers import (
 )
 from .services import InventoryService
 
-INVENTORY_ERROR_SCHEMA = inline_serializer(
-    name="InventoryErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="InventoryErrorDetail",
-            fields={
-                "code": serializers.CharField(help_text="Machine-readable error code identifying failure reason (e.g. INSUFFICIENT_STOCK, PRODUCT_NOT_FOUND)."),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
-STOCK_ADJUST_RESPONSE_SCHEMA = inline_serializer(
-    name="StockAdjustResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="StockAdjustData",
-            fields={
-                "product": ProductSerializer(),
-                "update": StockUpdateSerializer(),
-            },
-        ),
-    },
+INVENTORY_ERROR_SCHEMA = ERROR_SCHEMA
+STOCK_ADJUST_RESPONSE_SCHEMA = api_response(
+    inline_serializer(name="StockAdjustData", fields={"product": ProductSerializer(), "update": StockUpdateSerializer()}),
+    "StockAdjustResponse",
 )
-
-BULK_STOCK_UPDATE_RESPONSE_SCHEMA = inline_serializer(
-    name="BulkStockUpdateResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StockUpdateSerializer(many=True),
-    },
+BULK_STOCK_UPDATE_RESPONSE_SCHEMA = api_response(StockUpdateSerializer, "BulkStockUpdateResponse", many=True)
+STOCK_UPDATE_HISTORY_PAGINATED_RESPONSE_SCHEMA = paginated_response(StockUpdateSerializer, "StockUpdateHistoryPaginatedResponse")
+PRODUCT_STOCK_ALERT_GET_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="ProductStockAlertGetData",
+        fields={
+            "configured": serializers.BooleanField(help_text="True if a custom alert threshold is configured for this product."),
+            "default_threshold": serializers.IntegerField(required=False, help_text="Default system threshold (5) if unconfigured."),
+            "alert": StockAlertSerializer(allow_null=True),
+        },
+    ),
+    "ProductStockAlertGetResponse",
 )
-
-STOCK_UPDATE_HISTORY_PAGINATED_RESPONSE_SCHEMA = inline_serializer(
-    name="StockUpdateHistoryPaginatedResponse",
-    fields={
-        "count": serializers.IntegerField(help_text="Total stock history audit entries count."),
-        "next": serializers.CharField(allow_null=True),
-        "previous": serializers.CharField(allow_null=True),
-        "results": StockUpdateSerializer(many=True),
-    },
-)
-
-PRODUCT_STOCK_ALERT_GET_RESPONSE_SCHEMA = inline_serializer(
-    name="ProductStockAlertGetResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="ProductStockAlertGetData",
-            fields={
-                "configured": serializers.BooleanField(help_text="True if a custom alert threshold is configured for this product."),
-                "default_threshold": serializers.IntegerField(required=False, help_text="Default system threshold (5) if unconfigured."),
-                "alert": StockAlertSerializer(allow_null=True),
-            },
-        ),
-    },
-)
-
-STOCK_ALERT_RESPONSE_SCHEMA = inline_serializer(
-    name="StockAlertResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StockAlertSerializer(),
-    },
-)
-
-STOCK_ALERT_LIST_RESPONSE_SCHEMA = inline_serializer(
-    name="StockAlertListResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": StockAlertSerializer(many=True),
-    },
-)
-
-LOW_STOCK_PRODUCTS_RESPONSE_SCHEMA = inline_serializer(
-    name="LowStockProductsResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": LowStockProductSerializer(many=True),
-    },
-)
+STOCK_ALERT_RESPONSE_SCHEMA = api_response(StockAlertSerializer, "StockAlertResponse")
+STOCK_ALERT_LIST_RESPONSE_SCHEMA = api_response(StockAlertSerializer, "StockAlertListResponse", many=True)
+LOW_STOCK_PRODUCTS_RESPONSE_SCHEMA = api_response(LowStockProductSerializer, "LowStockProductsResponse", many=True)
 
 
 class BaseInventoryView(APIView):
@@ -179,22 +110,14 @@ class ProductStockView(BaseInventoryView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        try:
-            updated_product, update_record = InventoryService.update_stock(
-                product=product,
-                new_stock=data.get("stock"),
-                adjustment=data.get("adjustment"),
-                reason=data.get("reason"),
-                notes=data.get("notes", ""),
-                user=request.user,
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="STOCK_UPDATE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        updated_product, update_record = InventoryService.update_stock(
+            product=product,
+            new_stock=data.get("stock"),
+            adjustment=data.get("adjustment"),
+            reason=data.get("reason"),
+            notes=data.get("notes", ""),
+            user=request.user,
+        )
 
         return success_response(
             message=f"Stock updated to {updated_product.stock}.",
@@ -224,19 +147,11 @@ class BulkStockUpdateView(BaseInventoryView):
         serializer.is_valid(raise_exception=True)
         items_data = serializer.validated_data["items"]
 
-        try:
-            results = InventoryService.bulk_update_stock(
-                store=store,
-                items_data=items_data,
-                user=request.user,
-            )
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="BULK_UPDATE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        results = InventoryService.bulk_update_stock(
+            store=store,
+            items_data=items_data,
+            user=request.user,
+        )
 
         update_records = [record for _, record in results]
         return success_response(

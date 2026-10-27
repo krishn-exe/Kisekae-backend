@@ -1,4 +1,3 @@
-from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -16,53 +15,21 @@ from .serializers import (
 )
 from .services import CartService
 
-CART_ERROR_SCHEMA = inline_serializer(
-    name="CartErrorEnvelope",
-    fields={
-        "success": serializers.BooleanField(default=False),
-        "message": serializers.CharField(),
-        "error": inline_serializer(
-            name="CartErrorDetail",
-            fields={
-                "code": serializers.CharField(help_text="Machine-readable error code identifying the failure (e.g. INSUFFICIENT_STOCK, CART_EMPTY, PRODUCT_NOT_FOUND)."),
-                "details": serializers.JSONField(allow_null=True),
-            },
-        ),
-    },
-)
+from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
 
-CART_DETAIL_RESPONSE_SCHEMA = inline_serializer(
-    name="CartDetailResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": CartSerializer(),
-    },
-)
-
-CART_CHECKOUT_RESPONSE_SCHEMA = inline_serializer(
-    name="CartCheckoutSuccessResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": CartCheckoutResponseSerializer(),
-    },
-)
-
-CART_VALIDATE_RESPONSE_SCHEMA = inline_serializer(
-    name="CartValidateResponse",
-    fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
-        "data": inline_serializer(
-            name="CartValidateData",
-            fields={
-                "is_valid": serializers.BooleanField(help_text="Whether all cart items are currently available and purchasable."),
-                "issues_count": serializers.IntegerField(help_text="Number of stock or status issues discovered in the cart."),
-                "issues": serializers.ListField(help_text="List of issues with product names and reason descriptions."),
-            },
-        ),
-    },
+CART_ERROR_SCHEMA = ERROR_SCHEMA
+CART_DETAIL_RESPONSE_SCHEMA = api_response(CartSerializer, "CartDetailResponse")
+CART_CHECKOUT_RESPONSE_SCHEMA = api_response(CartCheckoutResponseSerializer, "CartCheckoutSuccessResponse")
+CART_VALIDATE_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="CartValidateData",
+        fields={
+            "is_valid": serializers.BooleanField(help_text="Whether all cart items are currently available and purchasable."),
+            "issues_count": serializers.IntegerField(help_text="Number of stock or status issues discovered in the cart."),
+            "issues": serializers.ListField(help_text="List of issues with product names and reason descriptions."),
+        },
+    ),
+    "CartValidateResponse",
 )
 
 
@@ -132,28 +99,14 @@ class AddToCartView(BaseCartView):
     )
     def post(self, request):
         serializer = AddToCartSerializer(data=request.data)
-        if not serializer.is_valid():
-            return error_response(
-                message="Invalid request data.",
-                code="VALIDATION_ERROR",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                details=serializer.errors,
-            )
+        serializer.is_valid(raise_exception=True)
 
         cart = self._get_cart(request)
         product_id = serializer.validated_data["product_id"]
         quantity = serializer.validated_data.get("quantity", 1)
         size = serializer.validated_data.get("size", "")
 
-        try:
-            CartService.add_item(cart=cart, product_id=product_id, quantity=quantity, size=size)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="CART_ADD_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        CartService.add_item(cart=cart, product_id=product_id, quantity=quantity, size=size)
 
         cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
@@ -177,26 +130,11 @@ class CartItemDetailView(BaseCartView):
     )
     def patch(self, request, item_id):
         serializer = UpdateCartItemSerializer(data=request.data)
-        if not serializer.is_valid():
-            return error_response(
-                message="Invalid request data.",
-                code="VALIDATION_ERROR",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                details=serializer.errors,
-            )
+        serializer.is_valid(raise_exception=True)
 
         cart = self._get_cart(request)
         quantity = serializer.validated_data["quantity"]
-
-        try:
-            CartService.update_item_quantity(cart=cart, item_id=item_id, quantity=quantity)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="CART_UPDATE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        CartService.update_item_quantity(cart=cart, item_id=item_id, quantity=quantity)
 
         cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
@@ -212,17 +150,7 @@ class CartItemDetailView(BaseCartView):
     )
     def delete(self, request, item_id):
         cart = self._get_cart(request)
-
-        try:
-            CartService.remove_item(cart=cart, item_id=item_id)
-        except ValidationError as e:
-            msg = e.messages[0] if hasattr(e, "messages") and e.messages else str(e)
-            return error_response(
-                message=msg,
-                code="CART_REMOVE_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
+        CartService.remove_item(cart=cart, item_id=item_id)
         cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(
             message="Item removed from cart.",
@@ -291,13 +219,7 @@ class CartCheckoutView(APIView):
     def post(self, request):
         user = request.user
         serializer = CartCheckoutSerializer(data=request.data or {})
-        if not serializer.is_valid():
-            return error_response(
-                message="Invalid checkout data.",
-                code="VALIDATION_ERROR",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                details=serializer.errors,
-            )
+        serializer.is_valid(raise_exception=True)
 
         data = serializer.validated_data
         address_id = data.get("address_id")
@@ -357,16 +279,7 @@ class CartCheckoutView(APIView):
         }
 
         cart = CartService.get_or_create_cart(user=user)
-
-        try:
-            orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data)
-        except ValidationError as exc:
-            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
-            return error_response(
-                message=msg,
-                code="CHECKOUT_FAILED",
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
+        orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data)
 
         total_amount = sum(o.total_amount for o in orders)
         currency = orders[0].currency if orders else "INR"

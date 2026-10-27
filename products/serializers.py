@@ -174,55 +174,43 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
 
-class ProductCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=255)
-    category = serializers.ChoiceField(
-        choices=ProductCategory.choices,
-        default=ProductCategory.TOP,
-        help_text="Clothing category / type",
-    )
-    color = serializers.CharField(
-        max_length=50,
-        required=False,
-        allow_blank=True,
-        default="",
-        help_text="Primary color (e.g. Black, White, Navy)",
-    )
-    description = serializers.CharField(required=False, allow_blank=True, default="")
-    price = serializers.DecimalField(max_digits=10, decimal_places=2)
-    compare_at_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, allow_null=True, default=None,
-    )
-    currency = serializers.CharField(max_length=3, required=False, default="INR")
-    sku = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
-    stock = serializers.IntegerField(
-        required=False,
-        default=0,
-        min_value=0,
-        help_text="Overall stock (auto-computed from sizes if sizes list is provided)",
-    )
+class ProductCreateSerializer(serializers.ModelSerializer):
     sizes = serializers.ListField(
         child=ProductSizeInputSerializer(),
         required=False,
         default=list,
         help_text="List of sizes and their stock counts: S/M/L/XL for clothing, 6-10 for shoes.",
     )
-    status = serializers.ChoiceField(
-        choices=[ProductStatus.DRAFT, ProductStatus.ACTIVE],
-        required=False,
-        default=ProductStatus.DRAFT,
-    )
+
+    class Meta:
+        model = Product
+        fields = [
+            "name",
+            "category",
+            "color",
+            "description",
+            "price",
+            "compare_at_price",
+            "currency",
+            "sku",
+            "stock",
+            "sizes",
+            "status",
+        ]
+        extra_kwargs = {
+            "name": {"min_length": 2},
+            "price": {"min_value": 0},
+            "stock": {"required": False, "default": 0, "min_value": 0},
+            "color": {"required": False, "allow_blank": True, "default": ""},
+            "description": {"required": False, "allow_blank": True, "default": ""},
+            "compare_at_price": {"required": False, "allow_null": True, "default": None},
+            "currency": {"required": False, "default": "INR"},
+            "sku": {"required": False, "allow_blank": True, "default": ""},
+            "status": {"required": False, "default": ProductStatus.DRAFT},
+        }
 
     def validate_name(self, value):
-        val = value.strip()
-        if len(val) < 2:
-            raise serializers.ValidationError("Product name must be at least 2 characters.")
-        return val
-
-    def validate_price(self, value):
-        if value < 0:
-            raise serializers.ValidationError("Price cannot be negative.")
-        return value
+        return value.strip()
 
     def validate(self, attrs):
         category = attrs.get("category", ProductCategory.TOP)
@@ -249,38 +237,15 @@ class ProductCreateSerializer(serializers.Serializer):
         return attrs
 
 
-class ProductUpdateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=255, required=False)
-    category = serializers.ChoiceField(choices=ProductCategory.choices, required=False)
-    color = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    description = serializers.CharField(required=False, allow_blank=True)
-    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
-    compare_at_price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, required=False, allow_null=True,
-    )
-    currency = serializers.CharField(max_length=3, required=False)
-    sku = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    stock = serializers.IntegerField(required=False, min_value=0)
-    sizes = serializers.ListField(
-        child=ProductSizeInputSerializer(),
-        required=False,
-        help_text="Updated list of sizes and stock counts.",
-    )
-    status = serializers.ChoiceField(
-        choices=ProductStatus.choices,
-        required=False,
-    )
+class ProductUpdateSerializer(ProductCreateSerializer):
+    status = serializers.ChoiceField(choices=ProductStatus.choices, required=False)
 
-    def validate_name(self, value):
-        val = value.strip()
-        if len(val) < 2:
-            raise serializers.ValidationError("Product name must be at least 2 characters.")
-        return val
-
-    def validate_price(self, value):
-        if value < 0:
-            raise serializers.ValidationError("Price cannot be negative.")
-        return value
+    class Meta(ProductCreateSerializer.Meta):
+        extra_kwargs = {
+            field: {"required": False}
+            for field in ProductCreateSerializer.Meta.fields
+            if field != "sizes"
+        }
 
     def validate(self, attrs):
         sizes = attrs.get("sizes")

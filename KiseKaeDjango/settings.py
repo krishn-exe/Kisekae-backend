@@ -316,14 +316,36 @@ else:
 STORE_INVITATION_TTL_DAYS = int(os.getenv("STORE_INVITATION_TTL_DAYS", 7))
 
 # CELERY
+from celery.schedules import crontab
+
 CELERY_BROKER_URL = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/0"
 CELERY_RESULT_BACKEND = f"redis://{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}/1"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 DJANGO_CELERY_BEAT_TZ_AWARE = False
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+CELERY_BEAT_SCHEDULE = {
+    'flush_expired_tokens_daily': {
+        'task': 'accounts.tasks.flush_expired_tokens_task',
+        'schedule': crontab(hour=0, minute=0),
+    },
+    'refresh_user_taste_profiles_daily': {
+        'task': 'products.tasks.refresh_all_taste_profiles_task',
+        'schedule': crontab(hour=2, minute=0),
+    },
+    'expire_stale_store_invitations_hourly': {
+        'task': 'stores.tasks.expire_stale_store_invitations_task',
+        'schedule': crontab(minute=0),
+    },
+    'expire_stale_pending_orders_every_minute': {
+        'task': 'orders.tasks.expire_stale_pending_orders_task',
+        'schedule': 60.0,
+    },
+}
 
 if 'test' in sys.argv:
     CELERY_TASK_ALWAYS_EAGER = True

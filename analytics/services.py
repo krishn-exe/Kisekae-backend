@@ -51,7 +51,7 @@ class AnalyticsService:
             shipped_orders=Count("id", filter=Q(status=OrderStatus.SHIPPED)),
             out_for_delivery_orders=Count("id", filter=Q(status=OrderStatus.OUT_FOR_DELIVERY)),
             cancelled_orders=Count("id", filter=Q(status=OrderStatus.CANCELLED)),
-            refunded_orders=Count("id", filter=Q(status=OrderStatus.REFUNDED)),
+            refunded_orders=Count("id", filter=Q(status__in=[OrderStatus.REFUNDED, OrderStatus.REFUND_REQUESTED])),
             revenue=Sum(
                 "total_amount",
                 filter=Q(status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]),
@@ -90,6 +90,13 @@ class AnalyticsService:
             else 0.0
         )
 
+        returned_orders = agg_data["refunded_orders"] or 0
+        return_rate = (
+            round((returned_orders / total_orders) * 100, 2)
+            if total_orders > 0
+            else 0.0
+        )
+
         # Scalable SQL low stock count
         low_stock_count = InventoryService.get_low_stock_products_queryset(store).count()
 
@@ -105,6 +112,8 @@ class AnalyticsService:
             "total_units_sold": total_units_sold,
             "average_order_value": float(average_order_value),
             "cancellation_rate": cancellation_rate,
+            "returned_orders": returned_orders,
+            "return_rate": return_rate,
             "low_stock_products_count": low_stock_count,
         }
 
@@ -266,27 +275,21 @@ class AnalyticsService:
             else 0.0
         )
 
-        # Average fulfillment duration computed directly in database SQL (PERF-02 fix)
-        delivered_agg = orders.filter(
-            status=OrderStatus.DELIVERED,
-            delivered_at__isnull=False,
-        ).aggregate(
-            avg_duration=Avg(
-                ExpressionWrapper(F("delivered_at") - F("created_at"), output_field=DurationField())
-            )
-        )
-        avg_dur = delivered_agg.get("avg_duration")
-        avg_fulfillment_hours = (
-            round(avg_dur.total_seconds() / 3600.0, 1)
-            if avg_dur and avg_dur.total_seconds() > 0
-            else None
+        returned_count = status_counts.pop(OrderStatus.REFUNDED, 0) + status_counts.pop(OrderStatus.REFUND_REQUESTED, 0)
+        status_counts["RETURNED"] = returned_count
+        returned_orders = returned_count
+        return_rate = (
+            round((returned_orders / total_orders) * 100, 2)
+            if total_orders > 0
+            else 0.0
         )
 
         return {
             "total_orders": total_orders,
             "status_breakdown": status_counts,
             "cancellation_rate": cancellation_rate,
-            "average_fulfillment_hours": avg_fulfillment_hours,
+            "returned_orders": returned_orders,
+            "return_rate": return_rate,
         }
 
     @classmethod

@@ -4,7 +4,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 
-from stores.models import StoreMembership, StoreRole
+from stores.models import StoreMembership, StoreRole, VerificationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +114,124 @@ class NotificationEmailService:
         return sent_count
 
     @staticmethod
-    def send_seller_low_stock_alert(product, size="", current_stock=0, threshold=5):
+    def send_seller_return_requested_alert(order):
         """
-        Dispatches low stock warning to Store Owners and Managers.
+        Dispatches return requested alert to Store Owners and Managers who have order_alerts enabled.
+        """
+        store = order.store
+        memberships = (
+            StoreMembership.objects.filter(
+                store=store,
+                role__in=[StoreRole.OWNER, StoreRole.MANAGER],
+            )
+            .select_related("user")
+        )
+
+        sent_count = 0
+        subject = f"[{store.name}] Return Requested: Order #{order.order_number}"
+        context = {
+            "order": order,
+        }
+
+        for membership in memberships:
+            member_user = membership.user
+            if not member_user or not member_user.email:
+                continue
+
+            if hasattr(member_user, "settings"):
+                if not member_user.settings.email_notifications or not member_user.settings.order_alerts:
+                    logger.info("Seller return alert skipped for member %s per preferences", member_user.email)
+                    continue
+
+            NotificationEmailService.send_multipart_email(
+                to_email=member_user.email,
+                subject=subject,
+                template_name="emails/seller_return_requested.html",
+                context=context,
+            )
+            sent_count += 1
+
+        return sent_count
+
+    @staticmethod
+    def send_store_verification_submitted_email(verification):
+        """
+        Sends confirmation email STRICTLY to the store owner when verification is submitted.
+        """
+        store = verification.store
+        owner_membership = (
+            StoreMembership.objects.filter(store=store, role=StoreRole.OWNER)
+            .select_related("user")
+            .first()
+        )
+        owner_user = (owner_membership.user if owner_membership else None) or store.created_by
+        to_email = owner_user.email if owner_user and owner_user.email else verification.business_email
+
+        if not to_email:
+            logger.warning("No recipient found for store %s verification submission email", store.id)
+            return False
+
+        subject = f"[{store.name}] Verification Application Received"
+        context = {
+            "store": store,
+            "verification": verification,
+            "owner": owner_user,
+        }
+
+        return NotificationEmailService.send_multipart_email(
+            to_email=to_email,
+            subject=subject,
+            template_name="emails/seller_verification_submitted.html",
+            context=context,
+        )
+
+    @staticmethod
+    def send_store_verification_result_email(verification):
+        """
+        Sends verification approval or rejection email STRICTLY to the store owner.
+        """
+        store = verification.store
+        owner_membership = (
+            StoreMembership.objects.filter(store=store, role=StoreRole.OWNER)
+            .select_related("user")
+            .first()
+        )
+        owner_user = (owner_membership.user if owner_membership else None) or store.created_by
+        to_email = owner_user.email if owner_user and owner_user.email else verification.business_email
+
+        if not to_email:
+            logger.warning("No recipient found for store %s verification result email", store.id)
+            return False
+
+        context = {
+            "store": store,
+            "verification": verification,
+            "rejection_reason": verification.rejection_reason,
+            "owner": owner_user,
+        }
+
+        if verification.status == VerificationStatus.APPROVED:
+            subject = f"[{store.name}] Business Verification Approved!"
+            template_name = "emails/seller_verification_approved.html"
+        elif verification.status == VerificationStatus.REJECTED:
+            subject = f"[{store.name}] Business Verification Update: Not Approved"
+            template_name = "emails/seller_verification_rejected.html"
+        else:
+            logger.info("Verification result email skipped for status '%s'", verification.status)
+            return False
+
+        return NotificationEmailService.send_multipart_email(
+            to_email=to_email,
+            subject=subject,
+            template_name=template_name,
+            context=context,
+        )
+
+    @staticmethod
+    def send_seller_low_stock_total_alert(product, current_stock):
+        """
+        Dispatches low stock alert when product total stock across all variants falls below 250 units.
+        Recipients: Store Owners and Managers with low_stock_total_alerts enabled.
         """
         store = product.store
         memberships = (
@@ -128,13 +243,11 @@ class NotificationEmailService:
         )
 
         sent_count = 0
-        size_label = f" ({size})" if size else ""
-        subject = f"[{store.name}] Low Stock Alert: {product.name}{size_label}"
+        subject = f"[{store.name}] Low Total Stock Alert: {product.name} ({current_stock} left)"
         context = {
             "product": product,
-            "size": size,
             "current_stock": current_stock,
-            "threshold": threshold,
+            "threshold": 250,
         }
 
         for membership in memberships:
@@ -143,16 +256,73 @@ class NotificationEmailService:
                 continue
 
             if hasattr(member_user, "settings"):
-                if not member_user.settings.email_notifications or not member_user.settings.stock_alerts:
-                    logger.info("Seller low stock alert skipped for member %s per preferences", member_user.email)
+                if not member_user.settings.email_notifications or not member_user.settings.low_stock_total_alerts:
+                    logger.info("Seller total low stock alert skipped for member %s per preferences", member_user.email)
                     continue
 
             NotificationEmailService.send_multipart_email(
                 to_email=member_user.email,
                 subject=subject,
-                template_name="emails/seller_low_stock.html",
+                template_name="emails/seller_low_stock_total.html",
                 context=context,
             )
             sent_count += 1
 
         return sent_count
+
+    @staticmethod
+    def send_seller_low_stock_variant_alert(product, size, current_stock):
+        """
+        Dispatches low stock alert when an individual variant size falls below 20 units.
+        Recipients: Store Owners and Managers with low_stock_variant_alerts enabled.
+        """
+        store = product.store
+        memberships = (
+            StoreMembership.objects.filter(
+                store=store,
+                role__in=[StoreRole.OWNER, StoreRole.MANAGER],
+            )
+            .select_related("user")
+        )
+
+        sent_count = 0
+        subject = f"[{store.name}] Low Stock Alert: {product.name} (Size {size}: {current_stock} left)"
+        context = {
+            "product": product,
+            "size": size,
+            "current_stock": current_stock,
+            "threshold": 20,
+        }
+
+        for membership in memberships:
+            member_user = membership.user
+            if not member_user or not member_user.email:
+                continue
+
+            if hasattr(member_user, "settings"):
+                if not member_user.settings.email_notifications or not member_user.settings.low_stock_variant_alerts:
+                    logger.info("Seller variant low stock alert skipped for member %s per preferences", member_user.email)
+                    continue
+
+            NotificationEmailService.send_multipart_email(
+                to_email=member_user.email,
+                subject=subject,
+                template_name="emails/seller_low_stock_variant.html",
+                context=context,
+            )
+            sent_count += 1
+
+        return sent_count
+
+    @staticmethod
+    def send_seller_low_stock_alert(product, size="", current_stock=0, threshold=5):
+        """
+        Legacy routing helper: routes to variant or total low stock alert.
+        """
+        if size:
+            return NotificationEmailService.send_seller_low_stock_variant_alert(
+                product=product, size=size, current_stock=current_stock
+            )
+        return NotificationEmailService.send_seller_low_stock_total_alert(
+            product=product, current_stock=current_stock
+        )

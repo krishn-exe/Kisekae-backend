@@ -98,6 +98,14 @@ class UserSettings(models.Model):
     email_notifications = models.BooleanField(default=True)
     order_alerts = models.BooleanField(default=True)
     stock_alerts = models.BooleanField(default=True)
+    low_stock_total_alerts = models.BooleanField(
+        default=True,
+        help_text="Alert when total product stock across all variants falls below 250 units.",
+    )
+    low_stock_variant_alerts = models.BooleanField(
+        default=True,
+        help_text="Alert when an individual variant size stock falls below 20 units.",
+    )
     language = models.CharField(max_length=10, default="en")
     timezone = models.CharField(max_length=50, default="Asia/Kolkata")
     updated_at = models.DateTimeField(auto_now=True)

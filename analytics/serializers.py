@@ -83,6 +83,14 @@ class DashboardMetricsDataSerializer(serializers.Serializer):
     cancellation_rate = serializers.FloatField(
         help_text="Cancellation rate percentage (cancelled orders / total orders * 100).",
     )
+    returned_orders = serializers.IntegerField(
+        default=0,
+        help_text="Count of returned / refunded orders.",
+    )
+    return_rate = serializers.FloatField(
+        default=0.0,
+        help_text="Return rate percentage (returned orders / total orders * 100).",
+    )
     low_stock_products_count = serializers.IntegerField(
         help_text="Count of store products currently at or below low stock threshold.",
     )
@@ -182,7 +190,7 @@ class OrderStatusBreakdownSerializer(serializers.Serializer):
     DELIVERED = serializers.IntegerField(default=0, help_text="Count of successfully delivered orders.")
     CANCELLED = serializers.IntegerField(default=0, help_text="Count of cancelled orders.")
     FAILED = serializers.IntegerField(default=0, help_text="Count of expired or failed payment orders.")
-    REFUNDED = serializers.IntegerField(default=0, help_text="Count of returned and refunded orders.")
+    RETURNED = serializers.IntegerField(default=0, help_text="Count of returned and refunded orders.")
 
 
 class OrderMetricsDataSerializer(serializers.Serializer):
@@ -195,9 +203,13 @@ class OrderMetricsDataSerializer(serializers.Serializer):
     cancellation_rate = serializers.FloatField(
         help_text="Percentage of orders that were cancelled.",
     )
-    average_fulfillment_hours = serializers.FloatField(
-        allow_null=True,
-        help_text="Average duration in hours from order creation to delivery (null if no deliveries).",
+    returned_orders = serializers.IntegerField(
+        default=0,
+        help_text="Count of returned / refunded orders.",
+    )
+    return_rate = serializers.FloatField(
+        default=0.0,
+        help_text="Return rate percentage (returned orders / total orders * 100).",
     )
 
 

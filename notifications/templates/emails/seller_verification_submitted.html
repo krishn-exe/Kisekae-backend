@@ -1,0 +1,32 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Application Submitted - {{ store.name }} - KISEKAE Seller{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge" style="background-color: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">UNDER REVIEW</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Verification Application Received
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Thank you for submitting your business details for <strong>{{ store.name }}</strong>.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 6px;">Application Summary</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Store: {{ store.name }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">PAN: <strong>{{ verification.pan_number }}</strong></div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">GSTIN: <strong>{{ verification.gst_number }}</strong></div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Business Email: {{ verification.business_email }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Business Phone: {{ verification.business_phone }}</div>
+</div>
+
+<p style="font-size: 14px; color: #44403C; line-height: 1.6; margin-top: 20px;">
+  Our compliance and onboard team is currently reviewing your documentation. You will receive an email notification as soon as your business verification is approved.
+</p>
+
+<div style="text-align: center; margin-top: 24px;">
+  <p style="font-size: 13px; color: #78716C;">Need help or have questions? Contact support at partner-support@kisekae.com.</p>
+</div>
+{% endblock %}

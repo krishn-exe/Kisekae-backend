@@ -377,6 +377,10 @@ class BusinessVerification(models.Model):
     def __str__(self):
         return f"Business Verification for {self.store.name} ({self.status})"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_status = self.status
+
     def clean(self):
         super().clean()
         if self.pan_number:
@@ -388,4 +392,13 @@ class BusinessVerification(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
+        is_new = self.pk is None
+        prev_status = getattr(self, "_original_status", None)
         super().save(*args, **kwargs)
+        self._original_status = self.status
+
+        if (not is_new and prev_status != self.status) or (is_new and self.status in (VerificationStatus.APPROVED, VerificationStatus.REJECTED)):
+            if self.status in (VerificationStatus.APPROVED, VerificationStatus.REJECTED):
+                from notifications.tasks import send_store_verification_result_email_task
+                verif_id = self.id
+                transaction.on_commit(lambda: send_store_verification_result_email_task.delay(verif_id))

@@ -357,6 +357,8 @@ class UserSettingsSerializer(serializers.ModelSerializer):
             "email_notifications",
             "order_alerts",
             "stock_alerts",
+            "low_stock_total_alerts",
+            "low_stock_variant_alerts",
             "language",
             "timezone",
             "updated_at",

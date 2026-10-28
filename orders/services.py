@@ -174,7 +174,14 @@ class OrderService:
                 product.sync_total_stock()
                 new_total_stock = product.stock
                 from inventory.services import InventoryService
-                InventoryService._check_stock_alert(product, prev_stock=prev_total_stock, new_stock=new_total_stock, size=size_name)
+                InventoryService._check_stock_alert(
+                    product,
+                    prev_stock=prev_size_stock,
+                    new_stock=new_size_stock,
+                    size=size_name,
+                    prev_total_stock=prev_total_stock,
+                    new_total_stock=new_total_stock,
+                )
             else:
                 # General product stock fallback if no size objects exist
                 if product.stock < qty:
@@ -515,6 +522,11 @@ class OrderService:
             changed_by=user,
             notes=reason or "Customer return and refund requested.",
         )
+
+        from notifications.tasks import send_seller_return_requested_alert_task
+        order_id_val = order.id
+        transaction.on_commit(lambda: send_seller_return_requested_alert_task.delay(order_id_val))
+
         return order
 
     @staticmethod

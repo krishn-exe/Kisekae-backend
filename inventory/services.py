@@ -1,6 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, F, IntegerField, Value, When
+from django.db.models import Case, F, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from products.models import Product, ProductSize, ProductVariant
@@ -158,8 +158,16 @@ class InventoryService:
                 notes=notes,
                 created_by=user,
             )
+            prev_total = locked_product.stock
             locked_product.sync_total_stock()
-            InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock, size=clean_size)
+            InventoryService._check_stock_alert(
+                locked_product,
+                prev_stock=prev_stock,
+                new_stock=new_stock,
+                size=clean_size,
+                prev_total_stock=prev_total,
+                new_total_stock=locked_product.stock,
+            )
             return locked_product, update_record
 
         if locked_product.stock < delta:
@@ -307,70 +315,57 @@ class InventoryService:
         return results
 
     @staticmethod
-    def _check_stock_alert(product, prev_stock, new_stock, size=""):
+    def _check_stock_alert(product, prev_stock, new_stock, size="", prev_total_stock=None, new_total_stock=None):
         """
-        Debounced alert trigger: sends an alert when crossing the threshold downward.
-        Falls back to default threshold (5) if no custom StockAlert row exists.
+        Alert trigger based on global business rules:
+        - Total product stock across all variants/sizes < 250 units
+        - Individual variant size stock < 20 units
         """
-        alert = StockAlert.objects.filter(product=product).first()
-        if alert and not alert.is_active:
-            return
-
-        threshold = alert.threshold if alert else 5
-        if prev_stock > threshold >= new_stock:
-            if alert:
-                alert.last_triggered_at = timezone.now()
-                alert.save(update_fields=["last_triggered_at", "updated_at"])
-            from notifications.tasks import send_seller_low_stock_alert_task
-            prod_id_val = product.id
-            curr_stock_val = new_stock
-            thresh_val = threshold
-            size_val = size or ""
-            transaction.on_commit(
-                lambda: send_seller_low_stock_alert_task.delay(
-                    prod_id_val, size=size_val, current_stock=curr_stock_val, threshold=thresh_val
-                )
-            )
-
-    @staticmethod
-    def set_alert(product, threshold=5, is_active=True):
-        if threshold < 0:
-            raise ValidationError("Threshold cannot be negative.")
-        alert, _ = StockAlert.objects.update_or_create(
-            product=product,
-            defaults={"threshold": threshold, "is_active": is_active},
+        from notifications.tasks import (
+            send_seller_low_stock_total_alert_task,
+            send_seller_low_stock_variant_alert_task,
         )
-        # Immediately check if current stock is below the newly configured threshold
-        if is_active and product.stock <= threshold:
-            alert.last_triggered_at = timezone.now()
-            alert.save(update_fields=["last_triggered_at", "updated_at"])
-            from notifications.tasks import send_seller_low_stock_alert_task
-            prod_id_val = product.id
-            curr_stock_val = product.stock
-            thresh_val = threshold
-            transaction.on_commit(
-                lambda: send_seller_low_stock_alert_task.delay(
-                    prod_id_val, current_stock=curr_stock_val, threshold=thresh_val
+
+        prod_id_val = product.id
+
+        # 1. Check variant size low stock (threshold < 20)
+        if size:
+            if prev_stock >= 20 and new_stock < 20:
+                curr_stock_val = new_stock
+                size_val = size
+                transaction.on_commit(
+                    lambda: send_seller_low_stock_variant_alert_task.delay(
+                        prod_id_val, size=size_val, current_stock=curr_stock_val
+                    )
                 )
-            )
-        return alert
+
+        # 2. Check total product stock low stock (threshold < 250)
+        if prev_total_stock is not None and new_total_stock is not None:
+            if prev_total_stock >= 250 and new_total_stock < 250:
+                tot_stock_val = new_total_stock
+                transaction.on_commit(
+                    lambda: send_seller_low_stock_total_alert_task.delay(
+                        prod_id_val, current_stock=tot_stock_val
+                    )
+                )
+        elif not size:
+            if prev_stock >= 250 and new_stock < 250:
+                tot_stock_val = new_stock
+                transaction.on_commit(
+                    lambda: send_seller_low_stock_total_alert_task.delay(
+                        prod_id_val, current_stock=tot_stock_val
+                    )
+                )
 
     @staticmethod
     def get_low_stock_products_queryset(store):
         """
-        Scalable database SQL query replacing Python in-memory looping (BUG-17 fix).
+        Returns products below threshold (total stock < 250 or variant size < 20).
         """
         return (
             Product.objects.filter(store=store)
-            .select_related("stock_alert")
-            .annotate(
-                effective_threshold=Case(
-                    When(stock_alert__isnull=False, stock_alert__is_active=True, then=F("stock_alert__threshold")),
-                    default=Value(5),
-                    output_field=IntegerField(),
-                )
-            )
-            .filter(stock__lte=F("effective_threshold"))
+            .filter(Q(stock__lt=250) | Q(sizes__stock__lt=20))
+            .distinct()
             .order_by("stock", "name")
         )
 
@@ -386,7 +381,6 @@ class InventoryService:
                 "product_name": p.name,
                 "sku": p.sku,
                 "current_stock": p.stock,
-                "threshold": getattr(p, "effective_threshold", 5),
                 "status": p.status,
             }
             for p in qs

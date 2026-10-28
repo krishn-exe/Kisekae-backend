@@ -104,10 +104,19 @@ class BusinessVerificationAdmin(admin.ModelAdmin):
 
     @admin.action(description="Approve selected business verifications")
     def approve_verifications(self, request, queryset):
-        count = queryset.update(status=VerificationStatus.APPROVED, rejection_reason="")
+        count = 0
+        for obj in queryset:
+            obj.status = VerificationStatus.APPROVED
+            obj.rejection_reason = ""
+            obj.save()
+            count += 1
         self.message_user(request, f"{count} business verification(s) approved successfully.")
 
     @admin.action(description="Reject selected business verifications")
     def reject_verifications(self, request, queryset):
-        count = queryset.update(status=VerificationStatus.REJECTED)
+        count = 0
+        for obj in queryset:
+            obj.status = VerificationStatus.REJECTED
+            obj.save()
+            count += 1
         self.message_user(request, f"{count} business verification(s) rejected.")

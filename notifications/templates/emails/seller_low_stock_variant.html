@@ -1,0 +1,38 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Low Variant Stock Alert - {{ product.name }} ({{ size }}) - KISEKAE Seller{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge" style="background-color: #FFFBEB; color: #B45309; border: 1px solid #FDE68A;">LOW VARIANT SIZE STOCK</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Variant Size Running Low
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Stock for a specific size has fallen below <strong>20 units</strong> for store <strong>{{ product.store.name }}</strong>.
+  </p>
+</div>
+
+<div class="info-card">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Product &amp; Size Details</div>
+  <div style="font-size: 15px; font-weight: 700; color: #2D2527;">{{ product.name }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Size Variant: <strong>{{ size }}</strong></div>
+  {% if product.sku %}
+  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">SKU: {{ product.sku }}</div>
+  {% endif %}
+  <div style="font-size: 14px; font-weight: 600; color: #B45309; margin-top: 8px;">
+    Current Size Stock: {{ current_stock }} units
+  </div>
+  <div style="font-size: 12px; color: #78716C; margin-top: 2px;">Variant Low Stock Threshold: &lt; 20 units</div>
+</div>
+
+<p style="font-size: 14px; color: #44403C; line-height: 1.6; margin-top: 20px;">
+  Popular sizes tend to sell out quickly. Please restock size <strong>{{ size }}</strong> to avoid missed sales opportunities.
+</p>
+
+<div style="text-align: center; margin-top: 24px;">
+  <a href="https://kisekae.com/seller/inventory" class="btn" style="background-color: #802B3E; color: #FFFFFF; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block;">
+    Restock Size
+  </a>
+</div>
+{% endblock %}

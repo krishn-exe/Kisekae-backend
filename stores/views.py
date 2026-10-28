@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
@@ -979,6 +980,10 @@ class BusinessVerificationView(APIView):
                 "rejection_reason": "",
             },
         )
+
+        verif_id = verification.id
+        from notifications.tasks import send_store_verification_submitted_email_task
+        transaction.on_commit(lambda: send_store_verification_submitted_email_task.delay(verif_id))
 
         return success_response(
             message="Business verification form submitted successfully. It is now pending admin review.",

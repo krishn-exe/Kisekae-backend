@@ -303,7 +303,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 type=int),
             OpenApiParameter(
                 name="low_stock",
-                description="Filter products at or below the low stock threshold (<= 5)",
+                description="Filter products at or below the low stock threshold (total stock < 250 or variant size < 20)",
                 required=False,
                 type=bool),
             OpenApiParameter(
@@ -428,10 +428,10 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             except (ValueError, TypeError):
                 pass
 
-        # Low stock filter (<= 5)
+        # Low stock filter (total stock < 250 or variant size < 20)
         low_stock = request.query_params.get("low_stock")
         if low_stock is not None and str(low_stock).strip().lower() in ("true", "1", "yes"):
-            queryset = queryset.filter(stock__lte=5)
+            queryset = queryset.filter(Q(stock__lt=250) | Q(sizes__stock__lt=20)).distinct()
 
         # Refundable filter
         is_refundable = request.query_params.get("is_refundable")

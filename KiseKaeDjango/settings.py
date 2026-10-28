@@ -225,6 +225,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Profile - Addresses', 'description': 'Customer shipping address book management and default address selection.'},
         {'name': 'Profile - Wishlist', 'description': 'Customer product wishlist, item notes, and transfers to the shopping cart.'},
         {'name': 'Profile - Saved Looks', 'description': 'Customer Virtual Try-On outfit combinations, combo items, and public share links.'},
+        {'name': 'Profile - Cart', 'description': 'Customer shopping cart items, size selections, and quantity updates.'},
         {'name': 'Store - Management', 'description': 'Seller store creation, settings, branding (logo & banner), memberships, and ownership transfer.'},
         {'name': 'Store - Verification', 'description': 'Seller store business identity verification and document submission.'},
         {'name': 'Store - Invitations', 'description': 'Inviting sellers and managers to collaborate on a store.'},
@@ -236,9 +237,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Store - AR Status', 'description': 'Seller product Virtual Try-On readiness flags (AVAILABLE, PROCESSING, REJECTED), rejection reasons, and angle metrics.'},
         {'name': 'Public Products', 'description': 'Customer-facing product catalog, category listings with active counts, search, and details.'},
         {'name': 'Recommendations', 'description': 'Personalized AI/ML recommendation feed tailored to customer browsing and interaction history.'},
-        {'name': 'Customer Orders', 'description': 'Customer order tracking, order cancellation, and detailed order history.'},
-        {'name': 'Cart', 'description': 'Customer shopping cart items, size selections, and quantity updates.'},
-        {'name': 'Cart & Checkout', 'description': 'Multi-store order checkout and validation.'},
+        {'name': 'Orders - Consumer', 'description': 'Customer order checkout, tracking, order cancellation, and detailed order history.'},
         {'name': 'Reviews & Ratings', 'description': 'Customer product ratings (1-5 stars), review submissions, verified buyer badges, and star breakdowns.'},
     ],
 }

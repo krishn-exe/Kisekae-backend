@@ -371,7 +371,6 @@ class AnalyticsService:
                 "Customer Phone",
                 "Customer Email",
                 "Total Amount (INR)",
-                "Tracking Number",
                 "Shipping Address",
             ])
             orders = Order.objects.filter(store=store).order_by("-created_at")
@@ -389,7 +388,6 @@ class AnalyticsService:
                     o.customer_phone,
                     o.customer_email,
                     str(o.total_amount),
-                    o.tracking_number or "",
                     o.shipping_address.replace("\n", ", "),
                 ])
 

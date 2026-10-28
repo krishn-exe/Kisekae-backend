@@ -1,6 +1,13 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .models import Order, OrderItem, OrderStatus, OrderStatusHistory, PaymentStatus
+from .models import (
+    Order,
+    OrderItem,
+    OrderStatus,
+    OrderStatusHistory,
+    PaymentStatus,
+)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -39,6 +46,12 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
         ]
 
 
+class OrderTrackingEventSerializer(serializers.Serializer):
+    event = serializers.CharField(help_text="Lifecycle event name, e.g. 'Order Confirmed', 'Shipped', 'Out For Delivery', 'Delivered'.")
+    status = serializers.CharField(help_text="Status code, e.g. CONFIRMED, SHIPPED, OUT_FOR_DELIVERY, DELIVERED.")
+    timestamp = serializers.DateTimeField(allow_null=True, help_text="Timestamp when the status transition was logged.")
+
+
 class OrderListSerializer(serializers.ModelSerializer):
     items_count = serializers.SerializerMethodField()
     user_id = serializers.IntegerField(source="user.id", read_only=True)
@@ -74,6 +87,8 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    events = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -86,26 +101,33 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "customer_phone",
             "shipping_address",
             "status",
+            "status_display",
             "payment_status",
             "total_amount",
             "currency",
             "razorpay_order_id",
             "razorpay_payment_id",
             "expires_at",
-            "tracking_number",
-            "tracking_url",
             "notes",
+            "shipped_at",
+            "out_for_delivery_at",
             "delivered_at",
             "refund_id",
             "refund_amount",
             "refund_reason",
             "cancelled_at",
             "refunded_at",
+            "events",
             "items",
             "status_history",
             "created_at",
             "updated_at",
         ]
+
+    @extend_schema_field(OrderTrackingEventSerializer(many=True))
+    def get_events(self, obj):
+        from .services import OrderService
+        return OrderService.build_tracking_timeline(obj)
 
 
 class OrderDeliverSerializer(serializers.Serializer):
@@ -150,10 +172,10 @@ class OrderRefundApproveSerializer(serializers.Serializer):
 
 
 class OrderStatusUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=OrderStatus.choices)
-    notes = serializers.CharField(required=False, allow_blank=True, default="")
-    tracking_number = serializers.CharField(required=False, allow_blank=True)
-    tracking_url = serializers.URLField(required=False, allow_blank=True)
+    status = serializers.ChoiceField(
+        choices=OrderStatus.choices,
+        help_text="Target order status. Supported transitions: SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED.",
+    )
 
 
 class BulkOrderItemStatusSerializer(serializers.Serializer):
@@ -171,8 +193,9 @@ class BulkOrderStatusUpdateSerializer(serializers.Serializer):
 
 class CustomerOrderTrackSerializer(serializers.ModelSerializer):
     store_name = serializers.CharField(source="store.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
     items = OrderItemSerializer(many=True, read_only=True)
-    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+    events = serializers.SerializerMethodField(help_text="Sequential log of status transition events and their timestamps.")
 
     class Meta:
         model = Order
@@ -181,14 +204,21 @@ class CustomerOrderTrackSerializer(serializers.ModelSerializer):
             "order_number",
             "store_name",
             "status",
+            "status_display",
             "payment_status",
             "total_amount",
             "currency",
-            "tracking_number",
-            "tracking_url",
+            "shipping_address",
+            "shipped_at",
+            "out_for_delivery_at",
             "delivered_at",
             "created_at",
             "updated_at",
+            "events",
             "items",
-            "status_history",
         ]
+
+    @extend_schema_field(OrderTrackingEventSerializer(many=True))
+    def get_events(self, obj):
+        from .services import OrderService
+        return OrderService.build_tracking_timeline(obj)

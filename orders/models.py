@@ -8,6 +8,7 @@ class OrderStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     CONFIRMED = "CONFIRMED", "Confirmed"
     SHIPPED = "SHIPPED", "Shipped"
+    OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", "Out For Delivery"
     DELIVERED = "DELIVERED", "Delivered"
     CANCELLED = "CANCELLED", "Cancelled"
     REFUND_REQUESTED = "REFUND_REQUESTED", "Refund Requested"
@@ -25,8 +26,9 @@ class PaymentStatus(models.TextChoices):
 # Valid state transitions
 VALID_TRANSITIONS = {
     OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.CANCELLED},
-    OrderStatus.CONFIRMED: {OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
-    OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
+    OrderStatus.CONFIRMED: {OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELLED},
+    OrderStatus.SHIPPED: {OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED},
+    OrderStatus.OUT_FOR_DELIVERY: {OrderStatus.DELIVERED},
     OrderStatus.DELIVERED: {OrderStatus.REFUND_REQUESTED},
     OrderStatus.REFUND_REQUESTED: {OrderStatus.REFUNDED, OrderStatus.DELIVERED},
     OrderStatus.CANCELLED: set(),
@@ -72,9 +74,17 @@ class Order(models.Model):
     )
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(max_length=3, default="INR")
-    tracking_number = models.CharField(max_length=100, blank=True, default="")
-    tracking_url = models.URLField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    shipped_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when order was marked as shipped.",
+    )
+    out_for_delivery_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when order was marked as out for delivery.",
+    )
     delivered_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -240,3 +250,5 @@ class OrderStatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.order.order_number}: {self.from_status} -> {self.to_status}"
+
+

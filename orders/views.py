@@ -195,7 +195,7 @@ class OrderStatusUpdateView(BaseOrderView):
     @extend_schema(
         tags=["Store - Orders"],
         summary="Update order status (Seller)",
-        description="Transitions an order status according to the lifecycle state machine (e.g. SHIPPED, DELIVERED).",
+        description="Transitions order status according to the lifecycle state machine (SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED). Automatically records the transition timestamp.",
         request=OrderStatusUpdateSerializer,
         responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
     )
@@ -221,9 +221,6 @@ class OrderStatusUpdateView(BaseOrderView):
                 order=order,
                 new_status=data["status"],
                 user=request.user,
-                notes=data.get("notes", ""),
-                tracking_number=data.get("tracking_number", ""),
-                tracking_url=data.get("tracking_url", ""),
             )
         except ValidationError as exc:
             return error_response(str(exc), code="INVALID_TRANSITION", status_code=status.HTTP_400_BAD_REQUEST)
@@ -232,6 +229,16 @@ class OrderStatusUpdateView(BaseOrderView):
             message=f"Order status updated to {updated_order.status}.",
             data=OrderDetailSerializer(updated_order).data,
         )
+
+    @extend_schema(
+        tags=["Store - Orders"],
+        summary="Update order status (POST alias)",
+        description="Alternative POST endpoint to transition an order status according to the lifecycle state machine.",
+        request=OrderStatusUpdateSerializer,
+        responses={200: ORDER_DETAIL_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA, 404: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request, pk, order_id):
+        return self.patch(request, pk, order_id)
 
 
 class OrderDeliverView(BaseOrderView):
@@ -696,7 +703,7 @@ class CustomerOrderTrackView(APIView):
         operation_id="customer_orders_track_by_id",
         tags=["Orders - Consumer"],
         summary="Track order status by order ID",
-        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by internal database order ID.",
+        description="Returns tracking status, transition timestamps, and the sequential lifecycle events (Order Confirmed, Shipped, Out For Delivery, Delivered) by internal database order ID.",
         parameters=[
             OpenApiParameter(name="order_id", description="Internal integer database ID of the order", required=True, type=int, location=OpenApiParameter.PATH),
         ],
@@ -737,7 +744,7 @@ class CustomerOrderTrackByNumberView(CustomerOrderTrackView):
         operation_id="customer_orders_track_by_order_number",
         tags=["Orders - Consumer"],
         summary="Track order status by order number",
-        description="Returns tracking status, carrier URL/tracking number, delivered_at timestamp, and transition history for the order by order number (e.g. ORD-20261022-A1B2C3).",
+        description="Returns tracking status, transition timestamps, and the sequential lifecycle events (Order Confirmed, Shipped, Out For Delivery, Delivered) by order number (e.g. ORD-20261022-A1B2C3).",
         parameters=[
             OpenApiParameter(name="order_number", description="Public order number string (e.g. ORD-20261022-A1B2C3)", required=True, type=str, location=OpenApiParameter.PATH),
         ],

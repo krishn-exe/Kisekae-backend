@@ -628,7 +628,7 @@ class OrderService:
 
     @staticmethod
     @transaction.atomic
-    def update_order_status(order, new_status, user=None, notes="", tracking_number="", tracking_url=""):
+    def update_order_status(order, new_status, user=None, notes="", **kwargs):
         if order.status == new_status:
             return order
 
@@ -639,17 +639,17 @@ class OrderService:
 
         old_status = order.status
         update_fields = ["status", "updated_at"]
+        now = timezone.now()
 
-        if new_status == OrderStatus.DELIVERED and not order.delivered_at:
-            order.delivered_at = timezone.now()
+        if new_status == OrderStatus.SHIPPED and not order.shipped_at:
+            order.shipped_at = now
+            update_fields.append("shipped_at")
+        elif new_status == OrderStatus.OUT_FOR_DELIVERY and not order.out_for_delivery_at:
+            order.out_for_delivery_at = now
+            update_fields.append("out_for_delivery_at")
+        elif new_status == OrderStatus.DELIVERED and not order.delivered_at:
+            order.delivered_at = now
             update_fields.append("delivered_at")
-
-        if tracking_number:
-            order.tracking_number = tracking_number
-            update_fields.append("tracking_number")
-        if tracking_url:
-            order.tracking_url = tracking_url
-            update_fields.append("tracking_url")
 
         order.status = new_status
         order.save(update_fields=update_fields)
@@ -659,24 +659,107 @@ class OrderService:
             from_status=old_status,
             to_status=new_status,
             changed_by=user,
-            notes=notes or f"Status changed from {old_status} to {new_status}.",
         )
 
-        if new_status in {OrderStatus.SHIPPED, OrderStatus.DELIVERED}:
+        if new_status in {OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED}:
             from notifications.tasks import send_order_lifecycle_email_task
             order_id_val = order.id
             status_val = new_status
-            notes_val = notes or ""
-            transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, status_val, notes_val))
+            transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, status_val))
 
         return order
 
     @staticmethod
     @transaction.atomic
-    def mark_order_delivered(order, user=None, notes=""):
+    def mark_order_delivered(order, user=None, notes="", **kwargs):
         return OrderService.update_order_status(
             order=order,
             new_status=OrderStatus.DELIVERED,
             user=user,
-            notes=notes,
         )
+
+    @staticmethod
+    def build_tracking_timeline(order):
+        """
+        Returns only the milestone events and their timestamps as recorded
+        when the seller changed the order status (CONFIRMED -> SHIPPED -> OUT_FOR_DELIVERY -> DELIVERED).
+        """
+        histories = list(order.status_history.all().order_by("created_at"))
+        hist_by_status = {}
+        for h in histories:
+            if h.to_status not in hist_by_status:
+                hist_by_status[h.to_status] = h.created_at
+
+        events = []
+
+        # 1. Order Confirmed
+        if order.status in {
+            OrderStatus.CONFIRMED,
+            OrderStatus.SHIPPED,
+            OrderStatus.OUT_FOR_DELIVERY,
+            OrderStatus.DELIVERED,
+            OrderStatus.REFUND_REQUESTED,
+            OrderStatus.REFUNDED,
+        } or order.payment_status == PaymentStatus.PAID:
+            conf_ts = hist_by_status.get(OrderStatus.CONFIRMED, order.created_at)
+            events.append({
+                "event": "Order Confirmed",
+                "status": OrderStatus.CONFIRMED,
+                "timestamp": conf_ts,
+            })
+
+        # 2. Shipped
+        if order.shipped_at or order.status in {
+            OrderStatus.SHIPPED,
+            OrderStatus.OUT_FOR_DELIVERY,
+            OrderStatus.DELIVERED,
+            OrderStatus.REFUND_REQUESTED,
+            OrderStatus.REFUNDED,
+        }:
+            shipped_ts = order.shipped_at or hist_by_status.get(OrderStatus.SHIPPED)
+            if shipped_ts:
+                events.append({
+                    "event": "Shipped",
+                    "status": OrderStatus.SHIPPED,
+                    "timestamp": shipped_ts,
+                })
+
+        # 3. Out For Delivery
+        if order.out_for_delivery_at or order.status in {
+            OrderStatus.OUT_FOR_DELIVERY,
+            OrderStatus.DELIVERED,
+            OrderStatus.REFUND_REQUESTED,
+            OrderStatus.REFUNDED,
+        }:
+            ofd_ts = order.out_for_delivery_at or hist_by_status.get(OrderStatus.OUT_FOR_DELIVERY)
+            if ofd_ts:
+                events.append({
+                    "event": "Out For Delivery",
+                    "status": OrderStatus.OUT_FOR_DELIVERY,
+                    "timestamp": ofd_ts,
+                })
+
+        # 4. Delivered
+        if order.delivered_at or order.status in {
+            OrderStatus.DELIVERED,
+            OrderStatus.REFUND_REQUESTED,
+            OrderStatus.REFUNDED,
+        }:
+            deliv_ts = order.delivered_at or hist_by_status.get(OrderStatus.DELIVERED)
+            if deliv_ts:
+                events.append({
+                    "event": "Delivered",
+                    "status": OrderStatus.DELIVERED,
+                    "timestamp": deliv_ts,
+                })
+
+        # 5. Cancelled
+        if order.status == OrderStatus.CANCELLED:
+            cancel_ts = order.cancelled_at or hist_by_status.get(OrderStatus.CANCELLED, order.updated_at)
+            events.append({
+                "event": "Cancelled",
+                "status": OrderStatus.CANCELLED,
+                "timestamp": cancel_ts,
+            })
+
+        return events

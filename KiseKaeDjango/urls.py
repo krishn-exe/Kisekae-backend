@@ -38,7 +38,6 @@ urlpatterns = [
     path('profile/', include('accounts.profile_urls')),
     path('stores/', include('stores.urls')),
     path('products/', include('products.public_urls')),
-    path('cart/', include('cart.urls')),
     path('orders/', include('orders.customer_urls')),
     path('reviews/', include('reviews.urls')),
     path('tryon/', include('tryon.urls')),

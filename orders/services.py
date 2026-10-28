@@ -617,6 +617,12 @@ class OrderService:
             changed_by=actor_user,
             notes=notes or "Refund approved and processed via Razorpay.",
         )
+
+        from notifications.tasks import send_order_lifecycle_email_task
+        order_id_val = order.id
+        notes_val = notes or ""
+        transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "REFUNDED", notes_val))
+
         return order
 
     @staticmethod
@@ -642,6 +648,12 @@ class OrderService:
             changed_by=actor_user,
             notes=notes or "Refund request rejected by seller.",
         )
+
+        from notifications.tasks import send_order_lifecycle_email_task
+        order_id_val = order.id
+        notes_val = notes or ""
+        transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "REFUND_REJECTED", notes_val))
+
         return order
 
     @staticmethod

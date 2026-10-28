@@ -248,3 +248,39 @@ Return ONLY the raw JSON object adhering to this schema."""
                 "error": str(exc),
             }
 
+    @classmethod
+    def test_connection(cls, timeout: int = 5) -> dict[str, Any]:
+        """
+        Validates whether GEMINI_API_KEY is configured and can connect
+        to Google Generative Language API without uploading or screening photos.
+        """
+        api_key = cls.get_api_key()
+        if not api_key:
+            return {
+                "success": False,
+                "message": "GEMINI_API_KEY is not configured.",
+                "status_code": None,
+            }
+
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            res = requests.get(url, timeout=timeout)
+            if res.status_code == 200:
+                return {
+                    "success": True,
+                    "message": "Successfully connected to Gemini API.",
+                    "status_code": 200,
+                }
+            return {
+                "success": False,
+                "message": f"Gemini API returned status {res.status_code}.",
+                "status_code": res.status_code,
+            }
+        except requests.RequestException as exc:
+            return {
+                "success": False,
+                "message": f"Failed to connect to Gemini API: {exc}",
+                "status_code": None,
+            }
+
+

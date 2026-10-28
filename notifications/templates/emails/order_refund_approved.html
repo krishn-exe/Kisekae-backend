@@ -1,0 +1,41 @@
+{% extends "emails/base_email.html" %}
+
+{% block title %}Refund Approved - Order #{{ order.order_number }} - KISEKAE{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 24px;">
+  <span class="badge" style="background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;">REFUND PROCESSED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+    Your Refund Has Been Approved
+  </h2>
+  <p style="color: #78716C; font-size: 14px; margin: 0;">
+    Your return request for Order <strong>#{{ order.order_number }}</strong> from <strong>{{ order.store.name }}</strong> has been approved.
+  </p>
+</div>
+
+<div class="info-card" style="border-left: 4px solid #059669;">
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #047857; font-weight: 600; margin-bottom: 4px;">Refund Details</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Order Number: {{ order.order_number }}</div>
+  <div style="font-size: 14px; font-weight: 700; color: #059669; margin-top: 6px;">
+    Refund Amount: {{ order.currency }} {{ order.total_amount }}
+  </div>
+  {% if order.refund_id %}
+  <div style="font-size: 12px; color: #78716C; margin-top: 4px;">
+    Transaction ID: {{ order.refund_id }}
+  </div>
+  {% endif %}
+  {% if notes %}
+  <div style="margin-top: 8px; font-size: 13px; color: #44403C;">
+    Seller Notes: {{ notes }}
+  </div>
+  {% endif %}
+</div>
+
+<p style="font-size: 14px; color: #44403C; line-height: 1.6; margin-top: 16px;">
+  The refund has been initiated to your original payment method. Depending on your bank or card issuer, the credited amount usually reflects within 5–7 business days.
+</p>
+
+<div style="text-align: center; margin-top: 24px;">
+  <p style="font-size: 13px; color: #78716C;">Questions regarding your refund? Contact support at support@kisekae.com.</p>
+</div>
+{% endblock %}

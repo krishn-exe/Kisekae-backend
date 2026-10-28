@@ -145,6 +145,9 @@ if "test" in sys.argv:
             'BACKEND': 'django_prometheus.cache.backends.locmem.LocMemCache',
         }
     }
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.MD5PasswordHasher',
+    ]
 
 
 # Password validation

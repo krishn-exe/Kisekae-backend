@@ -3,7 +3,7 @@ import io
 import json
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 from django.conf import settings
 from PIL import Image
 import requests
@@ -163,3 +163,50 @@ class VertexAIVirtualTryOnClient:
         except (KeyError, ValueError, json.JSONDecodeError) as exc:
             logger.error("Failed to parse Vertex AI response: %s", exc)
             raise VertexAITryOnError(f"Invalid response from Vertex AI: {exc}") from exc
+
+    @classmethod
+    def test_connection(cls, timeout: int = 5) -> dict[str, Any]:
+        """
+        Validates whether GCP credentials and project are configured and can connect
+        to Google Cloud Vertex AI endpoint without uploading images or requesting inference.
+        """
+        project_id = cls.get_project_id()
+        location = cls.get_location()
+
+        if not project_id:
+            return {
+                "success": False,
+                "message": "VERTEX_AI_PROJECT is not configured.",
+                "status_code": None,
+            }
+
+        token = cls.get_access_token()
+        if not token:
+            return {
+                "success": False,
+                "message": "Google Cloud access token could not be obtained. Check GOOGLE_APPLICATION_CREDENTIALS.",
+                "status_code": None,
+            }
+
+        try:
+            url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/endpoints"
+            headers = {"Authorization": f"Bearer {token}"}
+            res = requests.get(url, headers=headers, timeout=timeout)
+            if res.status_code == 200:
+                return {
+                    "success": True,
+                    "message": "Successfully connected to Vertex AI API.",
+                    "status_code": 200,
+                }
+            return {
+                "success": False,
+                "message": f"Vertex AI API returned status {res.status_code}.",
+                "status_code": res.status_code,
+            }
+        except requests.RequestException as exc:
+            return {
+                "success": False,
+                "message": f"Failed to connect to Vertex AI API: {exc}",
+                "status_code": None,
+            }
+

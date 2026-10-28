@@ -54,6 +54,8 @@ class NotificationEmailService:
             "OUT_FOR_DELIVERY": ("emails/order_out_for_delivery.html", f"Out for Delivery: Order #{order.order_number}"),
             "DELIVERED": ("emails/order_delivered.html", f"Delivered: Your Kisekae Order #{order.order_number}"),
             "CANCELLED": ("emails/order_cancelled.html", f"Order Cancelled: #{order.order_number}"),
+            "REFUNDED": ("emails/order_refund_approved.html", f"Refund Processed: Order #{order.order_number}"),
+            "REFUND_REJECTED": ("emails/order_refund_rejected.html", f"Return Update: Order #{order.order_number}"),
         }
 
         template_name, subject = templates.get(

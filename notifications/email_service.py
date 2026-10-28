@@ -317,12 +317,47 @@ class NotificationEmailService:
     @staticmethod
     def send_seller_low_stock_alert(product, size="", current_stock=0, threshold=5):
         """
-        Legacy routing helper: routes to variant or total low stock alert.
+        Dispatches low stock warning to Store Owners and Managers (legacy compatibility).
         """
-        if size:
-            return NotificationEmailService.send_seller_low_stock_variant_alert(
-                product=product, size=size, current_stock=current_stock
+        store = product.store
+        memberships = (
+            StoreMembership.objects.filter(
+                store=store,
+                role__in=[StoreRole.OWNER, StoreRole.MANAGER],
             )
-        return NotificationEmailService.send_seller_low_stock_total_alert(
-            product=product, current_stock=current_stock
+            .select_related("user")
         )
+
+        sent_count = 0
+        size_label = f" ({size})" if size else ""
+        subject = f"[{store.name}] Low Stock Alert: {product.name}{size_label}"
+        context = {
+            "product": product,
+            "size": size,
+            "current_stock": current_stock,
+            "threshold": threshold,
+        }
+
+        for membership in memberships:
+            member_user = membership.user
+            if not member_user or not member_user.email:
+                continue
+
+            if hasattr(member_user, "settings"):
+                if not member_user.settings.email_notifications or (
+                    not member_user.settings.stock_alerts
+                    and not member_user.settings.low_stock_total_alerts
+                    and not member_user.settings.low_stock_variant_alerts
+                ):
+                    logger.info("Seller low stock alert skipped for member %s per preferences", member_user.email)
+                    continue
+
+            NotificationEmailService.send_multipart_email(
+                to_email=member_user.email,
+                subject=subject,
+                template_name="emails/seller_low_stock.html",
+                context=context,
+            )
+            sent_count += 1
+
+        return sent_count

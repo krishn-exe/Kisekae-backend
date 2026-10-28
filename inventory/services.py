@@ -159,7 +159,7 @@ class InventoryService:
                 created_by=user,
             )
             locked_product.sync_total_stock()
-            InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock)
+            InventoryService._check_stock_alert(locked_product, prev_stock=prev_stock, new_stock=new_stock, size=clean_size)
             return locked_product, update_record
 
         if locked_product.stock < delta:
@@ -307,21 +307,28 @@ class InventoryService:
         return results
 
     @staticmethod
-    def _check_stock_alert(product, prev_stock, new_stock):
+    def _check_stock_alert(product, prev_stock, new_stock, size=""):
         """
-        Debounced alert trigger: sends an alert only when crossing the threshold downward.
+        Debounced alert trigger: sends an alert when crossing the threshold downward.
+        Falls back to default threshold (5) if no custom StockAlert row exists.
         """
-        alert = StockAlert.objects.filter(product=product, is_active=True).first()
-        if alert and prev_stock > alert.threshold >= new_stock:
-            alert.last_triggered_at = timezone.now()
-            alert.save(update_fields=["last_triggered_at", "updated_at"])
+        alert = StockAlert.objects.filter(product=product).first()
+        if alert and not alert.is_active:
+            return
+
+        threshold = alert.threshold if alert else 5
+        if prev_stock > threshold >= new_stock:
+            if alert:
+                alert.last_triggered_at = timezone.now()
+                alert.save(update_fields=["last_triggered_at", "updated_at"])
             from notifications.tasks import send_seller_low_stock_alert_task
             prod_id_val = product.id
             curr_stock_val = new_stock
-            thresh_val = alert.threshold
+            thresh_val = threshold
+            size_val = size or ""
             transaction.on_commit(
                 lambda: send_seller_low_stock_alert_task.delay(
-                    prod_id_val, current_stock=curr_stock_val, threshold=thresh_val
+                    prod_id_val, size=size_val, current_stock=curr_stock_val, threshold=thresh_val
                 )
             )
 

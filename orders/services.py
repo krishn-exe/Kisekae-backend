@@ -170,7 +170,11 @@ class OrderService:
                     notes=f"5-min reservation hold for Order {order.order_number}",
                     created_by=user,
                 )
+                prev_total_stock = product.stock
                 product.sync_total_stock()
+                new_total_stock = product.stock
+                from inventory.services import InventoryService
+                InventoryService._check_stock_alert(product, prev_stock=prev_total_stock, new_stock=new_total_stock, size=size_name)
             else:
                 # General product stock fallback if no size objects exist
                 if product.stock < qty:
@@ -193,6 +197,8 @@ class OrderService:
                     notes=f"5-min reservation hold for Order {order.order_number}",
                     created_by=user,
                 )
+                from inventory.services import InventoryService
+                InventoryService._check_stock_alert(product, prev_stock=prev_stock, new_stock=new_stock)
 
             item_total = product.price * qty
             total_amount += item_total

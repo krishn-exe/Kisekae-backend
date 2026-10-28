@@ -51,6 +51,7 @@ class NotificationEmailService:
         templates = {
             "CONFIRMED": ("emails/order_confirmed.html", f"Order Confirmed: #{order.order_number}"),
             "SHIPPED": ("emails/order_shipped.html", f"Your Order #{order.order_number} Has Shipped!"),
+            "OUT_FOR_DELIVERY": ("emails/order_out_for_delivery.html", f"Out for Delivery: Order #{order.order_number}"),
             "DELIVERED": ("emails/order_delivered.html", f"Delivered: Your Kisekae Order #{order.order_number}"),
             "CANCELLED": ("emails/order_cancelled.html", f"Order Cancelled: #{order.order_number}"),
         }

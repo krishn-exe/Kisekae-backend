@@ -234,7 +234,6 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Store - Inventory', 'description': 'Store stock adjustments, inventory history, and low-stock alert thresholds.'},
         {'name': 'Store - Orders', 'description': 'Seller order processing, state lifecycle transitions, bulk status updates, and delivery fulfillment.'},
         {'name': 'Store - Analytics', 'description': 'Store performance KPI metrics, revenue aggregations, product rankings, and CSV export.'},
-        {'name': 'Store - AR Status', 'description': 'Seller product Virtual Try-On readiness flags (AVAILABLE, PROCESSING, REJECTED), rejection reasons, and angle metrics.'},
         {'name': 'Public Products', 'description': 'Customer-facing product catalog, category listings with active counts, search, and details.'},
         {'name': 'Recommendations', 'description': 'Personalized AI/ML recommendation feed tailored to customer browsing and interaction history.'},
         {'name': 'Orders - Consumer', 'description': 'Customer order checkout, tracking, order cancellation, and detailed order history.'},

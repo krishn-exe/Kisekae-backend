@@ -25,6 +25,7 @@ from .models import (
     ProductCategory,
     ProductImage,
     ProductStatus,
+    ProductType,
     SearchHistory)
 from .serializers import (
     BulkProductUpdateSerializer,
@@ -121,20 +122,36 @@ def apply_product_filters(queryset, request):
     - in_stock
     - letter
     """
-    category_param = request.query_params.get("category") or request.query_params.get("type")
+    category_param = request.query_params.get("category")
     if category_param:
         cat_code = normalize_category_param(category_param)
         if cat_code:
             queryset = queryset.filter(category=cat_code)
 
+    type_param = request.query_params.get("product_type") or request.query_params.get("type")
+    if type_param:
+        t_clean = str(type_param).strip().upper()
+        if t_clean in [c.value for c in ProductType]:
+            queryset = queryset.filter(product_type=t_clean)
+        elif not category_param:
+            cat_code = normalize_category_param(type_param)
+            if cat_code:
+                queryset = queryset.filter(category=cat_code)
+
     size_param = request.query_params.get("size")
     if size_param:
         s_clean = str(size_param).strip().upper()
-        queryset = queryset.filter(sizes__size__iexact=s_clean, sizes__stock__gt=0)
+        queryset = queryset.filter(
+            Q(sizes__size__iexact=s_clean, sizes__stock__gt=0)
+            | Q(variants__sizes__size__iexact=s_clean, variants__sizes__stock__gt=0)
+        )
 
     color_param = request.query_params.get("color")
     if color_param:
-        queryset = queryset.filter(color__icontains=str(color_param).strip())
+        c_clean = str(color_param).strip()
+        queryset = queryset.filter(
+            Q(color__icontains=c_clean) | Q(variants__color_name__icontains=c_clean)
+        )
 
     min_price = request.query_params.get("min_price")
     if min_price:
@@ -220,23 +237,88 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
         operation_id="seller_store_product_list",
         tags=["Store - Products"],
         summary="List products for a store",
-        description="Returns all products for the specified store. Filterable by status and category.",
+        description=(
+            "Returns all products for the specified store. Filterable by category, demographic product type, "
+            "status, size, color, price range, stock levels, and refundability, with versatile sorting options "
+            "including stock count, price, newest, and ratings."
+        ),
         parameters=[
             OpenApiParameter(
-                name="status",
-                description="Filter by product status (DRAFT, ACTIVE, INACTIVE)",
-                required=False,
-                type=str),
-            OpenApiParameter(
                 name="category",
-                description="Filter by category (e.g. TOP, BOTTOM, FOOTWEAR)",
+                description="Filter by apparel category",
                 required=False,
-                type=str),
+                type=str,
+                enum=[c.value for c in ProductCategory]),
+            OpenApiParameter(
+                name="product_type",
+                description="Filter by demographic product type",
+                required=False,
+                type=str,
+                enum=[c.value for c in ProductType]),
+            OpenApiParameter(
+                name="status",
+                description="Filter by product listing status",
+                required=False,
+                type=str,
+                enum=[s.value for s in ProductStatus]),
             OpenApiParameter(
                 name="search",
-                description="Search products by name or SKU",
+                description="Search products by name, SKU, variant SKU, or description",
                 required=False,
                 type=str),
+            OpenApiParameter(
+                name="color",
+                description="Filter by color name or variant color descriptor (e.g. Navy, Emerald, Black)",
+                required=False,
+                type=str),
+            OpenApiParameter(
+                name="size",
+                description="Filter by available size in stock (e.g. XS, S, M, L, XL for clothing; 6-12 for shoes)",
+                required=False,
+                type=str),
+            OpenApiParameter(
+                name="min_price",
+                description="Minimum price filter (INR)",
+                required=False,
+                type=float),
+            OpenApiParameter(
+                name="max_price",
+                description="Maximum price filter (INR)",
+                required=False,
+                type=float),
+            OpenApiParameter(
+                name="in_stock",
+                description="Filter by stock presence: 'true' for stock > 0, 'false' for out of stock",
+                required=False,
+                type=bool),
+            OpenApiParameter(
+                name="min_stock",
+                description="Minimum inventory stock count",
+                required=False,
+                type=int),
+            OpenApiParameter(
+                name="max_stock",
+                description="Maximum inventory stock count",
+                required=False,
+                type=int),
+            OpenApiParameter(
+                name="low_stock",
+                description="Filter products at or below the low stock threshold (<= 5)",
+                required=False,
+                type=bool),
+            OpenApiParameter(
+                name="is_refundable",
+                description="Filter by customer return and refund eligibility (true/false)",
+                required=False,
+                type=bool),
+            OpenApiParameter(
+                name="ordering",
+                description="Sort products by attribute",
+                required=False,
+                type=str,
+                enum=["stock", "-stock", "price", "-price", "newest", "oldest", "name", "-name", "top_rated", "reviews"]),
+            OpenApiParameter(name="page", type=int, required=False),
+            OpenApiParameter(name="page_size", type=int, required=False),
         ],
         responses={200: STORE_PRODUCT_LIST_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, pk):
@@ -258,19 +340,133 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             )
         )
 
+        # Status filter
         status_filter = request.query_params.get("status")
         if status_filter:
-            queryset = queryset.filter(status=status_filter.upper())
+            st_clean = status_filter.strip().upper()
+            if st_clean in [s.value for s in ProductStatus]:
+                queryset = queryset.filter(status=st_clean)
 
+        # Category filter
         category_param = request.query_params.get("category")
         if category_param:
             cat_code = normalize_category_param(category_param)
             if cat_code:
                 queryset = queryset.filter(category=cat_code)
 
-        search = request.query_params.get("search")
+        # Product Type filter
+        product_type = request.query_params.get("product_type") or request.query_params.get("type")
+        if product_type:
+            pt_clean = product_type.strip().upper()
+            if pt_clean in [c.value for c in ProductType]:
+                queryset = queryset.filter(product_type=pt_clean)
+
+        # Search query (name, sku, description, variant sku)
+        search = request.query_params.get("search") or request.query_params.get("q")
         if search:
-            queryset = queryset.filter(Q(name__icontains=search) | Q(sku__icontains=search))
+            s_clean = search.strip()
+            queryset = queryset.filter(
+                Q(name__icontains=s_clean)
+                | Q(sku__icontains=s_clean)
+                | Q(description__icontains=s_clean)
+                | Q(variants__sku__icontains=s_clean)
+            )
+
+        # Color filter
+        color = request.query_params.get("color")
+        if color:
+            c_clean = color.strip()
+            queryset = queryset.filter(
+                Q(color__icontains=c_clean) | Q(variants__color_name__icontains=c_clean)
+            )
+
+        # Size filter (checks available stock > 0 in size)
+        size = request.query_params.get("size")
+        if size:
+            s_clean = size.strip().upper()
+            queryset = queryset.filter(
+                Q(sizes__size__iexact=s_clean, sizes__stock__gt=0)
+                | Q(variants__sizes__size__iexact=s_clean, variants__sizes__stock__gt=0)
+            )
+
+        # Price range filters
+        min_price = request.query_params.get("min_price")
+        if min_price:
+            try:
+                queryset = queryset.filter(price__gte=Decimal(str(min_price).strip()))
+            except Exception:
+                pass
+
+        max_price = request.query_params.get("max_price")
+        if max_price:
+            try:
+                queryset = queryset.filter(price__lte=Decimal(str(max_price).strip()))
+            except Exception:
+                pass
+
+        # In-stock filter
+        in_stock = request.query_params.get("in_stock")
+        if in_stock is not None:
+            val = str(in_stock).strip().lower()
+            if val in ("true", "1", "yes"):
+                queryset = queryset.filter(stock__gt=0)
+            elif val in ("false", "0", "no"):
+                queryset = queryset.filter(stock=0)
+
+        # Specific stock count range
+        min_stock = request.query_params.get("min_stock")
+        if min_stock is not None:
+            try:
+                queryset = queryset.filter(stock__gte=int(min_stock))
+            except (ValueError, TypeError):
+                pass
+
+        max_stock = request.query_params.get("max_stock")
+        if max_stock is not None:
+            try:
+                queryset = queryset.filter(stock__lte=int(max_stock))
+            except (ValueError, TypeError):
+                pass
+
+        # Low stock filter (<= 5)
+        low_stock = request.query_params.get("low_stock")
+        if low_stock is not None and str(low_stock).strip().lower() in ("true", "1", "yes"):
+            queryset = queryset.filter(stock__lte=5)
+
+        # Refundable filter
+        is_refundable = request.query_params.get("is_refundable")
+        if is_refundable is not None:
+            val = str(is_refundable).strip().lower() in ("true", "1", "yes")
+            queryset = queryset.filter(is_refundable=val)
+
+        # Sorting / Ordering (including stock sorting)
+        ordering = request.query_params.get("ordering") or request.query_params.get("sort") or "-created_at"
+        ordering = ordering.strip().lower()
+        valid_orderings = {
+            "stock": "stock",
+            "stock_asc": "stock",
+            "-stock": "-stock",
+            "stock_desc": "-stock",
+            "price": "price",
+            "price_asc": "price",
+            "-price": "-price",
+            "price_desc": "-price",
+            "created_at": "created_at",
+            "oldest": "created_at",
+            "-created_at": "-created_at",
+            "newest": "-created_at",
+            "name": "name",
+            "a-z": "name",
+            "-name": "-name",
+            "z-a": "-name",
+            "rating": "-average_rating",
+            "-rating": "-average_rating",
+            "top_rated": "-average_rating",
+            "reviews": "-review_count",
+            "-reviews": "-review_count",
+        }
+        order_field = valid_orderings.get(ordering, "-created_at")
+        queryset = queryset.order_by(order_field)
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset.distinct(), request)
@@ -820,6 +1016,10 @@ class PublicProductListView(APIView):
             "oldest": "created_at",
             "-created_at": "-created_at",
             "newest": "-created_at",
+            "stock": "stock",
+            "stock_asc": "stock",
+            "-stock": "-stock",
+            "stock_desc": "-stock",
             "rating": "-average_rating",
             "-rating": "-average_rating",
             "top_rated": "-average_rating",

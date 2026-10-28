@@ -14,16 +14,9 @@
 </div>
 
 <div class="info-card">
-  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Tracking Information</div>
-  {% if order.tracking_number %}
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Tracking Number: {{ order.tracking_number }}</div>
-  {% endif %}
-  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Delivering to: {{ order.shipping_address }}</div>
-  {% if order.tracking_url %}
-  <div style="text-align: center; margin-top: 14px;">
-    <a href="{{ order.tracking_url }}" class="btn">Track Your Shipment</a>
-  </div>
-  {% endif %}
+  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Delivery Address</div>
+  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">{{ order.customer_name }}</div>
+  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">{{ order.shipping_address }}</div>
 </div>
 
 <h3 style="font-size: 15px; font-weight: 600; color: #2D2527; margin: 24px 0 12px 0;">Items in this Shipment</h3>

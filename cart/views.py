@@ -36,12 +36,10 @@ CART_VALIDATE_RESPONSE_SCHEMA = api_response(
 
 class BaseCartView(APIView):
     throttle_scope = "store_read"
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def _get_cart(self, request):
-        token = request.headers.get("X-Cart-Token") or request.query_params.get("cart_token")
-        user = request.user if request.user and request.user.is_authenticated else None
-        return CartService.get_or_create_cart(user=user, cart_token=token)
+        return CartService.get_or_create_cart(user=request.user)
 
     def _load_cart_prefetched(self, cart_id):
         return (
@@ -58,24 +56,14 @@ class BaseCartView(APIView):
 
 class CartDetailView(BaseCartView):
     """
-    Retrieve the current cart or clear all items.
-    Supports authenticated users and guest sessions via the `X-Cart-Token` header.
+    Retrieve the current authenticated user's cart.
     """
 
     @extend_schema(
         tags=["Profile - Cart"],
         summary="Get current cart",
-        description="Returns the contents, item count, and subtotal of the active cart with item sizes and thumbnails.",
-        parameters=[
-            OpenApiParameter(
-                name="X-Cart-Token",
-                description="Optional guest cart token header",
-                required=False,
-                type=str,
-                location=OpenApiParameter.HEADER,
-            ),
-        ],
-        responses={200: CART_DETAIL_RESPONSE_SCHEMA},
+        description="Returns the contents, item count, and subtotal of the authenticated user's active cart with item sizes and thumbnails.",
+        responses={200: CART_DETAIL_RESPONSE_SCHEMA, 401: CART_ERROR_SCHEMA},
     )
     def get(self, request):
         cart = self._get_cart(request)

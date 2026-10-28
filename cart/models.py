@@ -31,7 +31,7 @@ class Cart(models.Model):
     def __str__(self):
         if self.user:
             return f"Cart of {self.user.email}"
-        return f"Guest Cart {self.cart_token}"
+        return f"Cart {self.id}"
 
     @property
     def total_items(self):

@@ -71,13 +71,27 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
         parameters=[
             OpenApiParameter(
                 name="status",
-                description="Filter by store status (ACTIVE, INACTIVE, SUSPENDED, ARCHIVED)",
+                description="Filter by store status",
                 required=False,
                 type=str,
+                enum=[s.value for s in StoreStatus],
             ),
             OpenApiParameter(
                 name="role",
-                description="Filter by role in store (OWNER, MANAGER)",
+                description="Filter by seller role in store",
+                required=False,
+                type=str,
+                enum=[r.value for r in StoreRole],
+            ),
+            OpenApiParameter(
+                name="is_verified",
+                description="Filter stores by business verification status (true/false)",
+                required=False,
+                type=bool,
+            ),
+            OpenApiParameter(
+                name="search",
+                description="Search store by name or slug",
                 required=False,
                 type=str,
             ),
@@ -86,6 +100,13 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
                 description="Set to 'true' to include archived stores",
                 required=False,
                 type=bool,
+            ),
+            OpenApiParameter(
+                name="ordering",
+                description="Sort by date or store name",
+                required=False,
+                type=str,
+                enum=["-created_at", "created_at", "name", "-name"],
             ),
         ],
         responses={200: STORE_LIST_RESPONSE_SCHEMA, 401: STORE_ERROR_SCHEMA, 403: STORE_ERROR_SCHEMA},
@@ -108,11 +129,30 @@ class StoreListCreateView(StoreMethodThrottleMixin, APIView):
         if status_filter:
             queryset = queryset.filter(status=status_filter.upper())
 
+        is_verified = request.query_params.get("is_verified")
+        if is_verified is not None:
+            v_val = str(is_verified).strip().lower() in ("true", "1", "yes")
+            queryset = queryset.filter(is_business_verified=v_val)
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            queryset = queryset.filter(Q(name__icontains=s_clean) | Q(slug__icontains=s_clean))
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "name": "name",
+            "-name": "-name",
+        }
+        order_field = valid_orderings.get(ordering, "-created_at")
+
         queryset = (
             queryset.annotate(member_count=Count("memberships", distinct=True))
             .select_related("business_verification")
             .prefetch_related("memberships")
-            .order_by("-created_at")
+            .order_by(order_field)
         )
 
         paginator = self.pagination_class()
@@ -387,7 +427,12 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
     @extend_schema(
         tags=["Store - Management"],
         summary="List store members",
-        description="Lists all members of the store. Accessible by Owner and Managers.",
+        description="Lists all members of the store with filters for role and user search. Accessible by Owner and Managers.",
+        parameters=[
+            OpenApiParameter(name="role", description="Filter by member role in store", required=False, type=str, enum=[r.value for r in StoreRole]),
+            OpenApiParameter(name="search", description="Search by member name or email", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for members list", required=False, type=str, enum=["-created_at", "created_at", "role"]),
+        ],
         responses={200: STORE_MEMBER_LIST_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},
     )
     def get(self, request, pk):
@@ -400,6 +445,25 @@ class StoreMemberListCreateView(StoreMethodThrottleMixin, APIView):
             )
 
         memberships = store.memberships.select_related("user").all()
+
+        role = request.query_params.get("role")
+        if role:
+            memberships = memberships.filter(role=role.upper())
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            memberships = memberships.filter(
+                Q(user__name__icontains=s_clean) | Q(user__email__icontains=s_clean)
+            )
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "role": "role",
+        }
+        memberships = memberships.order_by(valid_orderings.get(ordering, "-created_at"))
         return success_response(
             message="Store members fetched successfully.",
             data=StoreMemberSerializer(memberships, many=True).data,
@@ -515,9 +579,23 @@ class StoreInvitationListCreateView(APIView):
         parameters=[
             OpenApiParameter(
                 name="status",
-                description="Filter by invitation status",
+                description="Filter by invitation lifecycle status",
                 required=False,
                 type=str,
+                enum=[s.value for s in InvitationStatus],
+            ),
+            OpenApiParameter(
+                name="search",
+                description="Search invitations by invitee email address",
+                required=False,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="ordering",
+                description="Sort by invitation creation date",
+                required=False,
+                type=str,
+                enum=["-created_at", "created_at"],
             ),
         ],
         responses={200: STORE_INVITATION_LIST_RESPONSE_SCHEMA, 404: STORE_ERROR_SCHEMA},

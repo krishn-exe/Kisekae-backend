@@ -67,6 +67,10 @@ class DashboardMetricsDataSerializer(serializers.Serializer):
     shipped_orders = serializers.IntegerField(
         help_text="Count of orders currently in transit (shipped).",
     )
+    out_for_delivery_orders = serializers.IntegerField(
+        default=0,
+        help_text="Count of orders currently out for delivery.",
+    )
     cancelled_orders = serializers.IntegerField(
         help_text="Count of cancelled orders.",
     )
@@ -171,11 +175,14 @@ class ProductPerformanceResponseSerializer(serializers.Serializer):
 
 
 class OrderStatusBreakdownSerializer(serializers.Serializer):
-    PENDING = serializers.IntegerField(help_text="Count of pending orders awaiting payment.")
-    CONFIRMED = serializers.IntegerField(help_text="Count of confirmed orders awaiting packing/shipping.")
-    SHIPPED = serializers.IntegerField(help_text="Count of orders shipped and in transit.")
-    DELIVERED = serializers.IntegerField(help_text="Count of successfully delivered orders.")
-    CANCELLED = serializers.IntegerField(help_text="Count of cancelled orders.")
+    PENDING = serializers.IntegerField(default=0, help_text="Count of pending orders awaiting payment.")
+    CONFIRMED = serializers.IntegerField(default=0, help_text="Count of confirmed orders awaiting packing/shipping.")
+    SHIPPED = serializers.IntegerField(default=0, help_text="Count of orders shipped and in transit.")
+    OUT_FOR_DELIVERY = serializers.IntegerField(default=0, help_text="Count of orders currently out for delivery.")
+    DELIVERED = serializers.IntegerField(default=0, help_text="Count of successfully delivered orders.")
+    CANCELLED = serializers.IntegerField(default=0, help_text="Count of cancelled orders.")
+    FAILED = serializers.IntegerField(default=0, help_text="Count of expired or failed payment orders.")
+    REFUNDED = serializers.IntegerField(default=0, help_text="Count of returned and refunded orders.")
 
 
 class OrderMetricsDataSerializer(serializers.Serializer):

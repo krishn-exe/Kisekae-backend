@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
@@ -19,7 +19,7 @@ from django.db.models import Q
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from cart.services import CartService
-from products.models import Product
+from products.models import Product, ProductCategory
 
 from .otp import RedisOTP
 from .models import Address, PendingRegistration, UserSettings, WishlistItem
@@ -1417,7 +1417,13 @@ class WishlistListCreateView(APIView):
         operation_id="customer_wishlist_list",
         tags=["Profile - Wishlist"],
         summary="List customer wishlist items",
-        description="Returns all products saved in the authenticated customer's wishlist with up-to-date pricing, stock, and store details.",
+        description="Returns products saved in the authenticated customer's wishlist. Filterable by category, in-stock presence, and price ordering.",
+        parameters=[
+            OpenApiParameter(name="category", description="Filter by product category", required=False, type=str, enum=[c.value for c in ProductCategory]),
+            OpenApiParameter(name="in_stock", description="If true, only return wishlist items currently in stock", required=False, type=bool),
+            OpenApiParameter(name="search", description="Search by product name", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for wishlist items", required=False, type=str, enum=["-created_at", "created_at", "price", "-price"]),
+        ],
         responses={
             200: inline_serializer(
                 name="WishlistListResponse",
@@ -1436,7 +1442,37 @@ class WishlistListCreateView(APIView):
                 message="This account is inactive.",
                 code="ACCOUNT_INACTIVE",
                 status_code=status.HTTP_403_FORBIDDEN)
+
         items = user.wishlist_items.select_related("product", "product__store").all()
+
+        category = request.query_params.get("category")
+        if category:
+            items = items.filter(product__category=category.upper())
+
+        in_stock = request.query_params.get("in_stock")
+        if in_stock is not None:
+            val = str(in_stock).strip().lower() in ("true", "1", "yes")
+            if val:
+                items = items.filter(product__stock__gt=0)
+            else:
+                items = items.filter(product__stock=0)
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            items = items.filter(product__name__icontains=s_clean)
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "price": "product__price",
+            "-price": "-product__price",
+        }
+        items = items.order_by(valid_orderings.get(ordering, "-created_at"))
+
         serializer = WishlistItemSerializer(items, many=True)
         return success_response(
             message="Wishlist items retrieved successfully.",

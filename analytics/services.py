@@ -49,11 +49,16 @@ class AnalyticsService:
                 filter=Q(status__in=[OrderStatus.PENDING, OrderStatus.CONFIRMED]),
             ),
             shipped_orders=Count("id", filter=Q(status=OrderStatus.SHIPPED)),
+            out_for_delivery_orders=Count("id", filter=Q(status=OrderStatus.OUT_FOR_DELIVERY)),
             cancelled_orders=Count("id", filter=Q(status=OrderStatus.CANCELLED)),
             refunded_orders=Count("id", filter=Q(status=OrderStatus.REFUNDED)),
             revenue=Sum(
                 "total_amount",
-                filter=~Q(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED, OrderStatus.REFUNDED]),
+                filter=Q(status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]),
+            ),
+            paid_orders=Count(
+                "id",
+                filter=Q(status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]),
             ),
         )
 
@@ -61,19 +66,22 @@ class AnalyticsService:
         delivered_orders = agg_data["delivered_orders"] or 0
         pending_orders = agg_data["pending_orders"] or 0
         shipped_orders = agg_data["shipped_orders"] or 0
+        out_for_delivery_orders = agg_data["out_for_delivery_orders"] or 0
         cancelled_orders = agg_data["cancelled_orders"] or 0
         total_revenue = Decimal(str(agg_data["revenue"] or "0.00"))
+        paid_orders_count = agg_data["paid_orders"] or 0
 
-        valid_orders_count = total_orders - cancelled_orders - (agg_data["refunded_orders"] or 0)
         average_order_value = (
-            Decimal(str(round(total_revenue / valid_orders_count, 2)))
-            if valid_orders_count > 0
+            Decimal(str(round(total_revenue / paid_orders_count, 2)))
+            if paid_orders_count > 0
             else Decimal("0.00")
         )
 
-        # Total units sold from successful/active orders
-        non_cancelled = orders.exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
-        units_agg = OrderItem.objects.filter(order__in=non_cancelled).aggregate(total=Sum("quantity"))["total"]
+        # Total units sold from paid/confirmed orders
+        paid_orders_qs = orders.filter(
+            status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]
+        )
+        units_agg = OrderItem.objects.filter(order__in=paid_orders_qs).aggregate(total=Sum("quantity"))["total"]
         total_units_sold = units_agg or 0
 
         cancellation_rate = (
@@ -92,6 +100,7 @@ class AnalyticsService:
             "delivered_orders": delivered_orders,
             "pending_orders": pending_orders,
             "shipped_orders": shipped_orders,
+            "out_for_delivery_orders": out_for_delivery_orders,
             "cancelled_orders": cancelled_orders,
             "total_units_sold": total_units_sold,
             "average_order_value": float(average_order_value),
@@ -102,8 +111,9 @@ class AnalyticsService:
     @classmethod
     def get_revenue_analytics(cls, store, period="daily", from_date=None, to_date=None):
         """Calculates revenue time-series data aggregated daily, weekly, or monthly."""
-        orders = Order.objects.filter(store=store).exclude(
-            status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED, OrderStatus.REFUNDED]
+        orders = Order.objects.filter(
+            store=store,
+            status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]
         )
 
         from_d = cls.parse_date(from_date)
@@ -177,8 +187,9 @@ class AnalyticsService:
         Calculates sales leaderboard grouped strictly by product_id and ordered in SQL.
         """
         items = OrderItem.objects.filter(
-            order__store=store
-        ).exclude(order__status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
+            order__store=store,
+            order__status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]
+        )
 
         from_d = cls.parse_date(from_date)
         to_d = cls.parse_date(to_date)
@@ -196,9 +207,9 @@ class AnalyticsService:
         except (ValueError, TypeError):
             lim = 20
 
-        # Group strictly by product_id (BUG-22 fix)
+        # Group by product_id and product_sku
         items_agg = (
-            items.values("product_id", "product_name")
+            items.values("product_id", "product_name", "product_sku")
             .annotate(
                 units_sold=Sum("quantity"),
                 gross_revenue=Sum("total_price"),
@@ -210,7 +221,7 @@ class AnalyticsService:
             {
                 "product_id": row["product_id"],
                 "product_name": row["product_name"],
-                "sku": "",
+                "sku": row.get("product_sku") or "",
                 "units_sold": row["units_sold"] or 0,
                 "gross_revenue": float(Decimal(str(row["gross_revenue"] or "0.00"))),
             }
@@ -388,7 +399,7 @@ class AnalyticsService:
                     o.customer_phone,
                     o.customer_email,
                     str(o.total_amount),
-                    o.shipping_address.replace("\n", ", "),
+                    (o.shipping_address or "").replace("\n", ", "),
                 ])
 
         else:
@@ -408,8 +419,10 @@ class AnalyticsService:
                 "Status",
             ])
             orders = (
-                Order.objects.filter(store=store)
-                .exclude(status__in=[OrderStatus.CANCELLED, OrderStatus.FAILED])
+                Order.objects.filter(
+                    store=store,
+                    status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]
+                )
                 .prefetch_related("items")
                 .order_by("-created_at")
             )

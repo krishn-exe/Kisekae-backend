@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -5,13 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from products.models import Product
+from products.models import Product, ProductCategory
 from products.serializers import ProductSerializer
 from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
 
-from .models import StockAlert, StockUpdate
+from .models import StockAlert, StockChangeReason, StockUpdate
 from .serializers import (
     BulkStockDeltaSerializer,
     BulkStockUpdateSerializer,
@@ -302,10 +303,15 @@ class StockUpdateHistoryView(BaseInventoryView):
     @extend_schema(
         tags=["Store - Inventory"],
         summary="Get stock change audit history",
-        description="Returns paginated audit log of all stock adjustments made across store products.",
+        description="Returns paginated audit log of all stock adjustments made across store products with filters for date range, variant, reason, and text search.",
         parameters=[
             OpenApiParameter(name="product_id", description="Filter by product ID", required=False, type=int),
-            OpenApiParameter(name="reason", description="Filter by StockChangeReason", required=False, type=str),
+            OpenApiParameter(name="variant_id", description="Filter by variant ID", required=False, type=int),
+            OpenApiParameter(name="reason", description="Filter by stock adjustment reason", required=False, type=str, enum=[r.value for r in StockChangeReason]),
+            OpenApiParameter(name="from_date", description="Filter adjustments on or after date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="to_date", description="Filter adjustments on or before date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="search", description="Search notes or product name", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for history log", required=False, type=str, enum=["-created_at", "created_at", "-change_amount", "change_amount"]),
         ],
         responses={200: STOCK_UPDATE_HISTORY_PAGINATED_RESPONSE_SCHEMA},
     )
@@ -317,16 +323,49 @@ class StockUpdateHistoryView(BaseInventoryView):
         queryset = (
             StockUpdate.objects.filter(product__store=store)
             .select_related("product", "variant", "variant_size", "created_by")
-            .order_by("-created_at")
         )
 
         product_id = request.query_params.get("product_id")
         if product_id:
             queryset = queryset.filter(product_id=product_id)
 
+        variant_id = request.query_params.get("variant_id")
+        if variant_id:
+            queryset = queryset.filter(variant_id=variant_id)
+
         reason = request.query_params.get("reason")
         if reason:
             queryset = queryset.filter(reason=reason.upper())
+
+        from_date = request.query_params.get("from_date")
+        if from_date:
+            try:
+                queryset = queryset.filter(created_at__date__gte=from_date.strip())
+            except Exception:
+                pass
+
+        to_date = request.query_params.get("to_date")
+        if to_date:
+            try:
+                queryset = queryset.filter(created_at__date__lte=to_date.strip())
+            except Exception:
+                pass
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            queryset = queryset.filter(
+                Q(notes__icontains=s_clean) | Q(product__name__icontains=s_clean)
+            )
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "-change_amount": "-change_amount",
+            "change_amount": "change_amount",
+        }
+        queryset = queryset.order_by(valid_orderings.get(ordering, "-created_at"))
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)
@@ -422,7 +461,12 @@ class StockAlertListView(BaseInventoryView):
     @extend_schema(
         tags=["Store - Inventory"],
         summary="List all configured stock alerts for store",
-        description="Lists all configured stock alert thresholds for products in the store.",
+        description="Lists all configured stock alert thresholds for products in the store with active status filter and search.",
+        parameters=[
+            OpenApiParameter(name="is_active", description="Filter active (true) or disabled (false) alert rules", required=False, type=bool),
+            OpenApiParameter(name="search", description="Search by product name or SKU", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for alerts list", required=False, type=str, enum=["-threshold", "threshold", "name", "-name", "-created_at", "created_at"]),
+        ],
         responses={200: STOCK_ALERT_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request, pk):
@@ -431,6 +475,28 @@ class StockAlertListView(BaseInventoryView):
             return err
 
         alerts = StockAlert.objects.filter(product__store=store).select_related("product")
+
+        is_active = request.query_params.get("is_active")
+        if is_active is not None:
+            val = str(is_active).strip().lower() in ("true", "1", "yes")
+            alerts = alerts.filter(is_active=val)
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            alerts = alerts.filter(Q(product__name__icontains=s_clean) | Q(product__sku__icontains=s_clean))
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-threshold": "-threshold",
+            "threshold": "threshold",
+            "name": "product__name",
+            "-name": "-product__name",
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+        }
+        alerts = alerts.order_by(valid_orderings.get(ordering, "-created_at"))
+
         return success_response(
             message="Stock alerts fetched successfully.",
             data=StockAlertSerializer(alerts, many=True).data,
@@ -444,7 +510,13 @@ class LowStockProductsView(BaseInventoryView):
     @extend_schema(
         tags=["Store - Inventory"],
         summary="List products with low or zero stock",
-        description="Returns paginated list of all products currently at or below their configured or default alert threshold.",
+        description="Returns paginated list of all products currently at or below their configured or custom alert threshold. Filterable by category and search.",
+        parameters=[
+            OpenApiParameter(name="threshold", description="Override alert threshold cutoff (e.g. 10 or 20)", required=False, type=int),
+            OpenApiParameter(name="category", description="Filter by apparel category", required=False, type=str, enum=[c.value for c in ProductCategory]),
+            OpenApiParameter(name="search", description="Search by product name or SKU", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order: lowest stock first, highest stock, or name", required=False, type=str, enum=["stock", "-stock", "name", "-name"]),
+        ],
         responses={200: LOW_STOCK_PRODUCTS_PAGINATED_SCHEMA},
     )
     def get(self, request, pk):
@@ -453,6 +525,33 @@ class LowStockProductsView(BaseInventoryView):
             return err
 
         queryset = InventoryService.get_low_stock_products_queryset(store)
+
+        custom_thresh = request.query_params.get("threshold")
+        if custom_thresh:
+            try:
+                c_val = int(custom_thresh)
+                queryset = queryset.filter(stock__lte=c_val)
+            except (ValueError, TypeError):
+                pass
+
+        category = request.query_params.get("category")
+        if category:
+            queryset = queryset.filter(category=category.upper())
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            queryset = queryset.filter(Q(name__icontains=s_clean) | Q(sku__icontains=s_clean))
+
+        ordering = request.query_params.get("ordering", "stock").strip().lower()
+        valid_orderings = {
+            "stock": "stock",
+            "-stock": "-stock",
+            "name": "name",
+            "-name": "-name",
+        }
+        queryset = queryset.order_by(valid_orderings.get(ordering, "stock"))
+
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)
 

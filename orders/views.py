@@ -18,7 +18,7 @@ from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
 
-from .models import Order, OrderStatus
+from .models import Order, OrderStatus, PaymentStatus
 from .razorpay_service import RazorpayService
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
@@ -115,10 +115,16 @@ class OrderListView(BaseOrderView):
         operation_id="seller_store_orders_list",
         tags=["Store - Orders"],
         summary="List orders for store",
-        description="Returns paginated orders for the store. Filterable by status and customer search.",
+        description="Returns paginated orders for the store. Filterable by status, payment status, customer search, date range, and monetary amount.",
         parameters=[
-            OpenApiParameter(name="status", description="Filter by OrderStatus", required=False, type=str),
+            OpenApiParameter(name="status", description="Filter by order lifecycle status", required=False, type=str, enum=[s.value for s in OrderStatus]),
+            OpenApiParameter(name="payment_status", description="Filter by payment status", required=False, type=str, enum=[p.value for p in PaymentStatus]),
+            OpenApiParameter(name="from_date", description="Filter orders created on or after date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="to_date", description="Filter orders created on or before date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="min_amount", description="Minimum order total amount (INR)", required=False, type=float),
+            OpenApiParameter(name="max_amount", description="Maximum order total amount (INR)", required=False, type=float),
             OpenApiParameter(name="search", description="Search by customer name, email, or order number", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for order list", required=False, type=str, enum=["-created_at", "created_at", "-total_amount", "total_amount"]),
         ],
         responses={200: STORE_ORDER_PAGINATED_RESPONSE_SCHEMA},
     )
@@ -133,13 +139,57 @@ class OrderListView(BaseOrderView):
         if status_filter:
             queryset = queryset.filter(status=status_filter.upper())
 
+        payment_status = request.query_params.get("payment_status")
+        if payment_status:
+            queryset = queryset.filter(payment_status=payment_status.upper())
+
+        from_date = request.query_params.get("from_date")
+        if from_date:
+            try:
+                queryset = queryset.filter(created_at__date__gte=from_date.strip())
+            except Exception:
+                pass
+
+        to_date = request.query_params.get("to_date")
+        if to_date:
+            try:
+                queryset = queryset.filter(created_at__date__lte=to_date.strip())
+            except Exception:
+                pass
+
+        min_amount = request.query_params.get("min_amount")
+        if min_amount:
+            try:
+                queryset = queryset.filter(total_amount__gte=Decimal(str(min_amount).strip()))
+            except Exception:
+                pass
+
+        max_amount = request.query_params.get("max_amount")
+        if max_amount:
+            try:
+                queryset = queryset.filter(total_amount__lte=Decimal(str(max_amount).strip()))
+            except Exception:
+                pass
+
         search = request.query_params.get("search")
         if search:
+            s_clean = search.strip()
             queryset = queryset.filter(
-                Q(order_number__icontains=search)
-                | Q(customer_name__icontains=search)
-                | Q(customer_email__icontains=search)
+                Q(order_number__icontains=s_clean)
+                | Q(customer_name__icontains=s_clean)
+                | Q(customer_email__icontains=s_clean)
             )
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "-total_amount": "-total_amount",
+            "total_amount": "total_amount",
+        }
+        queryset = queryset.order_by(valid_orderings.get(ordering, "-created_at"))
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)
@@ -553,7 +603,15 @@ class CustomerOrderListView(APIView):
         operation_id="customer_orders_list",
         tags=["Orders - Consumer"],
         summary="List customer orders",
-        description="Returns paginated list of all orders placed by the current customer.",
+        description="Returns paginated list of all orders placed by the current customer with filters for status, date range, search, and store.",
+        parameters=[
+            OpenApiParameter(name="status", description="Filter by order lifecycle status", required=False, type=str, enum=[s.value for s in OrderStatus]),
+            OpenApiParameter(name="search", description="Search by order number or product name in order", required=False, type=str),
+            OpenApiParameter(name="store_id", description="Filter orders placed with a specific store ID", required=False, type=int),
+            OpenApiParameter(name="from_date", description="Filter orders created on or after date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="to_date", description="Filter orders created on or before date (YYYY-MM-DD)", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for order list", required=False, type=str, enum=["-created_at", "created_at", "-total_amount", "total_amount"]),
+        ],
         responses={200: CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA},
     )
     def get(self, request):
@@ -561,8 +619,51 @@ class CustomerOrderListView(APIView):
             Order.objects.filter(user=request.user)
             .select_related("store")
             .prefetch_related("items")
-            .order_by("-created_at")
         )
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter.upper())
+
+        store_id = request.query_params.get("store_id")
+        if store_id:
+            try:
+                queryset = queryset.filter(store_id=int(store_id))
+            except (ValueError, TypeError):
+                pass
+
+        from_date = request.query_params.get("from_date")
+        if from_date:
+            try:
+                queryset = queryset.filter(created_at__date__gte=from_date.strip())
+            except Exception:
+                pass
+
+        to_date = request.query_params.get("to_date")
+        if to_date:
+            try:
+                queryset = queryset.filter(created_at__date__lte=to_date.strip())
+            except Exception:
+                pass
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            queryset = queryset.filter(
+                Q(order_number__icontains=s_clean)
+                | Q(items__product_name__icontains=s_clean)
+            ).distinct()
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "-total_amount": "-total_amount",
+            "total_amount": "total_amount",
+        }
+        queryset = queryset.order_by(valid_orderings.get(ordering, "-created_at"))
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)

@@ -77,7 +77,6 @@ class CartSerializer(serializers.ModelSerializer):
         model = Cart
         fields = [
             "id",
-            "cart_token",
             "total_items",
             "total_unique_items",
             "subtotal",

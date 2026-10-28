@@ -76,7 +76,12 @@ class ComboListCreateView(BaseComboView):
         operation_id="user_combo_list",
         tags=["Profile - Saved Looks"],
         summary="List user's combos",
-        description="Returns all outfit combos created by the authenticated user with full product card items, deep links, and share URLs.",
+        description="Returns outfit combos created by the authenticated user with filters for visibility (public/private), search, and ordering.",
+        parameters=[
+            OpenApiParameter(name="is_public", description="Filter public (true) or private (false) looks", required=False, type=bool),
+            OpenApiParameter(name="search", description="Search looks by title or description", required=False, type=str),
+            OpenApiParameter(name="ordering", description="Sort order for outfit combos", required=False, type=str, enum=["-created_at", "created_at", "name", "-name"]),
+        ],
         responses={200: COMBO_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
@@ -88,8 +93,27 @@ class ComboListCreateView(BaseComboView):
                     queryset=ComboItem.objects.select_related("product__store"),
                 )
             )
-            .order_by("-created_at")
         )
+
+        is_public = request.query_params.get("is_public")
+        if is_public is not None:
+            val = str(is_public).strip().lower() in ("true", "1", "yes")
+            combos = combos.filter(is_public=val)
+
+        search = request.query_params.get("search")
+        if search:
+            s_clean = search.strip()
+            combos = combos.filter(Q(name__icontains=s_clean) | Q(description__icontains=s_clean))
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "name": "name",
+            "-name": "-name",
+        }
+        combos = combos.order_by(valid_orderings.get(ordering, "-created_at"))
+
         serializer = ComboSerializer(combos, many=True)
         return success_response(
             message="Combos fetched successfully.",
@@ -550,15 +574,46 @@ class TryOnHistoryListView(APIView):
         operation_id="tryon_history_list",
         tags=["Virtual Try-On"],
         summary="List customer Try-On history",
-        description="Returns customer's past virtual try-on requests and generated images.",
+        description="Returns customer's past virtual try-on requests and generated images with filters for status and product.",
+        parameters=[
+            OpenApiParameter(name="status", description="Filter by Try-On render status", required=False, type=str, enum=[s.value for s in TryOnRequestStatus]),
+            OpenApiParameter(name="product_id", description="Filter try-on history for a specific product ID", required=False, type=int),
+            OpenApiParameter(name="limit", description="Max number of items to return (default 50, max 100)", required=False, type=int),
+            OpenApiParameter(name="ordering", description="Sort by render timestamp", required=False, type=str, enum=["-created_at", "created_at"]),
+        ],
         responses={200: TRYON_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
         requests_qs = (
             TryOnRequest.objects.filter(user=request.user)
             .select_related("product", "combo")
-            .order_by("-created_at")[:50]
         )
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            requests_qs = requests_qs.filter(status=status_param.upper())
+
+        product_id = request.query_params.get("product_id")
+        if product_id:
+            try:
+                requests_qs = requests_qs.filter(product_id=int(product_id))
+            except (ValueError, TypeError):
+                pass
+
+        ordering = request.query_params.get("ordering", "-created_at").strip().lower()
+        valid_orderings = {
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+        }
+        requests_qs = requests_qs.order_by(valid_orderings.get(ordering, "-created_at"))
+
+        limit = request.query_params.get("limit")
+        try:
+            lim = min(100, max(1, int(limit))) if limit else 50
+        except (ValueError, TypeError):
+            lim = 50
+
+        requests_qs = requests_qs[:lim]
         serializer = TryOnRequestDetailSerializer(requests_qs, many=True)
         return success_response(
             message="Try-on history retrieved successfully.",

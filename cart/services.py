@@ -11,31 +11,11 @@ from .models import Cart, CartItem
 
 class CartService:
     @staticmethod
-    def get_or_create_cart(user=None, cart_token=None):
-        if user and user.is_authenticated:
-            user_cart, _ = Cart.objects.get_or_create(user=user)
-            if cart_token:
-                try:
-                    val_token = uuid.UUID(str(cart_token)) if isinstance(cart_token, (str, uuid.UUID)) else cart_token
-                    guest_cart = Cart.objects.filter(cart_token=val_token, user__isnull=True).first()
-                    if guest_cart and guest_cart.id != user_cart.id:
-                        CartService.merge_carts(source_cart=guest_cart, target_cart=user_cart)
-                        user_cart.refresh_from_db()
-                except Exception:
-                    pass
-            return user_cart
-
-        if cart_token:
-            try:
-                val_token = uuid.UUID(str(cart_token)) if isinstance(cart_token, (str, uuid.UUID)) else cart_token
-                cart = Cart.objects.filter(cart_token=val_token).first()
-                if cart:
-                    return cart
-                return Cart.objects.create(user=None, cart_token=val_token)
-            except (ValueError, TypeError):
-                pass
-
-        return Cart.objects.create(user=None)
+    def get_or_create_cart(user):
+        if not user or not user.is_authenticated:
+            raise ValidationError("Authentication required to access cart.")
+        user_cart, _ = Cart.objects.get_or_create(user=user)
+        return user_cart
 
     @staticmethod
     @transaction.atomic

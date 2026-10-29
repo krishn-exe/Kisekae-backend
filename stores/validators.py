@@ -6,6 +6,10 @@ from PIL import Image
 PAN_REGEX = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$", re.IGNORECASE)
 GST_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$", re.IGNORECASE)
 PHONE_REGEX = re.compile(r"^\+?[0-9\s\-]{10,15}$")
+BANK_ACCOUNT_REGEX = re.compile(r"^\d{9,18}$")
+IFSC_REGEX = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
+ACCOUNT_HOLDER_REGEX = re.compile(r"^[a-zA-Z\s\.\']{2,100}$")
+SETTLEMENT_DAY_REGEX = re.compile(r"^(0?[1-9]|[12][0-9]|3[01])$")
 
 pan_validator = RegexValidator(
     regex=PAN_REGEX,
@@ -20,6 +24,26 @@ gst_validator = RegexValidator(
 phone_validator = RegexValidator(
     regex=PHONE_REGEX,
     message="Enter a valid phone number (10-15 digits).",
+)
+
+bank_account_validator = RegexValidator(
+    regex=BANK_ACCOUNT_REGEX,
+    message="Enter a valid bank account number (9 to 18 digits).",
+)
+
+ifsc_validator = RegexValidator(
+    regex=IFSC_REGEX,
+    message="Enter a valid 11-character IFSC code (e.g. HDFC0001234).",
+)
+
+account_holder_validator = RegexValidator(
+    regex=ACCOUNT_HOLDER_REGEX,
+    message="Enter a valid account holder name (2-100 alphabetic characters).",
+)
+
+settlement_day_validator = RegexValidator(
+    regex=SETTLEMENT_DAY_REGEX,
+    message="Settlement day must be between 1 and 31.",
 )
 
 ALLOWED_IMAGE_TYPES = ["JPEG", "PNG", "WEBP"]

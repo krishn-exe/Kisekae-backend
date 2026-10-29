@@ -858,17 +858,18 @@ class StoreInvitationRedirectView(APIView):
         parameters=[
             OpenApiParameter(name="token", description="Raw invitation token", required=True, type=str),
         ],
-        responses={200: OpenApiResponse(description="HTML redirect page opening kisekae-seller:// with fallback token display")},
+        responses={200: OpenApiResponse(description="HTML redirect page opening kisekae:// with fallback token display")},
     )
     def get(self, request):
         token = request.query_params.get("token", "").strip()
-        app_url = f"kisekae-seller://invitations/accept?token={token}"
+        app_url = f"kisekae://invitations/accept?token={token}"
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <title>Accept Store Invitation - KiseKae Seller</title>
     <meta http-equiv="refresh" content="0;url={app_url}">
+    <script>window.location.href = "{app_url}";</script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #faf8f5; color: #2d2527; }}

@@ -13,21 +13,19 @@ def send_store_invitation_email_task(target_email, store_name, inviter_name, raw
     Sends an invitation email with a deep link and raw token to manage a store.
     """
     subject = f"You're invited to manage {store_name} on Kisekae"
-    accept_url = f"kisekae-seller://invitations/accept?token={raw_token}"
-    backend_base = getattr(settings, 'BACKEND_BASE_URL', 'http://localhost:8000').rstrip('/')
+    accept_url = f"kisekae://invitations/accept?token={raw_token}"
+    backend_base = (getattr(settings, "BACKEND_BASE_URL", None) or os.getenv("BACKEND_BASE_URL", "https://api.kisekae.live")).rstrip("/")
     web_redirect_url = f"{backend_base}/stores/invitations/redirect/?token={raw_token}"
     expires_days = getattr(settings, 'STORE_INVITATION_TTL_DAYS', 7)
     plain_message = (
         f"Hello,\n\n"
         f"{inviter_name} has invited you to join the team managing '{store_name}' on Kisekae.\n\n"
-        f"If you have the Kisekae Seller app installed, open this link to accept the invitation:\n"
-        f"{accept_url}\n\n"
-        f"Or click here to open the seller app or view your invitation:\n"
+        f"Click the link below to accept the invitation in the Kisekae Seller app:\n"
         f"{web_redirect_url}\n\n"
-        f"Or accept directly inside the app by entering this invitation token:\n"
+        f"Or enter this invitation token manually in the Kisekae Seller app:\n"
         f"{raw_token}\n\n"
         f"Note: This invitation will expire in {expires_days} days.\n\n"
-        f"If you did not expect this invitation, you can ignore this email."
+        f"If you did not expect this invitation, you can safely ignore this email."
     )
 
     context = {

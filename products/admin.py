@@ -8,6 +8,7 @@ from .models import (
     ProductVariant,
     ProductView,
     SearchHistory,
+    SearchSuggestion,
     UserTasteProfile,
 )
 
@@ -92,3 +93,12 @@ class UserTasteProfileAdmin(admin.ModelAdmin):
     search_fields = ("user__email",)
     readonly_fields = ("updated_at",)
     autocomplete_fields = ["user"]
+
+
+@admin.register(SearchSuggestion)
+class SearchSuggestionAdmin(admin.ModelAdmin):
+    list_display = ("query", "score", "category", "created_at", "updated_at")
+    list_filter = ("category", "created_at")
+    search_fields = ("query",)
+    readonly_fields = ("created_at", "updated_at")
+

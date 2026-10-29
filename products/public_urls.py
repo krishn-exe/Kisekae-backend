@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     CategoryListView,
+    ProductAutocompleteView,
     ProductSearchView,
     PublicProductDetailView,
     PublicProductListView,
@@ -33,6 +34,9 @@ urlpatterns = [
 
     # Public Product Search (with semantic/lexical search, filters & pagination)
     path("search/", ProductSearchView.as_view(), name="public-product-search"),
+
+    # Autocomplete Suggestions (ultra-fast query completions & instant product cards)
+    path("autocomplete/", ProductAutocompleteView.as_view(), name="public-product-autocomplete"),
 
     # Public Product Detail
     path("<int:product_pk>/", PublicProductDetailView.as_view(), name="public-product-detail"),

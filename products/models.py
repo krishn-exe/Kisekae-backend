@@ -639,3 +639,41 @@ class UserTasteProfile(models.Model):
 
     def __str__(self):
         return f"Taste Profile for User #{self.user_id} ({self.interaction_count} signals)"
+
+
+class SearchSuggestion(models.Model):
+    """
+    Curated dictionary of high-intent search phrases, keywords, and product names
+    for sub-10ms autocomplete suggestions.
+    Indexed with text_pattern_ops B-tree for fast prefix lookups (e.g. LIKE 'hood%').
+    """
+    query = models.CharField(max_length=255, unique=True, db_index=True)
+    score = models.PositiveIntegerField(
+        default=1,
+        db_index=True,
+        help_text="Search popularity / conversion score.",
+    )
+    category = models.CharField(
+        max_length=30,
+        choices=ProductCategory.choices,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-score", "query"]
+        indexes = [
+            models.Index(
+                fields=["query"],
+                name="idx_suggestion_prefix",
+                opclasses=["text_pattern_ops"],
+            ),
+            models.Index(fields=["-score"]),
+        ]
+
+    def __str__(self):
+        return f"{self.query} (score: {self.score})"
+

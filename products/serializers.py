@@ -489,3 +489,16 @@ class RecommendedComboSerializer(serializers.Serializer):
     product_ids = serializers.ListField(child=serializers.IntegerField(), help_text="IDs of all products in the combo.")
     items = RecommendedComboItemSerializer(many=True, help_text="Individual product entries in this combo.")
 
+
+class AutocompleteResponseSerializer(serializers.Serializer):
+    query = serializers.CharField(help_text="The query prefix searched.")
+    queries = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="List of autocomplete query completion suggestions.",
+    )
+    instant_products = ProductCardSerializer(
+        many=True,
+        help_text="Top matching instant product cards.",
+    )
+
+

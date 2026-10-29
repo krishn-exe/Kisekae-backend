@@ -6,7 +6,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from .embedding_service import EmbeddingService
-from .models import Product, ProductEmbedding, ProductView, SearchHistory
+from .models import Product, ProductEmbedding, ProductView, SearchHistory, SearchSuggestion
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -69,6 +69,19 @@ def record_search_query_task(self, user_id: int, query: str):
             )
 
         logger.info(f"Recorded search query '{clean_query}' for user #{user_id}.")
+
+        # Upsert into SearchSuggestion vocabulary
+        clean_q_lower = clean_query.lower()
+        if len(clean_q_lower) >= 2:
+            try:
+                s_obj, s_created = SearchSuggestion.objects.get_or_create(
+                    query=clean_q_lower,
+                    defaults={"score": 1},
+                )
+                if not s_created:
+                    SearchSuggestion.objects.filter(pk=s_obj.pk).update(score=F("score") + 1)
+            except Exception:
+                pass
 
         # Keep user taste profile updated with this recent discovery signal
         recompute_user_taste_task.delay(user_id)

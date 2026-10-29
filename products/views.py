@@ -1,7 +1,8 @@
 import re
 from decimal import Decimal
+from django.core.cache import cache
 from django.db import connection
-from django.db.models import Case, Count, FloatField, Prefetch, Q, Value, When
+from django.db.models import Case, Count, FloatField, IntegerField, Prefetch, Q, Value, When
 from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiParameter,
@@ -29,8 +30,10 @@ from .models import (
     ProductType,
     SearchHistory,
     ProductVariant,
+    SearchSuggestion,
     normalize_category_param)
 from .serializers import (
+    AutocompleteResponseSerializer,
     BulkProductUpdateSerializer,
     CategoryItemSerializer,
     ProductCardSerializer,
@@ -77,6 +80,7 @@ SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = api_response(SearchHistorySerializer, "Sea
 RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "RecommendationFeedPaginatedData")
 PRODUCT_SIMILAR_RESPONSE_SCHEMA = api_response(ProductCardSerializer, "ProductSimilarListResponse", many=True)
 PRODUCT_RECOMMENDED_COMBOS_RESPONSE_SCHEMA = api_response(RecommendedComboSerializer, "ProductRecommendedCombosListResponse", many=True)
+PRODUCT_AUTOCOMPLETE_RESPONSE_SCHEMA = api_response(AutocompleteResponseSerializer, "ProductAutocompleteResponse")
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
@@ -1262,6 +1266,127 @@ class ProductSearchView(APIView):
                 "previous": paginator.get_previous_link(),
                 "results": serializer.data,
             })
+
+
+class ProductAutocompleteView(APIView):
+    """
+    Public API: Sub-10ms Autocomplete Search Suggestions.
+    Returns:
+      - queries: Ranked query suggestion strings for the typed prefix.
+      - instant_products: Top matching instant product cards (up to 3).
+    Cached in Redis with short TTL for maximum throughput.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="public_product_autocomplete",
+        tags=["Public Products"],
+        summary="Search autocomplete suggestions",
+        description=(
+            "Provides ultra-fast autocomplete suggestions as the user types. "
+            "Returns a list of suggested query phrases and top instant product cards."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="q",
+                description="Search query prefix (minimum 2 characters).",
+                required=True,
+                type=str,
+            ),
+            OpenApiParameter(
+                name="limit",
+                description="Maximum number of query suggestions (default: 8, max: 15).",
+                required=False,
+                type=int,
+            ),
+        ],
+        responses={200: PRODUCT_AUTOCOMPLETE_RESPONSE_SCHEMA},
+    )
+    def get(self, request):
+        query = (request.query_params.get("q") or request.query_params.get("query") or "").strip()
+        if len(query) < 2:
+            return success_response(
+                message="Autocomplete suggestions fetched successfully.",
+                data={"query": query, "queries": [], "instant_products": []},
+            )
+
+        clean_q = query.lower()
+        try:
+            limit = min(int(request.query_params.get("limit", 8)), 15)
+        except (ValueError, TypeError):
+            limit = 8
+
+        cache_key = f"autocomplete:{clean_q}:{limit}"
+        cached_result = cache.get(cache_key)
+        if cached_result is not None:
+            return success_response(
+                message="Autocomplete suggestions fetched successfully.",
+                data=cached_result,
+            )
+
+        # 1. Query Suggestions from SearchSuggestion table
+        prefix_qs = list(
+            SearchSuggestion.objects.filter(query__istartswith=clean_q)
+            .order_by("-score", "query")
+            .values_list("query", flat=True)[:limit]
+        )
+
+        query_suggestions = list(prefix_qs)
+        if len(query_suggestions) < limit:
+            remaining = limit - len(query_suggestions)
+            contains_qs = (
+                SearchSuggestion.objects.filter(query__icontains=clean_q)
+                .exclude(query__in=query_suggestions)
+                .order_by("-score", "query")
+                .values_list("query", flat=True)[:remaining]
+            )
+            query_suggestions.extend(contains_qs)
+
+        # Supplement from active product titles if dictionary is sparse
+        if len(query_suggestions) < limit:
+            remaining = limit - len(query_suggestions)
+            prod_names = (
+                Product.objects.filter(status=ProductStatus.ACTIVE, name__icontains=clean_q)
+                .exclude(name__in=query_suggestions)
+                .values_list("name", flat=True)
+                .distinct()[:remaining]
+            )
+            query_suggestions.extend(prod_names)
+
+        # 2. Instant Top Products (up to 3 products)
+        instant_products_qs = (
+            get_optimized_product_queryset()
+            .filter(Q(name__icontains=clean_q) | Q(description__icontains=clean_q))
+            .order_by(
+                Case(
+                    When(name__iexact=clean_q, then=Value(0)),
+                    When(name__istartswith=clean_q, then=Value(1)),
+                    When(name__icontains=clean_q, then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                ),
+                "-average_rating",
+                "-created_at",
+            )[:3]
+        )
+        instant_serialized = ProductCardSerializer(instant_products_qs, many=True).data
+
+        payload = {
+            "query": query,
+            "queries": query_suggestions,
+            "instant_products": instant_serialized,
+        }
+
+        try:
+            cache.set(cache_key, payload, timeout=60 * 15)
+        except Exception:
+            pass
+
+        return success_response(
+            message="Autocomplete suggestions fetched successfully.",
+            data=payload,
+        )
 
 
 class PublicProductDetailView(APIView):

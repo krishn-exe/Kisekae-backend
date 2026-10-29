@@ -99,6 +99,17 @@ class ProductService:
 
         product.sync_total_stock()
 
+        clean_name = product.name.strip().lower()
+        if len(clean_name) >= 2:
+            try:
+                from .models import SearchSuggestion
+                SearchSuggestion.objects.get_or_create(
+                    query=clean_name,
+                    defaults={"score": 5, "category": product.category or ""},
+                )
+            except Exception:
+                pass
+
         transaction.on_commit(lambda: generate_product_embedding_task.delay(product.id))
         from tryon.tasks import preprocess_product_image_task
         transaction.on_commit(lambda: preprocess_product_image_task.delay(product.id))

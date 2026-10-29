@@ -92,6 +92,20 @@ class Order(models.Model):
         default=Decimal("0.00"),
         help_text="Portion of order total covered by customer wallet.",
     )
+    coupon = models.ForeignKey(
+        "CouponCode",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="orders",
+        help_text="Coupon code applied to this order.",
+    )
+    coupon_discount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Monetary discount deducted via coupon code.",
+    )
     currency = models.CharField(max_length=3, default="INR")
     notes = models.TextField(blank=True, default="")
     shipped_at = models.DateTimeField(
@@ -269,5 +283,100 @@ class OrderStatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.order.order_number}: {self.from_status} -> {self.to_status}"
+
+
+class DiscountType(models.TextChoices):
+    FLAT = "FLAT", "Flat Amount Off"
+    PERCENTAGE = "PERCENTAGE", "Percentage Off"
+
+
+class CouponCode(models.Model):
+    code = models.CharField(max_length=50, unique=True, db_index=True)
+    description = models.CharField(max_length=255, blank=True, default="")
+    discount_type = models.CharField(max_length=15, choices=DiscountType.choices, default=DiscountType.FLAT)
+    discount_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="INR flat amount or percentage discount value (e.g. 10 for 10%).",
+    )
+    max_discount_cap = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Maximum INR discount cap (primarily for PERCENTAGE discounts).",
+    )
+    min_order_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Minimum subtotal amount required to apply coupon.",
+    )
+    max_uses = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Total number of uses allowed across all customers (null = unlimited).",
+    )
+    uses_count = models.PositiveIntegerField(default=0)
+    max_uses_per_user = models.PositiveIntegerField(
+        default=1,
+        help_text="Maximum times a single customer can use this coupon.",
+    )
+    is_active = models.BooleanField(default=True)
+    valid_from = models.DateTimeField(default=timezone.now)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    store = models.ForeignKey(
+        "stores.Store",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="coupons",
+        help_text="Store scope: null means platform-wide coupon across all stores.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Coupon Code"
+        verbose_name_plural = "Coupon Codes"
+
+    def __str__(self):
+        return f"{self.code} ({self.discount_type}: {self.discount_value})"
+
+
+class CouponUsage(models.Model):
+    coupon = models.ForeignKey(
+        CouponCode,
+        on_delete=models.CASCADE,
+        related_name="usages",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="coupon_usages",
+    )
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="coupon_usages",
+    )
+    discount_applied = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["coupon", "order"],
+                name="unique_coupon_per_order",
+            )
+        ]
+        verbose_name = "Coupon Usage"
+        verbose_name_plural = "Coupon Usages"
+
+    def __str__(self):
+        return f"{self.coupon.code} used by {self.user.email} on {self.order.order_number}"
+
 
 

@@ -124,6 +124,12 @@ class CartCheckoutSerializer(serializers.Serializer):
         default=False,
         help_text="Whether to deduct available funds from customer wallet.",
     )
+    coupon_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional coupon code to apply for discount.",
+    )
 
 
 class CheckoutOrderSummarySerializer(serializers.Serializer):

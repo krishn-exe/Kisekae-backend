@@ -1,3 +1,4 @@
+from decimal import Decimal
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -106,6 +107,8 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "payment_status",
             "compare_at_total",
             "subtotal_amount",
+            "coupon",
+            "coupon_discount",
             "wallet_amount_used",
             "total_amount",
             "currency",
@@ -162,6 +165,12 @@ class BuyNowSerializer(serializers.Serializer):
         required=False,
         default=False,
         help_text="Whether to deduct available funds from customer wallet.",
+    )
+    coupon_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional coupon code to apply for discount.",
     )
 
 
@@ -256,6 +265,12 @@ class OrderSummaryRequestSerializer(serializers.Serializer):
         default=False,
         help_text="Whether to apply available wallet funds towards order total.",
     )
+    coupon_code = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Optional coupon code to test or apply.",
+    )
     store_id = serializers.IntegerField(
         required=False,
         allow_null=True,
@@ -302,6 +317,22 @@ class OrderSummaryResponseSerializer(serializers.Serializer):
         decimal_places=2,
         help_text="Difference between total_cost and subtotal (store discount savings).",
     )
+    coupon_code = serializers.CharField(
+        allow_blank=True,
+        default="",
+        help_text="Applied coupon code string.",
+    )
+    coupon_discount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Coupon code discount amount if validly applied.",
+    )
+    coupon_error = serializers.CharField(
+        allow_null=True,
+        required=False,
+        default=None,
+        help_text="Reason description if the provided coupon code was invalid or not applicable.",
+    )
     wallet_balance = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -321,3 +352,29 @@ class OrderSummaryResponseSerializer(serializers.Serializer):
         help_text="True if final_due_amount > 0 requiring Razorpay checkout, False if fully paid by wallet.",
     )
     currency = serializers.CharField(default="INR")
+
+
+class CouponValidateRequestSerializer(serializers.Serializer):
+    coupon_code = serializers.CharField(max_length=50, help_text="Coupon code to validate.")
+    subtotal = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        default=Decimal("0.00"),
+        help_text="Current cart subtotal amount for threshold validation.",
+    )
+    store_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Optional store ID to check store-scoped restrictions.",
+    )
+
+
+class CouponValidateResponseSerializer(serializers.Serializer):
+    is_valid = serializers.BooleanField()
+    coupon_code = serializers.CharField()
+    discount_type = serializers.CharField(allow_blank=True, default="")
+    discount_value = serializers.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    discount_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    error = serializers.CharField(allow_null=True, default=None)

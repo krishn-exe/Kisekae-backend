@@ -221,7 +221,14 @@ class CartCheckoutView(APIView):
 
         cart = CartService.get_or_create_cart(user=user)
         use_wallet = serializer.validated_data.get("use_wallet", False)
-        orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data, use_wallet=use_wallet)
+        coupon_code = serializer.validated_data.get("coupon_code", "").strip() or None
+        orders = CartService.checkout_cart(
+            cart=cart,
+            user=user,
+            customer_data=customer_data,
+            use_wallet=use_wallet,
+            coupon_code=coupon_code,
+        )
 
         total_amount = sum(o.total_amount for o in orders)
         subtotal = sum(o.subtotal_amount for o in orders)

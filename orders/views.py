@@ -24,6 +24,8 @@ from .razorpay_service import RazorpayService
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
     BuyNowSerializer,
+    CouponValidateRequestSerializer,
+    CouponValidateResponseSerializer,
     OrderSummaryRequestSerializer,
     OrderSummaryResponseSerializer,
     CustomerOrderTrackSerializer,
@@ -48,6 +50,7 @@ STORE_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, 
 CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
 CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
 ORDER_SUMMARY_RESPONSE_SCHEMA = api_response(OrderSummaryResponseSerializer, "OrderSummaryApiResponse")
+COUPON_VALIDATE_RESPONSE_SCHEMA = api_response(CouponValidateResponseSerializer, "CouponValidateResponse")
 BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
     inline_serializer(
         name="BulkOrderUpdateData",
@@ -505,6 +508,7 @@ class BuyNowView(APIView):
                 items_data=items_payload,
                 user=user,
                 use_wallet=data.get("use_wallet", False),
+                coupon_code=data.get("coupon_code", "").strip() or None,
             )
         except ValidationError as exc:
             return error_response(str(exc), code="ORDER_CREATION_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
@@ -962,16 +966,46 @@ class OrderSummaryView(APIView):
         subtotal = sum(item["total_price"] for item in items_summary)
         discount = max(Decimal("0.00"), total_cost - subtotal)
 
+        # Coupon Code calculation
+        coupon_code_input = data.get("coupon_code", "").strip()
+        coupon_discount = Decimal("0.00")
+        coupon_error = None
+        applied_coupon_code = ""
+
+        if coupon_code_input:
+            from .coupon_service import CouponService
+            # Resolve store context if single store item or store_id passed
+            target_store_id = store_id
+            if not target_store_id and items_summary:
+                # Check if all items belong to same store
+                first_prod = Product.objects.filter(pk=items_summary[0]["product_id"]).first()
+                if first_prod:
+                    target_store_id = first_prod.store_id
+
+            c_result = CouponService.validate_and_calculate(
+                coupon_code=coupon_code_input,
+                subtotal=subtotal,
+                user=request.user,
+                store=target_store_id,
+            )
+            if c_result["is_valid"]:
+                coupon_discount = c_result["discount"]
+                applied_coupon_code = c_result["coupon"].code
+            else:
+                coupon_error = c_result["error"]
+
+        amount_after_coupon = max(Decimal("0.00"), subtotal - coupon_discount)
+
         from accounts.wallet_service import WalletService
         wallet = WalletService.get_or_create(request.user)
         wallet_balance = wallet.balance
 
         if use_wallet:
-            wallet_covered_amount = min(wallet_balance, subtotal)
+            wallet_covered_amount = min(wallet_balance, amount_after_coupon)
         else:
             wallet_covered_amount = Decimal("0.00")
 
-        final_due_amount = subtotal - wallet_covered_amount
+        final_due_amount = amount_after_coupon - wallet_covered_amount
         requires_razorpay = final_due_amount > Decimal("0.00")
 
         summary_payload = {
@@ -979,6 +1013,9 @@ class OrderSummaryView(APIView):
             "total_cost": total_cost,
             "subtotal": subtotal,
             "discount": discount,
+            "coupon_code": applied_coupon_code,
+            "coupon_discount": coupon_discount,
+            "coupon_error": coupon_error,
             "wallet_balance": wallet_balance,
             "wallet_covered_amount": wallet_covered_amount,
             "final_due_amount": final_due_amount,
@@ -988,4 +1025,47 @@ class OrderSummaryView(APIView):
         return success_response(
             message="Order summary calculated successfully.",
             data=OrderSummaryResponseSerializer(summary_payload).data,
+        )
+
+
+class CouponValidateView(APIView):
+    """
+    Validates a coupon code against current subtotal and store.
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "user_detail"
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Validate coupon code",
+        description="Checks coupon validity, expiration, usage thresholds, and calculates applicable discount.",
+        request=CouponValidateRequestSerializer,
+        responses={200: COUPON_VALIDATE_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        serializer = CouponValidateRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        from .coupon_service import CouponService
+        result = CouponService.validate_and_calculate(
+            coupon_code=data["coupon_code"],
+            subtotal=data.get("subtotal", Decimal("0.00")),
+            user=request.user,
+            store=data.get("store_id"),
+        )
+
+        coupon = result["coupon"]
+        response_payload = {
+            "is_valid": result["is_valid"],
+            "coupon_code": coupon.code if coupon else data["coupon_code"].strip().upper(),
+            "discount_type": coupon.discount_type if coupon else "",
+            "discount_value": coupon.discount_value if coupon else Decimal("0.00"),
+            "discount_amount": result["discount"],
+            "error": result["error"],
+        }
+
+        return success_response(
+            message="Coupon validated." if result["is_valid"] else result["error"],
+            data=CouponValidateResponseSerializer(response_payload).data,
         )

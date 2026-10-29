@@ -3,6 +3,7 @@ from django.urls import path
 from cart.views import CartCheckoutView
 from .views import (
     BuyNowView,
+    CouponValidateView,
     CustomerOrderCancelView,
     CustomerOrderDetailView,
     CustomerOrderListView,
@@ -19,6 +20,7 @@ urlpatterns = [
     # Customer Orders List & Detail
     path("", CustomerOrderListView.as_view(), name="customer-order-list"),
     path("summary/", OrderSummaryView.as_view(), name="order-summary"),
+    path("coupon/validate/", CouponValidateView.as_view(), name="coupon-validate"),
     path("checkout/", CartCheckoutView.as_view(), name="order-checkout"),
     path("buy-now/", BuyNowView.as_view(), name="order-buy-now"),
     path("verify-payment/", PaymentVerifyView.as_view(), name="order-verify-payment"),

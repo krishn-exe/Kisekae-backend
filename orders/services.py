@@ -73,7 +73,7 @@ class OrderService:
 
     @staticmethod
     @transaction.atomic
-    def create_order(store, customer_data, items_data, user=None, use_wallet=False):
+    def create_order(store, customer_data, items_data, user=None, use_wallet=False, coupon_code=None):
         """
         Creates an order with 5-minute inventory reservation and generates
         a Razorpay order payload for payment capture.
@@ -228,16 +228,40 @@ class OrderService:
                 total_price=item_total,
             )
 
+        # Coupon Code validation and deduction
+        coupon_obj = None
+        coupon_discount = Decimal("0.00")
+        if coupon_code:
+            from .coupon_service import CouponService
+            coupon_res = CouponService.validate_and_calculate(
+                coupon_code=coupon_code,
+                subtotal=subtotal_amount,
+                user=user,
+                store=store,
+            )
+            if not coupon_res["is_valid"]:
+                raise ValidationError(coupon_res["error"], code="INVALID_COUPON")
+            coupon_obj = coupon_res["coupon"]
+            coupon_discount = coupon_res["discount"]
+
+        amount_after_coupon = max(Decimal("0.00"), subtotal_amount - coupon_discount)
+
         wallet_debit = Decimal("0.00")
         if use_wallet:
             from accounts.wallet_service import WalletService
-            wallet_debit = WalletService.debit(user=user, amount_to_cover=subtotal_amount, order=order)
+            wallet_debit = WalletService.debit(user=user, amount_to_cover=amount_after_coupon, order=order)
 
-        final_due = subtotal_amount - wallet_debit
+        final_due = amount_after_coupon - wallet_debit
         order.subtotal_amount = subtotal_amount
         order.compare_at_total = compare_at_total
+        order.coupon = coupon_obj
+        order.coupon_discount = coupon_discount
         order.wallet_amount_used = wallet_debit
         order.total_amount = final_due
+
+        if coupon_obj and coupon_discount > Decimal("0.00"):
+            from .coupon_service import CouponService
+            CouponService.apply_coupon_to_order(coupon_obj, order, coupon_discount, user=user)
         if final_due > Decimal("0.00"):
             rzp_order = RazorpayService.create_order(
                 amount_in_inr=final_due,
@@ -249,6 +273,8 @@ class OrderService:
             order.save(update_fields=[
                 "subtotal_amount",
                 "compare_at_total",
+                "coupon",
+                "coupon_discount",
                 "wallet_amount_used",
                 "total_amount",
                 "razorpay_order_id",
@@ -274,6 +300,8 @@ class OrderService:
             order.save(update_fields=[
                 "subtotal_amount",
                 "compare_at_total",
+                "coupon",
+                "coupon_discount",
                 "wallet_amount_used",
                 "total_amount",
                 "razorpay_order_id",
@@ -449,6 +477,10 @@ class OrderService:
                         notes=f"Expired reservation released for Order {order.order_number}",
                     )
 
+        if order.coupon_id:
+            from .coupon_service import CouponService
+            CouponService.release_coupon_from_order(order)
+
         if order.wallet_amount_used and order.wallet_amount_used > Decimal("0.00"):
             from accounts.wallet_service import WalletService
             WalletService.refund_to_wallet(
@@ -495,6 +527,10 @@ class OrderService:
             order.refund_id = refund_data.get("id", "")
             order.refund_amount = order.total_amount
             order.payment_status = PaymentStatus.REFUNDED
+
+        if order.coupon_id:
+            from .coupon_service import CouponService
+            CouponService.release_coupon_from_order(order)
 
         if order.wallet_amount_used and order.wallet_amount_used > Decimal("0.00"):
             from accounts.wallet_service import WalletService

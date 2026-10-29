@@ -286,7 +286,7 @@ class CartService:
 
     @staticmethod
     @transaction.atomic
-    def checkout_cart(cart, user, customer_data, use_wallet=False):
+    def checkout_cart(cart, user, customer_data, use_wallet=False, coupon_code=None):
         """
         Converts all items in the cart into one or more PENDING orders grouped by store,
         places a 5-minute inventory reservation on the exact variant sizes, and generates
@@ -331,6 +331,7 @@ class CartService:
                 items_data=items_payload,
                 user=user,
                 use_wallet=use_wallet,
+                coupon_code=coupon_code,
             )
             created_orders.append(order)
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Order, OrderItem, OrderStatusHistory
+from .models import CouponCode, CouponUsage, Order, OrderItem, OrderStatusHistory
 
 
 class OrderItemInline(admin.TabularInline):
@@ -23,6 +23,8 @@ class OrderAdmin(admin.ModelAdmin):
         "store",
         "status",
         "payment_status",
+        "coupon",
+        "coupon_discount",
         "total_amount",
         "wallet_amount_used",
         "currency",
@@ -34,6 +36,8 @@ class OrderAdmin(admin.ModelAdmin):
         "order_number",
         "compare_at_total",
         "subtotal_amount",
+        "coupon",
+        "coupon_discount",
         "wallet_amount_used",
         "total_amount",
         "razorpay_order_id",
@@ -42,3 +46,28 @@ class OrderAdmin(admin.ModelAdmin):
         "updated_at",
     )
     inlines = [OrderItemInline, OrderStatusHistoryInline]
+
+
+@admin.register(CouponCode)
+class CouponCodeAdmin(admin.ModelAdmin):
+    list_display = (
+        "code",
+        "discount_type",
+        "discount_value",
+        "min_order_amount",
+        "uses_count",
+        "max_uses",
+        "is_active",
+        "store",
+        "valid_until",
+    )
+    list_filter = ("discount_type", "is_active", "store")
+    search_fields = ("code", "description")
+
+
+@admin.register(CouponUsage)
+class CouponUsageAdmin(admin.ModelAdmin):
+    list_display = ("coupon", "user", "order", "discount_applied", "created_at")
+    search_fields = ("coupon__code", "user__email", "order__order_number")
+    readonly_fields = ("created_at",)
+

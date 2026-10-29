@@ -508,3 +508,318 @@ class RecommendationService:
                 .prefetch_related("images", "sizes", prefetch_variants)
                 .order_by(Case(*whens))
             )
+
+    @classmethod
+    def get_recommended_combos(cls, product) -> List[dict]:
+        """
+        Generates 3 curated outfit combinations ('Complete the Look') for a given product:
+          - Combo 1 (Regular): Classic base outfit pairing (e.g. Top + Bottom, no outerwear).
+          - Combo 2 (Layered): Layered look with outerwear (e.g. Top + Bottom + Outerwear, or One-Piece + Outerwear).
+          - Combo 3 (Dynamic): Evaluates alternative regular vs layered candidate looks based on style affinity
+                               score and dynamically selects the higher-scoring look (not fixed).
+
+        Strictly enforces category constraints via ComboValidationService:
+          - Max 1 item per category.
+          - Max 3 items per combo.
+          - ONE_PIECE and TOP/BOTTOM are mutually exclusive! (One-Piece pairs only with Outerwear).
+        """
+        if not product:
+            return []
+
+        from decimal import Decimal
+        from tryon.models import TRYON_SUPPORTED_CATEGORIES, ComboItem
+        from tryon.services import ComboValidationService
+        from .models import ProductCategory, ProductType
+
+        embedding_svc = EmbeddingService.get_instance()
+        target_vec = None
+        if hasattr(product, "embedding_record") and product.embedding_record:
+            target_vec = product.embedding_record.embedding
+        if not target_vec:
+            target_vec = embedding_svc.embed_product(product)
+
+        if not target_vec:
+            return []
+
+        target_cat = product.category
+        t_vec = list(target_vec)
+
+        prefetch_variants = Prefetch(
+            "variants",
+            queryset=ProductVariant.objects.filter(is_active=True).prefetch_related("images", "sizes"),
+        )
+
+        # Retrieve co-occurring product IDs from existing Combos and Orders to add social proof boost
+        co_combo_ids = set()
+        try:
+            co_combo_ids = set(
+                ComboItem.objects.filter(
+                    combo__items__product=product
+                ).exclude(product=product).values_list("product_id", flat=True)
+            )
+        except Exception:
+            pass
+
+        co_order_ids = set()
+        try:
+            co_order_ids = set(
+                OrderItem.objects.filter(
+                    order__items__product=product
+                ).exclude(product=product).values_list("product_id", flat=True)
+            )
+        except Exception:
+            pass
+
+        def get_candidates(category: str, limit: int = 8) -> List[Tuple[Product, float]]:
+            """Fetches active, in-stock products in the specified category, ranked by style similarity and affinity boosts."""
+            qs = (
+                Product.objects.filter(
+                    category=category,
+                    status=ProductStatus.ACTIVE,
+                    store__status=StoreStatus.ACTIVE,
+                    store__archived_at__isnull=True,
+                    stock__gt=0,
+                    embedding_record__isnull=False,
+                )
+                .exclude(pk=product.pk)
+                .select_related("store", "embedding_record")
+                .prefetch_related("images", "sizes", prefetch_variants)
+            )
+
+            scored = []
+            for cand in qs:
+                emb = cand.embedding_record.embedding if cand.embedding_record else None
+                if not emb:
+                    continue
+                c_vec = list(emb)
+                # Cosine dot product (since embeddings are L2 normalized, dot product = cosine similarity)
+                dot = sum(a * b for a, b in zip(t_vec, c_vec))
+                sim = max(0.0, min(1.0, dot))
+
+                # Demographic / Gender alignment boost
+                demographic_boost = 0.0
+                if product.product_type and cand.product_type:
+                    if product.product_type == cand.product_type:
+                        demographic_boost = 0.05
+                    elif cand.product_type == ProductType.UNISEX or product.product_type == ProductType.UNISEX:
+                        demographic_boost = 0.03
+                    elif {product.product_type, cand.product_type} == {ProductType.MEN, ProductType.WOMEN}:
+                        demographic_boost = -0.25
+
+                # Co-occurrence boost (social proof / outfit pairing history)
+                co_boost = 0.0
+                if cand.id in co_combo_ids:
+                    co_boost += 0.15
+                if cand.id in co_order_ids:
+                    co_boost += 0.10
+
+                final_item_score = max(0.0, min(1.0, sim + demographic_boost + co_boost))
+                scored.append((cand, final_item_score))
+
+            scored.sort(key=lambda x: x[1], reverse=True)
+            return scored[:limit]
+
+        def calc_similarity(p1, p2) -> float:
+            """Calculates pairwise cosine similarity between two products."""
+            e1 = p1.embedding_record.embedding if hasattr(p1, "embedding_record") and p1.embedding_record else None
+            e2 = p2.embedding_record.embedding if hasattr(p2, "embedding_record") and p2.embedding_record else None
+            if e1 and e2:
+                dot = sum(a * b for a, b in zip(e1, e2))
+                return max(0.0, min(1.0, dot))
+            return 0.75
+
+        def build_combo(combo_id: str, title: str, look_type: str, is_layered: bool, combo_products: List[Product], score: float) -> Optional[dict]:
+            """Validates constraints via ComboValidationService and formats combo payload."""
+            if not combo_products:
+                return None
+
+            cats = [p.category for p in combo_products]
+            try:
+                ComboValidationService.validate_category_composition(cats)
+            except Exception as e:
+                logger.warning(f"Combo {combo_id} failed category validation: {e}")
+                return None
+
+            is_tryon_ready = all(c in TRYON_SUPPORTED_CATEGORIES for c in cats)
+            total_price = sum((p.price for p in combo_products), Decimal("0.00"))
+            clamped_score = round(max(0.50, min(0.99, score)), 2)
+
+            items_data = []
+            for p in combo_products:
+                items_data.append({
+                    "role": "CURRENT_PRODUCT" if p.id == product.id else "COMPLEMENTARY",
+                    "category": p.category,
+                    "category_display": p.get_category_display() if hasattr(p, "get_category_display") else p.category,
+                    "product": p,
+                })
+
+            return {
+                "id": combo_id,
+                "title": title,
+                "look_type": look_type,
+                "is_layered": is_layered,
+                "score": clamped_score,
+                "total_price": total_price,
+                "currency": getattr(product, "currency", "INR") or "INR",
+                "is_tryon_ready": is_tryon_ready,
+                "product_ids": [p.id for p in combo_products],
+                "items": items_data,
+            }
+
+        combos: List[dict] = []
+
+        if target_cat == ProductCategory.ONE_PIECE:
+            # Special Case: ONE_PIECE cannot combine with TOP or BOTTOM!
+            # Only OUTERWEAR can be paired.
+            outers = get_candidates(ProductCategory.OUTERWEAR, limit=6)
+
+            # Combo 1 (Regular): Clean / Minimalist pairing (or solo if no outerwear exists)
+            if outers:
+                o1, s1 = outers[0]
+                c1 = build_combo("combo-1", "Clean Minimalist Look", "REGULAR", False, [product, o1], s1)
+                if c1:
+                    combos.append(c1)
+            else:
+                c1 = build_combo("combo-1", "Solo Statement", "REGULAR", False, [product], 0.90)
+                if c1:
+                    combos.append(c1)
+
+            # Combo 2 (Layered): Statement Outerwear styling
+            if len(outers) > 1:
+                o2, s2 = outers[1]
+                c2 = build_combo("combo-2", "Layered Statement Look", "LAYERED", True, [product, o2], s2)
+                if c2:
+                    combos.append(c2)
+            elif outers:
+                o1, s1 = outers[0]
+                c2 = build_combo("combo-2", "Layered Streetwear Accent", "LAYERED", True, [product, o1], s1)
+                if c2:
+                    combos.append(c2)
+
+            # Combo 3 (Dynamic): Alternative styling if candidates available
+            if len(outers) > 2:
+                o3, s3 = outers[2]
+                c3 = build_combo("combo-3", "Editorial Contrast Look", "LAYERED" if s3 >= 0.75 else "REGULAR", s3 >= 0.75, [product, o3], s3)
+                if c3:
+                    combos.append(c3)
+            elif len(outers) > 1:
+                o_alt, s_alt = outers[1]
+                c3 = build_combo("combo-3", "Editorial Contrast Look", "LAYERED", True, [product, o_alt], s_alt)
+                if c3:
+                    combos.append(c3)
+
+        elif target_cat == ProductCategory.OUTERWEAR:
+            # Target is OUTERWEAR: Can layer over separates (TOP + BOTTOM) or over ONE_PIECE
+            tops = get_candidates(ProductCategory.TOP, limit=6)
+            bottoms = get_candidates(ProductCategory.BOTTOM, limit=6)
+            one_pieces = get_candidates(ProductCategory.ONE_PIECE, limit=6)
+
+            # Combo 1 (Regular): Classic Separates Duo under outerwear
+            if tops and bottoms:
+                t1, st1 = tops[0]
+                b1, sb1 = bottoms[0]
+                score1 = (st1 + sb1 + calc_similarity(t1, b1)) / 3.0
+                c1 = build_combo("combo-1", "Tailored Separates Look", "REGULAR", False, [product, t1, b1], score1)
+                if c1:
+                    combos.append(c1)
+
+            # Combo 2 (Layered): Layered over a One-Piece dress/jumpsuit (or alternate separates if no one-pieces)
+            if one_pieces:
+                op1, sop1 = one_pieces[0]
+                c2 = build_combo("combo-2", "One-Piece Silhouette Look", "LAYERED", True, [product, op1], sop1)
+                if c2:
+                    combos.append(c2)
+            elif len(tops) > 1 and len(bottoms) > 1:
+                t2, st2 = tops[1]
+                b2, sb2 = bottoms[1]
+                score2 = (st2 + sb2 + calc_similarity(t2, b2)) / 3.0
+                c2 = build_combo("combo-2", "Statement Layered Look", "LAYERED", True, [product, t2, b2], score2)
+                if c2:
+                    combos.append(c2)
+
+            # Combo 3 (Dynamic): Compare Candidate Separates vs Candidate One-Piece
+            cand_sep = None
+            if len(tops) > 1 and len(bottoms) > 1:
+                t_alt, st_alt = tops[1]
+                b_alt, sb_alt = bottoms[1]
+                score_sep = (st_alt + sb_alt + calc_similarity(t_alt, b_alt)) / 3.0
+                cand_sep = ("REGULAR", False, [product, t_alt, b_alt], score_sep, "Urban Separates Styling")
+
+            cand_op = None
+            if len(one_pieces) > 1:
+                op_alt, sop_alt = one_pieces[1]
+                cand_op = ("LAYERED", True, [product, op_alt], sop_alt, "Modern One-Piece Contrast")
+
+            if cand_sep and cand_op:
+                winner = cand_op if cand_op[3] >= cand_sep[3] else cand_sep
+                c3 = build_combo("combo-3", winner[4], winner[0], winner[1], winner[2], winner[3])
+                if c3:
+                    combos.append(c3)
+            elif cand_sep:
+                c3 = build_combo("combo-3", cand_sep[4], cand_sep[0], cand_sep[1], cand_sep[2], cand_sep[3])
+                if c3:
+                    combos.append(c3)
+            elif cand_op:
+                c3 = build_combo("combo-3", cand_op[4], cand_op[0], cand_op[1], cand_op[2], cand_op[3])
+                if c3:
+                    combos.append(c3)
+
+        else:
+            # Target is TOP, BOTTOM, or other category (FOOTWEAR, etc.)
+            partner_cat = ProductCategory.BOTTOM if target_cat == ProductCategory.TOP else ProductCategory.TOP
+            partners = get_candidates(partner_cat, limit=6)
+            outers = get_candidates(ProductCategory.OUTERWEAR, limit=6)
+
+            # Combo 1 (Regular): At least one base outfit without outerwear (2 items)
+            if partners:
+                p1, sp1 = partners[0]
+                c1 = build_combo("combo-1", "Clean Everyday Look", "REGULAR", False, [product, p1], sp1)
+                if c1:
+                    combos.append(c1)
+
+            # Combo 2 (Layered): At least one layered look with outerwear (3 items)
+            if partners and outers:
+                p_cand = partners[0][0]
+                o1, so1 = outers[0]
+                score_lay = (calc_similarity(product, p_cand) + calc_similarity(product, o1) + calc_similarity(p_cand, o1)) / 3.0
+                c2 = build_combo("combo-2", "Statement Layered Look", "LAYERED", True, [product, p_cand, o1], score_lay)
+                if c2:
+                    combos.append(c2)
+            elif len(partners) > 1:
+                # Fallback if no outerwear in catalog
+                p2, sp2 = partners[1]
+                c2 = build_combo("combo-2", "Alternative Everyday Look", "REGULAR", False, [product, p2], sp2)
+                if c2:
+                    combos.append(c2)
+
+            # Combo 3 (Dynamic Choice): Evaluate candidate alternative Regular vs candidate alternative Layered
+            cand_regular = None
+            if len(partners) > 1:
+                p_alt, sp_alt = partners[1]
+                cand_regular = ("REGULAR", False, [product, p_alt], sp_alt, "Modern Minimalist Look")
+
+            cand_layered = None
+            if partners and len(outers) > 1:
+                p_for_lay = partners[1][0] if len(partners) > 1 else partners[0][0]
+                o2, so2 = outers[1]
+                score_lay2 = (calc_similarity(product, p_for_lay) + calc_similarity(product, o2) + calc_similarity(p_for_lay, o2)) / 3.0
+                cand_layered = ("LAYERED", True, [product, p_for_lay, o2], score_lay2, "Urban Layered Look")
+
+            # Dynamic selection based on style affinity score
+            if cand_regular and cand_layered:
+                # Whichever one has a higher score is picked dynamically!
+                winner = cand_layered if cand_layered[3] >= cand_regular[3] else cand_regular
+                c3 = build_combo("combo-3", winner[4], winner[0], winner[1], winner[2], winner[3])
+                if c3:
+                    combos.append(c3)
+            elif cand_layered:
+                c3 = build_combo("combo-3", cand_layered[4], cand_layered[0], cand_layered[1], cand_layered[2], cand_layered[3])
+                if c3:
+                    combos.append(c3)
+            elif cand_regular:
+                c3 = build_combo("combo-3", cand_regular[4], cand_regular[0], cand_regular[1], cand_regular[2], cand_regular[3])
+                if c3:
+                    combos.append(c3)
+
+        return combos
+

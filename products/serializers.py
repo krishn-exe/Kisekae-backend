@@ -466,3 +466,26 @@ class SearchHistorySerializer(serializers.ModelSerializer):
             "last_searched_at",
             "created_at",
         ]
+
+
+class RecommendedComboItemSerializer(serializers.Serializer):
+    role = serializers.CharField(
+        help_text="'CURRENT_PRODUCT' for the product being viewed, 'COMPLEMENTARY' for recommended pairing items."
+    )
+    category = serializers.CharField(help_text="Product category enum code (e.g. 'TOP', 'BOTTOM', 'OUTERWEAR').")
+    category_display = serializers.CharField(help_text="Human-readable category label.")
+    product = ProductCardSerializer()
+
+
+class RecommendedComboSerializer(serializers.Serializer):
+    id = serializers.CharField(help_text="Unique identifier for this outfit combination.")
+    title = serializers.CharField(help_text="Styling title (e.g. 'Clean Casual Duo', 'Statement Layered Trio').")
+    look_type = serializers.CharField(help_text="Outfit classification: 'REGULAR' or 'LAYERED'.")
+    is_layered = serializers.BooleanField(help_text="True if outfit includes outerwear layering.")
+    score = serializers.FloatField(help_text="Style affinity and aesthetic compatibility score [0.0 - 1.0].")
+    total_price = serializers.DecimalField(max_digits=12, decimal_places=2, help_text="Combined price of all products in combo.")
+    currency = serializers.CharField(default="INR", help_text="Currency code.")
+    is_tryon_ready = serializers.BooleanField(help_text="True if all products satisfy Virtual Try-On constraints.")
+    product_ids = serializers.ListField(child=serializers.IntegerField(), help_text="IDs of all products in the combo.")
+    items = RecommendedComboItemSerializer(many=True, help_text="Individual product entries in this combo.")
+

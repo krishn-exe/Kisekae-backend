@@ -8,9 +8,5 @@ media/
 test.py
 tests.py
 test/                
-
-# GCP Service Account Keys
-gcp-key*.json
-*service-account*.json
-credentials/
-*.pem
+gcp-key.json
+fcp-key.json

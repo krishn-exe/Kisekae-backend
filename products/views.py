@@ -41,6 +41,7 @@ from .serializers import (
     ProductVariantImageSerializer,
     ProductVariantSerializer,
     PublicProductDetailSerializer,
+    RecommendedComboSerializer,
     SearchHistorySerializer,
     VariantImageUploadSerializer)
 from .embedding_service import EmbeddingService
@@ -75,6 +76,7 @@ PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(PublicProductDetailSerializ
 SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = api_response(SearchHistorySerializer, "SearchHistoryListResponse", many=True)
 RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "RecommendationFeedPaginatedData")
 PRODUCT_SIMILAR_RESPONSE_SCHEMA = api_response(ProductCardSerializer, "ProductSimilarListResponse", many=True)
+PRODUCT_RECOMMENDED_COMBOS_RESPONSE_SCHEMA = api_response(RecommendedComboSerializer, "ProductRecommendedCombosListResponse", many=True)
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
@@ -1347,6 +1349,50 @@ class PublicProductSimilarView(APIView):
         return success_response(
             message="Similar products fetched successfully.",
             data=serializer.data)
+
+class PublicProductRecommendedCombosView(APIView):
+    """
+    Public API: Complete the Look - Generates 3 curated outfit combinations for the product:
+      - At least 1 Regular look (base outfit without outerwear).
+      - At least 1 Layered look (with outerwear layer).
+      - 1 Dynamic look (highest-scoring look between candidate regular and candidate layered alternatives).
+    Strictly enforces try-on category compatibility and ONE_PIECE mutual exclusivity rules.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="public_product_recommended_combos",
+        tags=["Public Products"],
+        summary="Get recommended combos (Complete the Look)",
+        description=(
+            "Generates 3 styled outfit combinations for the specified product: at least one regular look, "
+            "at least one layered look (with outerwear), and a third dynamic look chosen based on style affinity score. "
+            "Strictly enforces Virtual Try-On category compatibility and One-Piece mutual exclusivity."
+        ),
+        responses={200: PRODUCT_RECOMMENDED_COMBOS_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA},
+    )
+    def get(self, request, product_pk):
+        product = Product.objects.filter(
+            pk=product_pk,
+            status=ProductStatus.ACTIVE,
+            store__status=StoreStatus.ACTIVE,
+            store__archived_at__isnull=True,
+        ).first()
+        if not product:
+            return error_response(
+                message="Product not found or unavailable.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        combos_data = RecommendationService.get_recommended_combos(product)
+        serializer = RecommendedComboSerializer(combos_data, many=True)
+        return success_response(
+            message="Recommended combos fetched successfully.",
+            data=serializer.data,
+        )
+
 
 
 # ============================================================================

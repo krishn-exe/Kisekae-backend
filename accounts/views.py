@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as SimpleJWTTokenRefreshView
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 
 from allauth.socialaccount.providers.github.views import GitHubOAuth2Adapter
@@ -1517,6 +1518,10 @@ class WishlistListCreateView(APIView):
         if not created and note:
             item.note = note
             item.save(update_fields=["note"])
+
+        if created and user.id:
+            from products.tasks import recompute_user_taste_task
+            transaction.on_commit(lambda: recompute_user_taste_task.delay(user.id))
 
         msg = "Product added to wishlist successfully." if created else "Product is already in your wishlist."
         stat = status.HTTP_201_CREATED if created else status.HTTP_200_OK

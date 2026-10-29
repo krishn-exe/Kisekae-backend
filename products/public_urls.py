@@ -5,6 +5,7 @@ from .views import (
     ProductSearchView,
     PublicProductDetailView,
     PublicProductListView,
+    PublicProductSimilarView,
     RecommendedFeedView,
     SearchHistoryDetailView,
     SearchHistoryListView,
@@ -30,6 +31,9 @@ urlpatterns = [
 
     # Public Product Detail
     path("<int:product_pk>/", PublicProductDetailView.as_view(), name="public-product-detail"),
+
+    # Similar Products Recommendations (pgvector cosine matching)
+    path("<int:product_pk>/similar/", PublicProductSimilarView.as_view(), name="public-product-similar"),
 
     # Product Reviews & Ratings (List, Filter & Create)
     path("<int:product_pk>/reviews/", ProductReviewListCreateView.as_view(), name="product-reviews-list-create"),

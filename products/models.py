@@ -48,6 +48,17 @@ class ProductCategory(models.TextChoices):
     ACCESSORIES = "ACCESSORIES", "Accessories"
 
 
+def normalize_category_param(val):
+    """Safely normalizes input category string to ProductCategory enum code."""
+    if not val:
+        return None
+    val_clean = str(val).strip().replace(" ", "_").replace("-", "_").upper()
+    for choice in ProductCategory:
+        if val_clean == choice.value or val_clean == choice.label.replace(" ", "_").replace("-", "_").upper():
+            return choice.value
+    return None
+
+
 CLOTHING_CATEGORIES = {
     ProductCategory.TOP,
     ProductCategory.BOTTOM,

@@ -187,7 +187,7 @@ class ProductService:
             update_fields.append("updated_at")
             product.save(update_fields=list(set(update_fields)))
 
-            if any(f in update_fields for f in ["name", "description", "category", "color"]):
+            if any(f in update_fields for f in ["name", "description", "category", "product_type", "color"]) or variants_data is not None:
                 transaction.on_commit(lambda: generate_product_embedding_task.delay(product.id))
 
         product.sync_total_stock()

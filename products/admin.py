@@ -1,6 +1,15 @@
 from django.contrib import admin
 
-from .models import Product, ProductImage, ProductSize, ProductVariant
+from .models import (
+    Product,
+    ProductEmbedding,
+    ProductImage,
+    ProductSize,
+    ProductVariant,
+    ProductView,
+    SearchHistory,
+    UserTasteProfile,
+)
 
 
 class ProductVariantInline(admin.TabularInline):
@@ -40,3 +49,46 @@ class ProductVariantAdmin(admin.ModelAdmin):
     search_fields = ("color_name", "sku", "product__name")
     autocomplete_fields = ["product"]
     inlines = [ProductSizeInline, ProductImageInline]
+
+
+@admin.register(ProductEmbedding)
+class ProductEmbeddingAdmin(admin.ModelAdmin):
+    list_display = ("product", "product_store", "updated_at")
+    search_fields = ("product__name", "product__store__name")
+    readonly_fields = ("updated_at",)
+    autocomplete_fields = ["product"]
+
+    def product_store(self, obj):
+        return obj.product.store.name if obj.product and obj.product.store else "-"
+    product_store.short_description = "Store"
+
+
+@admin.register(SearchHistory)
+class SearchHistoryAdmin(admin.ModelAdmin):
+    list_display = ("user", "query", "search_count", "has_embedding", "last_searched_at", "created_at")
+    list_filter = ("last_searched_at", "created_at")
+    search_fields = ("user__email", "query")
+    readonly_fields = ("last_searched_at", "created_at")
+    autocomplete_fields = ["user"]
+
+    def has_embedding(self, obj):
+        return bool(obj.embedding is not None)
+    has_embedding.boolean = True
+    has_embedding.short_description = "Vectorized"
+
+
+@admin.register(ProductView)
+class ProductViewAdmin(admin.ModelAdmin):
+    list_display = ("user", "product", "view_count", "last_viewed_at", "first_viewed_at")
+    list_filter = ("last_viewed_at", "first_viewed_at")
+    search_fields = ("user__email", "product__name")
+    readonly_fields = ("last_viewed_at", "first_viewed_at")
+    autocomplete_fields = ["user", "product"]
+
+
+@admin.register(UserTasteProfile)
+class UserTasteProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "interaction_count", "updated_at")
+    search_fields = ("user__email",)
+    readonly_fields = ("updated_at",)
+    autocomplete_fields = ["user"]

@@ -153,6 +153,9 @@ class CartService:
             )
 
         cart.save(update_fields=["updated_at"])
+        if cart.user_id:
+            from products.tasks import recompute_user_taste_task
+            transaction.on_commit(lambda: recompute_user_taste_task.delay(cart.user_id))
         return cart_item
 
     @staticmethod
@@ -189,6 +192,9 @@ class CartService:
         cart_item.quantity = quantity
         cart_item.save(update_fields=["quantity", "updated_at"])
         cart.save(update_fields=["updated_at"])
+        if cart.user_id:
+            from products.tasks import recompute_user_taste_task
+            transaction.on_commit(lambda: recompute_user_taste_task.delay(cart.user_id))
         return cart_item
 
     @staticmethod

@@ -21,8 +21,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--batch-size",
             type=int,
-            default=100,
-            help="Batch size for processing products (default: 100).",
+            default=64,
+            help="Batch size for processing products (default: 64).",
         )
 
     def handle(self, *args, **options):
@@ -30,7 +30,7 @@ class Command(BaseCommand):
         force = options["force"]
         batch_size = options["batch_size"]
 
-        queryset = Product.objects.all().select_related("store")
+        queryset = Product.objects.all().select_related("store").prefetch_related("variants")
         if not force:
             queryset = queryset.filter(embedding_record__isnull=True)
 
@@ -46,16 +46,35 @@ class Command(BaseCommand):
         if is_sync:
             service = EmbeddingService.get_instance()
             processed = 0
+
+            # Process in true batch chunks for high GPU/CPU vectorization performance
+            batch_products = []
             for product in queryset.iterator(chunk_size=batch_size):
-                vector = service.embed_product(product)
-                if vector:
-                    ProductEmbedding.objects.update_or_create(
-                        product=product,
-                        defaults={"embedding": vector},
-                    )
-                processed += 1
-                if processed % 50 == 0 or processed == total_count:
+                batch_products.append(product)
+                if len(batch_products) >= batch_size:
+                    texts = [service.build_product_text(p) for p in batch_products]
+                    vectors = service.embed_texts(texts, batch_size=batch_size)
+                    for p, vec in zip(batch_products, vectors):
+                        if vec:
+                            ProductEmbedding.objects.update_or_create(
+                                product=p,
+                                defaults={"embedding": vec},
+                            )
+                    processed += len(batch_products)
                     self.stdout.write(f"Processed {processed}/{total_count} products...")
+                    batch_products = []
+
+            if batch_products:
+                texts = [service.build_product_text(p) for p in batch_products]
+                vectors = service.embed_texts(texts, batch_size=batch_size)
+                for p, vec in zip(batch_products, vectors):
+                    if vec:
+                        ProductEmbedding.objects.update_or_create(
+                            product=p,
+                            defaults={"embedding": vec},
+                        )
+                processed += len(batch_products)
+
             self.stdout.write(self.style.SUCCESS(f"Successfully generated embeddings for {processed} products."))
         else:
             enqueued = 0

@@ -337,6 +337,9 @@ class OrderService:
         transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "CONFIRMED"))
         transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "CONFIRMED"))
         transaction.on_commit(lambda: send_seller_new_order_alert_task.delay(order_id_val))
+        if order.user_id:
+            from products.tasks import recompute_user_taste_task
+            transaction.on_commit(lambda: recompute_user_taste_task.delay(order.user_id))
 
         return order
 

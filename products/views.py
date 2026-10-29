@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from django.db import connection
 from django.db.models import Case, Count, FloatField, Prefetch, Q, Value, When
@@ -26,7 +27,9 @@ from .models import (
     ProductImage,
     ProductStatus,
     ProductType,
-    SearchHistory)
+    SearchHistory,
+    ProductVariant,
+    normalize_category_param)
 from .serializers import (
     BulkProductUpdateSerializer,
     CategoryItemSerializer,
@@ -71,6 +74,7 @@ PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = api_response(
 PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(PublicProductDetailSerializer, "PublicProductDetailResponse")
 SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = api_response(SearchHistorySerializer, "SearchHistoryListResponse", many=True)
 RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "RecommendationFeedPaginatedData")
+PRODUCT_SIMILAR_RESPONSE_SCHEMA = api_response(ProductCardSerializer, "ProductSimilarListResponse", many=True)
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
@@ -99,7 +103,7 @@ def normalize_category_param(val):
 
 
 def get_optimized_product_queryset():
-    """Returns base public product queryset with store and related images/sizes prefetched to prevent N+1 queries."""
+    """Returns base public product queryset with store and related images/sizes/variants prefetched to prevent N+1 queries."""
     return (
         Product.objects.filter(
             status=ProductStatus.ACTIVE,
@@ -108,7 +112,12 @@ def get_optimized_product_queryset():
         .select_related("store")
         .prefetch_related(
             Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
-            "sizes")
+            "sizes",
+            Prefetch(
+                "variants",
+                queryset=ProductVariant.objects.filter(is_active=True).prefetch_related("images", "sizes"),
+            ),
+        )
     )
 
 
@@ -990,11 +999,31 @@ class PublicProductListView(APIView):
     def get(self, request):
         queryset = get_optimized_product_queryset()
 
-        # Search query if present
+        # Search query if present (phrase + multi-token matching)
         search_query = request.query_params.get("search") or request.query_params.get("q")
         if search_query:
             q_str = search_query.strip()
-            queryset = queryset.filter(Q(name__icontains=q_str) | Q(description__icontains=q_str))
+            tokens = [t for t in re.split(r"[\s,\-\+]+", q_str) if len(t) >= 2]
+            search_filter = (
+                Q(name__icontains=q_str)
+                | Q(description__icontains=q_str)
+                | Q(color__icontains=q_str)
+                | Q(variants__color_name__icontains=q_str)
+                | Q(store__name__icontains=q_str)
+            )
+            if tokens and len(tokens) > 1:
+                token_filter = Q()
+                for token in tokens:
+                    token_filter &= (
+                        Q(name__icontains=token)
+                        | Q(description__icontains=token)
+                        | Q(color__icontains=token)
+                        | Q(variants__color_name__icontains=token)
+                        | Q(category__icontains=token)
+                        | Q(product_type__icontains=token)
+                    )
+                search_filter |= token_filter
+            queryset = queryset.filter(search_filter)
             if request.user and request.user.is_authenticated:
                 record_search_query_task.delay(request.user.id, q_str)
 
@@ -1070,12 +1099,11 @@ class ProductSearchView(APIView):
             OpenApiParameter(name="min_price", description="Minimum price filter", required=False, type=float),
             OpenApiParameter(name="max_price", description="Maximum price filter", required=False, type=float),
             OpenApiParameter(name="in_stock", description="If true, only return products with stock > 0", required=False, type=bool),
-            OpenApiParameter(name="similarity_threshold", description="Cosine distance threshold for semantic matching (default: 0.82)", required=False, type=float),
             OpenApiParameter(name="ordering", description="Sort order: 'relevance' (default), 'price', '-price', 'newest', 'oldest', 'name', '-name'", required=False, type=str),
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA})
+        responses={200: PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA})
     def get(self, request):
         query = (
             request.query_params.get("q")
@@ -1083,11 +1111,7 @@ class ProductSearchView(APIView):
             or request.query_params.get("search", "")
         ).strip()
 
-        raw_threshold = request.query_params.get("similarity_threshold")
-        try:
-            threshold = float(raw_threshold) if raw_threshold is not None else 0.82
-        except (ValueError, TypeError):
-            threshold = 0.82
+        threshold = 0.68
 
         queryset = get_optimized_product_queryset()
 
@@ -1097,42 +1121,68 @@ class ProductSearchView(APIView):
         if query:
             if request.user and request.user.is_authenticated:
                 record_search_query_task.delay(request.user.id, query)
-            if not supports_pgvector:
-                queryset = queryset.filter(
-                    Q(name__icontains=query)
-                    | Q(description__icontains=query)
-                    | Q(color__icontains=query)
-                )
-            else:
-                try:
-                    embedding_service = EmbeddingService.get_instance()
-                    query_vector = embedding_service.embed_query_cached(query)
-                except Exception:
-                    query_vector = None
 
-                if query_vector:
-                    try:
-                        queryset = queryset.annotate(
-                            distance=CosineDistance("embedding_record__embedding", query_vector)
-                        ).filter(
-                            Q(name__icontains=query)
-                            | Q(description__icontains=query)
-                            | Q(color__icontains=query)
-                            | (Q(embedding_record__isnull=False) & Q(distance__lte=threshold))
-                        )
-                        has_vector_search = True
-                    except Exception:
-                        queryset = queryset.filter(
-                            Q(name__icontains=query)
-                            | Q(description__icontains=query)
-                            | Q(color__icontains=query)
-                        )
-                else:
-                    queryset = queryset.filter(
-                        Q(name__icontains=query)
-                        | Q(description__icontains=query)
-                        | Q(color__icontains=query)
+            tokens = [w for w in re.split(r"[\s,\-\+]+", query) if len(w) >= 2]
+
+            # 1. Contiguous exact phrase matching across name, description, color, store
+            phrase_filter = (
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(color__icontains=query)
+                | Q(variants__color_name__icontains=query)
+                | Q(store__name__icontains=query)
+            )
+
+            # 2. Tokenized multi-word matching (e.g. "black oversize hoodie" matches "Oversized Streetwear Black Hoodie")
+            token_filter = Q()
+            if tokens and len(tokens) > 1:
+                all_tokens_q = Q()
+                for token in tokens:
+                    all_tokens_q &= (
+                        Q(name__icontains=token)
+                        | Q(description__icontains=token)
+                        | Q(color__icontains=token)
+                        | Q(variants__color_name__icontains=token)
+                        | Q(category__icontains=token)
+                        | Q(product_type__icontains=token)
+                        | Q(store__name__icontains=token)
                     )
+                token_filter = all_tokens_q
+
+            lexical_filter = phrase_filter | token_filter if token_filter else phrase_filter
+
+            try:
+                embedding_service = EmbeddingService.get_instance()
+                query_vector = embedding_service.embed_query_cached(query)
+            except Exception:
+                query_vector = None
+
+            if supports_pgvector and query_vector:
+                try:
+                    queryset = queryset.annotate(
+                        distance=CosineDistance("embedding_record__embedding", query_vector)
+                    ).filter(
+                        lexical_filter
+                        | (Q(embedding_record__isnull=False) & Q(distance__lte=threshold))
+                    )
+                    has_vector_search = True
+                except Exception:
+                    queryset = queryset.filter(lexical_filter)
+            elif not supports_pgvector and query_vector:
+                # SQLite development/testing fallback: evaluate lexical filter, plus semantic match
+                candidate_ids = set(queryset.filter(lexical_filter).values_list("id", flat=True))
+                # Add products with embedding distance <= threshold in Python
+                for prod in queryset.filter(embedding_record__isnull=False):
+                    if hasattr(prod, "embedding_record") and prod.embedding_record and prod.embedding_record.embedding:
+                        p_emb = list(prod.embedding_record.embedding)
+                        dot = sum(a * b for a, b in zip(query_vector, p_emb))
+                        dist = 1.0 - dot
+                        if dist <= threshold:
+                            candidate_ids.add(prod.id)
+                queryset = queryset.filter(id__in=candidate_ids)
+                has_vector_search = True
+            else:
+                queryset = queryset.filter(lexical_filter)
 
         # Apply category, size, color, price range, in_stock, and letter filters
         queryset = apply_product_filters(queryset, request)
@@ -1155,16 +1205,32 @@ class ProductSearchView(APIView):
             "newest": ("-created_at",),
         }
 
-        if ordering == "relevance" and has_vector_search:
+        if ordering == "relevance" and has_vector_search and supports_pgvector:
             queryset = queryset.order_by(
                 Case(
                     When(name__iexact=query, then=Value(0.0)),
                     When(name__istartswith=query, then=Value(0.1)),
                     When(name__icontains=query, then=Value(0.2)),
                     default=Value(1.0),
-                    output_field=FloatField()),
+                    output_field=FloatField(),
+                ),
                 "distance",
-                "-created_at")
+                "-average_rating",
+                "-created_at",
+            )
+        elif ordering == "relevance":
+            queryset = queryset.order_by(
+                Case(
+                    When(name__iexact=query, then=Value(0.0)),
+                    When(name__istartswith=query, then=Value(0.1)),
+                    When(name__icontains=query, then=Value(0.2)),
+                    When(description__icontains=query, then=Value(0.5)),
+                    default=Value(1.0),
+                    output_field=FloatField(),
+                ),
+                "-average_rating",
+                "-created_at",
+            )
         elif ordering in valid_orderings:
             queryset = queryset.order_by(*valid_orderings[ordering])
         else:
@@ -1236,6 +1302,51 @@ class PublicProductDetailView(APIView):
             message="Product details fetched successfully.",
             data=PublicProductDetailSerializer(product).data)
 
+
+
+class PublicProductSimilarView(APIView):
+    """
+    Public API: Find visually and semantically similar active products
+    based on the current product's 384-dimensional pgvector embedding.
+    Powers 'Similar Styles' / 'You Might Also Like' carousels.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="public_product_similar",
+        tags=["Public Products"],
+        summary="Get similar products",
+        description="Returns active, in-stock products visually and semantically similar to the specified product using pgvector cosine distance.",
+        parameters=[
+            OpenApiParameter(name="limit", description="Max number of similar products to return (default: 10, max: 20)", required=False, type=int),
+            OpenApiParameter(name="same_category", description="If true, only returns products from the same apparel category", required=False, type=bool),
+        ],
+        responses={200: PRODUCT_SIMILAR_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
+    def get(self, request, product_pk):
+        product = Product.objects.filter(
+            pk=product_pk,
+            status=ProductStatus.ACTIVE,
+            store__status=StoreStatus.ACTIVE,
+            store__archived_at__isnull=True,
+        ).first()
+        if not product:
+            return error_response(
+                message="Product not found or unavailable.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND)
+
+        try:
+            limit = min(int(request.query_params.get("limit", 10)), 20)
+        except (ValueError, TypeError):
+            limit = 10
+        same_cat = request.query_params.get("same_category", "false").lower() in ("true", "1", "yes")
+
+        similar_qs = RecommendationService.get_similar_products(product, limit=limit, same_category=same_cat)
+        serializer = ProductCardSerializer(similar_qs, many=True)
+        return success_response(
+            message="Similar products fetched successfully.",
+            data=serializer.data)
 
 
 # ============================================================================

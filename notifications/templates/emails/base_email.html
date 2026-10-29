@@ -1,26 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="format-detection" content="telephone=no, address=no, email=no, date=no, url=no">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>{% block title %}KISEKAE{% endblock %}</title>
   <style>
+    :root {
+      color-scheme: light dark;
+      supported-color-schemes: light dark;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      -webkit-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+    }
     body {
-      margin: 0;
-      padding: 0;
       background-color: #F4F0EB;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: #2D2527;
       line-height: 1.6;
     }
+    table {
+      border-spacing: 0;
+      border-collapse: collapse;
+      mso-table-lspace: 0pt;
+      mso-table-rspace: 0pt;
+    }
+    img {
+      -ms-interpolation-mode: bicubic;
+      border: 0;
+      outline: none;
+      text-decoration: none;
+      display: block;
+      max-width: 100%;
+    }
     .wrapper {
-      width: 100%;
+      width: 100% !important;
       background-color: #F4F0EB;
-      padding: 40px 15px;
+      padding: 30px 12px;
       box-sizing: border-box;
     }
     .container {
-      max-width: 580px;
+      width: 100% !important;
+      max-width: 580px !important;
       margin: 0 auto;
       background-color: #FFFFFF;
       border-radius: 14px;
@@ -29,19 +58,20 @@
       box-shadow: 0 4px 14px rgba(45, 37, 39, 0.05);
     }
     .header {
-      padding: 32px 30px 24px 30px;
+      padding: 28px 24px 20px 24px;
       text-align: center;
       background-color: #FFFFFF;
       border-bottom: 1px solid #F4F0EB;
     }
     .brand-title {
       font-family: "Playfair Display", Georgia, "Times New Roman", serif;
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 700;
       letter-spacing: 4px;
       color: #802B3E;
       margin: 0;
       text-transform: uppercase;
+      line-height: 1.2;
     }
     .brand-tagline {
       font-size: 11px;
@@ -51,10 +81,12 @@
       margin-top: 6px;
     }
     .content {
-      padding: 32px 30px;
+      padding: 28px 24px;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
     .footer {
-      padding: 24px 30px;
+      padding: 20px 24px;
       background-color: #FAF8F5;
       border-top: 1px solid #E7E2DA;
       text-align: center;
@@ -77,6 +109,9 @@
       letter-spacing: 0.5px;
       margin-top: 15px;
       margin-bottom: 15px;
+      text-align: center;
+      max-width: 100%;
+      box-sizing: border-box;
     }
     .badge {
       display: inline-block;
@@ -90,9 +125,10 @@
       letter-spacing: 0.5px;
     }
     .item-table {
-      width: 100%;
+      width: 100% !important;
       border-collapse: collapse;
       margin: 20px 0;
+      table-layout: auto;
     }
     .item-table th {
       text-align: left;
@@ -104,9 +140,11 @@
       border-bottom: 1px solid #E7E2DA;
     }
     .item-table td {
-      padding: 12px 0;
+      padding: 12px 6px 12px 0;
       border-bottom: 1px solid #F4F0EB;
       font-size: 14px;
+      vertical-align: top;
+      word-break: break-word;
     }
     .info-card {
       background-color: #FAF8F5;
@@ -114,6 +152,151 @@
       border-radius: 8px;
       padding: 16px;
       margin: 20px 0;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+    .token-box {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      background-color: #FFFFFF;
+      border: 1px solid #D5CDC5;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: Consolas, "Courier New", Courier, monospace;
+      font-size: 16px;
+      font-weight: 700;
+      color: #802B3E;
+      letter-spacing: 0.5px;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      line-height: 1.4;
+      text-align: center;
+    }
+    .otp-box {
+      display: inline-block;
+      max-width: 100%;
+      box-sizing: border-box;
+      background-color: #FAF8F5;
+      border: 2px dashed #802B3E;
+      border-radius: 12px;
+      padding: 16px 28px;
+      word-break: break-all;
+    }
+
+    /* Mobile Responsive Optimizations */
+    @media only screen and (max-width: 600px) {
+      .wrapper {
+        padding: 12px 8px !important;
+      }
+      .container {
+        border-radius: 10px !important;
+      }
+      .header {
+        padding: 20px 16px 16px 16px !important;
+      }
+      .brand-title {
+        font-size: 22px !important;
+        letter-spacing: 3px !important;
+      }
+      .content {
+        padding: 20px 16px !important;
+      }
+      .footer {
+        padding: 16px 16px !important;
+      }
+      .btn {
+        display: block !important;
+        width: 100% !important;
+        padding: 14px 16px !important;
+        box-sizing: border-box !important;
+      }
+      .token-box {
+        font-size: 14px !important;
+        padding: 10px 12px !important;
+      }
+      .otp-box {
+        padding: 14px 20px !important;
+      }
+      .otp-text {
+        font-size: 26px !important;
+        letter-spacing: 5px !important;
+      }
+      .item-table th, .item-table td {
+        font-size: 12px !important;
+        padding: 8px 4px !important;
+      }
+      .info-card {
+        padding: 12px !important;
+      }
+      h2 {
+        font-size: 20px !important;
+      }
+    }
+
+    /* Dark Mode Support for Modern Mail Clients (Apple Mail, iOS, Outlook) */
+    @media (prefers-color-scheme: dark) {
+      body, .wrapper {
+        background-color: #1A1516 !important;
+      }
+      .container {
+        background-color: #241D1F !important;
+        border-color: #382E31 !important;
+      }
+      .header {
+        background-color: #241D1F !important;
+        border-bottom-color: #382E31 !important;
+      }
+      .footer {
+        background-color: #1E1719 !important;
+        border-top-color: #382E31 !important;
+        color: #A8A29E !important;
+      }
+      .brand-title {
+        color: #E28294 !important;
+      }
+      .brand-tagline {
+        color: #A8A29E !important;
+      }
+      .content {
+        color: #F5F0EB !important;
+      }
+      h2, h3, strong, td {
+        color: #F5F0EB !important;
+      }
+      .info-card {
+        background-color: #2D2427 !important;
+        border-color: #3E3236 !important;
+      }
+      .token-box {
+        background-color: #1A1516 !important;
+        border-color: #4A3C41 !important;
+        color: #E28294 !important;
+      }
+      .otp-box {
+        background-color: #2D2427 !important;
+        border-color: #E28294 !important;
+      }
+      .otp-text {
+        color: #E28294 !important;
+      }
+      .badge {
+        background-color: #351C23 !important;
+        color: #E28294 !important;
+        border-color: #522734 !important;
+      }
+      .item-table th {
+        border-bottom-color: #3E3236 !important;
+        color: #A8A29E !important;
+      }
+      .item-table td {
+        border-bottom-color: #2D2427 !important;
+      }
+      .btn {
+        background-color: #9E354D !important;
+        color: #FFFFFF !important;
+      }
     }
   </style>
 </head>
@@ -129,7 +312,7 @@
       </div>
       <div class="footer">
         <p style="margin: 0 0 6px 0;">KISEKAE Augmented Reality Fashion Store</p>
-        <p style="margin: 0; font-size: 11px; color: #A8A29E;">You received this email because of your account activity on Kisekae.</p>
+        <p style="margin: 0; font-size: 11px; color: #78716C;">You received this email because of your account activity on Kisekae.</p>
       </div>
     </div>
   </div>

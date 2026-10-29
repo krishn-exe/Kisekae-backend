@@ -11,6 +11,12 @@ from accounts.views import (
     WishlistBulkMoveToCartView,
     WishlistMoveToCartView,
 )
+from accounts.wallet_views import (
+    WalletAddFundsVerifyView,
+    WalletAddFundsView,
+    WalletDetailView,
+    WalletTransactionListView,
+)
 from cart.views import (
     AddToCartView,
     CartClearView,
@@ -39,6 +45,12 @@ urlpatterns = [
     path("address/", AddressListCreateView.as_view(), name="profile-address-list-create"),
     path("address/<int:address_id>/", AddressDetailView.as_view(), name="profile-address-detail"),
     path("address/<int:address_id>/default/", AddressSetDefaultView.as_view(), name="profile-address-set-default"),
+
+    # Customer Wallet
+    path("wallet/", WalletDetailView.as_view(), name="profile-wallet-detail"),
+    path("wallet/add-funds/", WalletAddFundsView.as_view(), name="profile-wallet-add-funds"),
+    path("wallet/add-funds/verify/", WalletAddFundsVerifyView.as_view(), name="profile-wallet-add-funds-verify"),
+    path("wallet/transactions/", WalletTransactionListView.as_view(), name="profile-wallet-transactions"),
 
     # Customer Wishlist
     path("wishlist/", WishlistListCreateView.as_view(), name="profile-wishlist-list-create"),

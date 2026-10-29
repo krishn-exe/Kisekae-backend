@@ -226,6 +226,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Accounts', 'description': 'Customer and seller authentication, registration, OTP verification, OAuth, and password operations.'},
         {'name': 'Profile - Personal Info', 'description': 'Customer personal profile details, name updates, notification preferences, and account deactivation.'},
         {'name': 'Profile - Addresses', 'description': 'Customer shipping address book management and default address selection.'},
+        {'name': 'Profile - Wallet', 'description': 'Customer wallet management, balance top-ups up to ₹10,000, and transaction ledger history.'},
         {'name': 'Profile - Wishlist', 'description': 'Customer product wishlist, item notes, and transfers to the shopping cart.'},
         {'name': 'Profile - Saved Looks', 'description': 'Customer Virtual Try-On outfit combinations, combo items, and public share links.'},
         {'name': 'Profile - Cart', 'description': 'Customer shopping cart items, size selections, and quantity updates.'},

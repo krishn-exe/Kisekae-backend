@@ -73,7 +73,7 @@ class OrderService:
 
     @staticmethod
     @transaction.atomic
-    def create_order(store, customer_data, items_data, user=None):
+    def create_order(store, customer_data, items_data, user=None, use_wallet=False):
         """
         Creates an order with 5-minute inventory reservation and generates
         a Razorpay order payload for payment capture.
@@ -100,7 +100,8 @@ class OrderService:
             expires_at=timezone.now() + timezone.timedelta(minutes=5),
         )
 
-        total_amount = Decimal("0.00")
+        subtotal_amount = Decimal("0.00")
+        compare_at_total = Decimal("0.00")
 
         for item_data in items_data:
             product_id = item_data["product_id"]
@@ -208,7 +209,9 @@ class OrderService:
                 InventoryService._check_stock_alert(product, prev_stock=prev_stock, new_stock=new_stock)
 
             item_total = product.price * qty
-            total_amount += item_total
+            subtotal_amount += item_total
+            item_compare_price = product.compare_at_price if product.compare_at_price is not None else product.price
+            compare_at_total += (item_compare_price * qty)
 
             OrderItem.objects.create(
                 order=order,
@@ -225,31 +228,81 @@ class OrderService:
                 total_price=item_total,
             )
 
-        order.total_amount = total_amount
-        order.save(update_fields=["total_amount", "updated_at"])
+        wallet_debit = Decimal("0.00")
+        if use_wallet:
+            from accounts.wallet_service import WalletService
+            wallet_debit = WalletService.debit(user=user, amount_to_cover=subtotal_amount, order=order)
 
-        # Create order in Razorpay
-        rzp_order = RazorpayService.create_order(
-            amount_in_inr=total_amount,
-            currency=order.currency,
-            receipt=order.order_number,
-            notes={"order_id": order.id, "store_id": store.id},
-        )
-        order.razorpay_order_id = rzp_order.get("id", "")
-        order.save(update_fields=["razorpay_order_id", "updated_at"])
+        final_due = subtotal_amount - wallet_debit
+        order.subtotal_amount = subtotal_amount
+        order.compare_at_total = compare_at_total
+        order.wallet_amount_used = wallet_debit
+        order.total_amount = final_due
+        if final_due > Decimal("0.00"):
+            rzp_order = RazorpayService.create_order(
+                amount_in_inr=final_due,
+                currency=order.currency,
+                receipt=order.order_number,
+                notes={"order_id": order.id, "store_id": store.id},
+            )
+            order.razorpay_order_id = rzp_order.get("id", "")
+            order.save(update_fields=[
+                "subtotal_amount",
+                "compare_at_total",
+                "wallet_amount_used",
+                "total_amount",
+                "razorpay_order_id",
+                "updated_at",
+            ])
 
-        OrderStatusHistory.objects.create(
-            order=order,
-            from_status="",
-            to_status=OrderStatus.PENDING,
-            changed_by=user,
-            notes="Order placed with 5-minute stock reservation. Awaiting Razorpay payment.",
-        )
+            OrderStatusHistory.objects.create(
+                order=order,
+                from_status="",
+                to_status=OrderStatus.PENDING,
+                changed_by=user,
+                notes=f"Order placed with 5-minute stock reservation. Wallet covered ₹{wallet_debit:.2f}. Awaiting Razorpay payment for ₹{final_due:.2f}.",
+            )
 
-        # Enqueue 5-minute expiration task
-        from .tasks import expire_pending_order_task
-        order_id_val = order.id
-        transaction.on_commit(lambda: expire_pending_order_task.apply_async(args=[order_id_val], countdown=300))
+            from .tasks import expire_pending_order_task
+            order_id_val = order.id
+            transaction.on_commit(lambda: expire_pending_order_task.apply_async(args=[order_id_val], countdown=300))
+        else:
+            order.status = OrderStatus.CONFIRMED
+            order.payment_status = PaymentStatus.PAID
+            order.razorpay_order_id = ""
+            order.expires_at = None
+            order.save(update_fields=[
+                "subtotal_amount",
+                "compare_at_total",
+                "wallet_amount_used",
+                "total_amount",
+                "razorpay_order_id",
+                "status",
+                "payment_status",
+                "expires_at",
+                "updated_at",
+            ])
+
+            OrderStatusHistory.objects.create(
+                order=order,
+                from_status="",
+                to_status=OrderStatus.CONFIRMED,
+                changed_by=user,
+                notes=f"Order fully paid using wallet balance (₹{wallet_debit:.2f}). Confirmed directly.",
+            )
+
+            from notifications.tasks import (
+                send_customer_order_push_notification_task,
+                send_order_lifecycle_email_task,
+                send_seller_new_order_alert_task,
+            )
+            order_id_val = order.id
+            transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "CONFIRMED"))
+            transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "CONFIRMED"))
+            transaction.on_commit(lambda: send_seller_new_order_alert_task.delay(order_id_val))
+            if order.user_id:
+                from products.tasks import recompute_user_taste_task
+                transaction.on_commit(lambda: recompute_user_taste_task.delay(order.user_id))
 
         return order
 
@@ -396,6 +449,15 @@ class OrderService:
                         notes=f"Expired reservation released for Order {order.order_number}",
                     )
 
+        if order.wallet_amount_used and order.wallet_amount_used > Decimal("0.00"):
+            from accounts.wallet_service import WalletService
+            WalletService.refund_to_wallet(
+                user=order.user,
+                amount=order.wallet_amount_used,
+                order=order,
+                description=f"Refund from expired reservation hold for Order {order.order_number}",
+            )
+
         order.status = OrderStatus.FAILED
         order.payment_status = PaymentStatus.FAILED
         order.save(update_fields=["status", "payment_status", "updated_at"])
@@ -433,6 +495,16 @@ class OrderService:
             order.refund_id = refund_data.get("id", "")
             order.refund_amount = order.total_amount
             order.payment_status = PaymentStatus.REFUNDED
+
+        if order.wallet_amount_used and order.wallet_amount_used > Decimal("0.00"):
+            from accounts.wallet_service import WalletService
+            WalletService.refund_to_wallet(
+                user=order.user,
+                amount=order.wallet_amount_used,
+                order=order,
+                description=f"Refund from cancelled Order {order.order_number}: {reason or 'Customer cancelled'}",
+            )
+            order.refund_amount = (order.refund_amount or Decimal("0.00")) + order.wallet_amount_used
 
         # Restore inventory
         for item in order.items.select_related("product", "variant", "variant_size").all():

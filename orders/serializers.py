@@ -89,6 +89,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     events = serializers.SerializerMethodField()
+    requires_razorpay = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -103,8 +104,12 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "payment_status",
+            "compare_at_total",
+            "subtotal_amount",
+            "wallet_amount_used",
             "total_amount",
             "currency",
+            "requires_razorpay",
             "razorpay_order_id",
             "razorpay_payment_id",
             "expires_at",
@@ -129,6 +134,9 @@ class OrderDetailSerializer(serializers.ModelSerializer):
         from .services import OrderService
         return OrderService.build_tracking_timeline(obj)
 
+    def get_requires_razorpay(self, obj) -> bool:
+        return obj.total_amount > 0 and obj.status == OrderStatus.PENDING
+
 
 class OrderDeliverSerializer(serializers.Serializer):
     notes = serializers.CharField(
@@ -149,6 +157,11 @@ class BuyNowSerializer(serializers.Serializer):
         allow_null=True,
         default=None,
         help_text="Optional ID of saved delivery address. If omitted, user's default profile address is used.",
+    )
+    use_wallet = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to deduct available funds from customer wallet.",
     )
 
 
@@ -222,3 +235,89 @@ class CustomerOrderTrackSerializer(serializers.ModelSerializer):
     def get_events(self, obj):
         from .services import OrderService
         return OrderService.build_tracking_timeline(obj)
+
+
+class OrderSummaryItemSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    product_name = serializers.CharField()
+    variant_id = serializers.IntegerField(allow_null=True)
+    color_name = serializers.CharField(allow_blank=True, default="")
+    size = serializers.CharField(allow_blank=True, default="")
+    quantity = serializers.IntegerField()
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    compare_at_price = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    total_price = serializers.DecimalField(max_digits=12, decimal_places=2)
+    compare_at_total = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+class OrderSummaryRequestSerializer(serializers.Serializer):
+    use_wallet = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to apply available wallet funds towards order total.",
+    )
+    store_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Filter cart items to a specific store ID.",
+    )
+    product_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+        help_text="Optional for Buy Now preview mode without cart.",
+    )
+    variant_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        default=None,
+    )
+    size = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    quantity = serializers.IntegerField(
+        required=False,
+        default=1,
+        min_value=1,
+    )
+
+
+class OrderSummaryResponseSerializer(serializers.Serializer):
+    items = OrderSummaryItemSerializer(many=True)
+    total_cost = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Sum of compare_at prices of all items (original MSRP total).",
+    )
+    subtotal = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Sum of actual item prices.",
+    )
+    discount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Difference between total_cost and subtotal (store discount savings).",
+    )
+    wallet_balance = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Current available balance in user wallet.",
+    )
+    wallet_covered_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Amount covered by wallet if use_wallet=True.",
+    )
+    final_due_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Final amount due for payment (subtotal - wallet_covered_amount).",
+    )
+    requires_razorpay = serializers.BooleanField(
+        help_text="True if final_due_amount > 0 requiring Razorpay checkout, False if fully paid by wallet.",
+    )
+    currency = serializers.CharField(default="INR")

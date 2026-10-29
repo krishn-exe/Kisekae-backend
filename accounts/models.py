@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
@@ -290,5 +291,65 @@ class PendingRegistration(models.Model):
 
     def __str__(self):
         return f"Pending registration for {self.email}"
+
+
+class Wallet(models.Model):
+    BALANCE_LIMIT = Decimal("10000.00")
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="wallet",
+    )
+    balance = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Current wallet balance in INR (max limit 10,000).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Wallet"
+        verbose_name_plural = "Wallets"
+
+    def __str__(self):
+        return f"Wallet({self.user.email}) - ₹{self.balance}"
+
+
+class WalletTransactionType(models.TextChoices):
+    CREDIT = "CREDIT", "Credit"
+    DEBIT = "DEBIT", "Debit"
+    REFUND = "REFUND", "Refund"
+
+
+class WalletTransaction(models.Model):
+    wallet = models.ForeignKey(
+        Wallet,
+        on_delete=models.CASCADE,
+        related_name="transactions",
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    txn_type = models.CharField(max_length=10, choices=WalletTransactionType.choices)
+    order = models.ForeignKey(
+        "orders.Order",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="wallet_transactions",
+    )
+    razorpay_payment_id = models.CharField(max_length=100, blank=True, default="")
+    razorpay_order_id = models.CharField(max_length=100, blank=True, default="")
+    description = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Wallet Transaction"
+        verbose_name_plural = "Wallet Transactions"
+
+    def __str__(self):
+        return f"{self.txn_type} ₹{self.amount} ({self.wallet.user.email})"
 
 

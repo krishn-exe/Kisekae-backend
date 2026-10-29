@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Address, PendingRegistration, User, WishlistItem
+from .models import Address, PendingRegistration, User, Wallet, WalletTransaction, WishlistItem
 
 
 @admin.register(User)
@@ -46,5 +46,21 @@ class PendingRegistrationAdmin(admin.ModelAdmin):
     search_fields = ("email", "name")
     list_filter = ("is_seller", "created_at")
     readonly_fields = ("created_at",)
+
+
+@admin.register(Wallet)
+class WalletAdmin(admin.ModelAdmin):
+    list_display = ("user", "balance", "updated_at")
+    search_fields = ("user__email", "user__name")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(WalletTransaction)
+class WalletTransactionAdmin(admin.ModelAdmin):
+    list_display = ("wallet", "amount", "txn_type", "order", "razorpay_payment_id", "created_at")
+    list_filter = ("txn_type", "created_at")
+    search_fields = ("wallet__user__email", "razorpay_payment_id", "order__order_number", "description")
+    readonly_fields = ("created_at",)
+
 
 

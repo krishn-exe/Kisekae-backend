@@ -119,6 +119,11 @@ class CartCheckoutSerializer(serializers.Serializer):
         default=None,
         help_text="Optional ID of saved delivery address. If omitted, user's default saved profile address is used.",
     )
+    use_wallet = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to deduct available funds from customer wallet.",
+    )
 
 
 class CheckoutOrderSummarySerializer(serializers.Serializer):
@@ -126,16 +131,21 @@ class CheckoutOrderSummarySerializer(serializers.Serializer):
     order_number = serializers.CharField()
     store_id = serializers.IntegerField()
     store_name = serializers.CharField()
+    subtotal_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    wallet_amount_used = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     currency = serializers.CharField()
     items_count = serializers.IntegerField()
     status = serializers.CharField()
     razorpay_order_id = serializers.CharField(allow_blank=True, default="")
+    requires_razorpay = serializers.BooleanField(required=False)
     expires_at = serializers.DateTimeField(allow_null=True)
 
 
 class CartCheckoutResponseSerializer(serializers.Serializer):
     orders = CheckoutOrderSummarySerializer(many=True)
     total_orders_placed = serializers.IntegerField()
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    total_wallet_used = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     currency = serializers.CharField()

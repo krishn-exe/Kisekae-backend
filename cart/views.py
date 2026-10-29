@@ -220,9 +220,12 @@ class CartCheckoutView(APIView):
             return error_response(msg, code=getattr(exc, "code", "SHIPPING_ADDRESS_REQUIRED"), status_code=status.HTTP_400_BAD_REQUEST)
 
         cart = CartService.get_or_create_cart(user=user)
-        orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data)
+        use_wallet = serializer.validated_data.get("use_wallet", False)
+        orders = CartService.checkout_cart(cart=cart, user=user, customer_data=customer_data, use_wallet=use_wallet)
 
         total_amount = sum(o.total_amount for o in orders)
+        subtotal = sum(o.subtotal_amount for o in orders)
+        total_wallet_used = sum(o.wallet_amount_used for o in orders)
         currency = orders[0].currency if orders else "INR"
 
         orders_summary = [
@@ -231,21 +234,31 @@ class CartCheckoutView(APIView):
                 "order_number": o.order_number,
                 "store_id": o.store.id,
                 "store_name": o.store.name,
+                "subtotal_amount": o.subtotal_amount,
+                "wallet_amount_used": o.wallet_amount_used,
                 "total_amount": o.total_amount,
                 "currency": o.currency,
                 "items_count": o.items.count(),
                 "status": o.status,
                 "razorpay_order_id": o.razorpay_order_id,
+                "requires_razorpay": o.total_amount > 0,
                 "expires_at": o.expires_at,
             }
             for o in orders
         ]
 
+        if total_amount == 0 and total_wallet_used > 0:
+            msg = f"Checkout completed successfully. {len(orders)} order(s) fully covered by wallet balance."
+        else:
+            msg = f"Checkout completed successfully. {len(orders)} order(s) placed."
+
         return success_response(
-            message=f"Checkout completed successfully. {len(orders)} order(s) placed.",
+            message=msg,
             data={
                 "orders": orders_summary,
                 "total_orders_placed": len(orders),
+                "subtotal": subtotal,
+                "total_wallet_used": total_wallet_used,
                 "total_amount": total_amount,
                 "currency": currency,
             },

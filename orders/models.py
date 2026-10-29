@@ -1,3 +1,4 @@
+from decimal import Decimal
 import secrets
 from django.conf import settings
 from django.db import models
@@ -73,6 +74,24 @@ class Order(models.Model):
         db_index=True,
     )
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    compare_at_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Sum of compare_at prices across all items.",
+    )
+    subtotal_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Sum of actual item prices before wallet coverage.",
+    )
+    wallet_amount_used = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Portion of order total covered by customer wallet.",
+    )
     currency = models.CharField(max_length=3, default="INR")
     notes = models.TextField(blank=True, default="")
     shipped_at = models.DateTimeField(

@@ -1,3 +1,4 @@
+from decimal import Decimal
 import json
 import logging
 from django.core.exceptions import ValidationError
@@ -23,6 +24,8 @@ from .razorpay_service import RazorpayService
 from .serializers import (
     BulkOrderStatusUpdateSerializer,
     BuyNowSerializer,
+    OrderSummaryRequestSerializer,
+    OrderSummaryResponseSerializer,
     CustomerOrderTrackSerializer,
     OrderCancelSerializer,
     OrderDeliverSerializer,
@@ -44,6 +47,7 @@ ORDER_DETAIL_RESPONSE_SCHEMA = api_response(OrderDetailSerializer, "OrderDetailR
 STORE_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "StoreOrderPaginatedResponse")
 CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
 CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
+ORDER_SUMMARY_RESPONSE_SCHEMA = api_response(OrderSummaryResponseSerializer, "OrderSummaryResponse")
 BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
     inline_serializer(
         name="BulkOrderUpdateData",
@@ -500,12 +504,13 @@ class BuyNowView(APIView):
                 customer_data=customer_data,
                 items_data=items_payload,
                 user=user,
+                use_wallet=data.get("use_wallet", False),
             )
         except ValidationError as exc:
             return error_response(str(exc), code="ORDER_CREATION_FAILED", status_code=status.HTTP_400_BAD_REQUEST)
 
         return success_response(
-            message="Order placed with 5-minute stock reservation. Complete payment via Razorpay.",
+            message="Order placed and fully paid using your wallet balance." if order.total_amount == 0 else "Order placed with 5-minute stock reservation. Complete payment via Razorpay.",
             data=OrderDetailSerializer(order).data,
             status_code=status.HTTP_201_CREATED,
         )
@@ -853,3 +858,134 @@ class CustomerOrderTrackByNumberView(CustomerOrderTrackView):
     )
     def get(self, request, order_number=None, order_id=None):
         return super().get(request, order_number=order_number, order_id=order_id)
+
+
+class OrderSummaryView(APIView):
+    """
+    Calculates cost breakdown before checkout:
+    - total_cost: sum of compare_at prices
+    - subtotal: sum of actual product prices
+    - discount: compare price sum - actual sum
+    - wallet_covered_amount: amount covered by wallet if use_wallet=True
+    - final_due_amount: remaining amount to be paid
+    - requires_razorpay: false if final_due_amount == 0
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "user_detail"
+
+    @extend_schema(
+        tags=["Orders - Consumer"],
+        summary="Calculate order cost summary",
+        description="Returns an exact price calculation summary before order placement, including compare-at savings, wallet deduction, and whether payment gateway redirection is required.",
+        request=OrderSummaryRequestSerializer,
+        responses={200: ORDER_SUMMARY_RESPONSE_SCHEMA, 400: ORDER_ERROR_SCHEMA},
+    )
+    def post(self, request):
+        serializer = OrderSummaryRequestSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        use_wallet = data.get("use_wallet", False)
+        store_id = data.get("store_id")
+        product_id = data.get("product_id")
+
+        items_summary = []
+
+        if product_id:
+            # Direct "Buy Now" preview mode
+            product = Product.objects.select_related("store").filter(pk=product_id).first()
+            if not product:
+                return error_response("Product not found.", "PRODUCT_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+
+            qty = data.get("quantity", 1)
+            variant_id = data.get("variant_id")
+            variant = None
+            if variant_id:
+                variant = product.variants.filter(pk=variant_id).first()
+
+            unit_price = product.price
+            compare_price = product.compare_at_price
+            effective_compare = compare_price if compare_price is not None else unit_price
+
+            total_item_price = unit_price * qty
+            total_item_compare = effective_compare * qty
+
+            items_summary.append({
+                "product_id": product.id,
+                "product_name": product.name,
+                "variant_id": variant.id if variant else None,
+                "color_name": variant.color_name if variant else (product.color or ""),
+                "size": data.get("size", ""),
+                "quantity": qty,
+                "unit_price": unit_price,
+                "compare_at_price": compare_price,
+                "total_price": total_item_price,
+                "compare_at_total": total_item_compare,
+            })
+        else:
+            # Active Cart preview mode
+            cart = CartService.get_or_create_cart(user=request.user)
+            cart_items_qs = cart.items.select_related("product", "variant", "product__store").all()
+            if store_id:
+                cart_items_qs = cart_items_qs.filter(product__store_id=store_id)
+
+            if not cart_items_qs.exists():
+                return error_response(
+                    "No items found in cart to summarize.",
+                    code="EMPTY_CART",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            for c_item in cart_items_qs:
+                prod = c_item.product
+                unit_price = prod.price
+                compare_price = prod.compare_at_price
+                effective_compare = compare_price if compare_price is not None else unit_price
+
+                total_item_price = unit_price * c_item.quantity
+                total_item_compare = effective_compare * c_item.quantity
+
+                items_summary.append({
+                    "product_id": prod.id,
+                    "product_name": prod.name,
+                    "variant_id": c_item.variant.id if c_item.variant else None,
+                    "color_name": c_item.variant.color_name if c_item.variant else (prod.color or ""),
+                    "size": c_item.size,
+                    "quantity": c_item.quantity,
+                    "unit_price": unit_price,
+                    "compare_at_price": compare_price,
+                    "total_price": total_item_price,
+                    "compare_at_total": total_item_compare,
+                })
+
+        total_cost = sum(item["compare_at_total"] for item in items_summary)
+        subtotal = sum(item["total_price"] for item in items_summary)
+        discount = max(Decimal("0.00"), total_cost - subtotal)
+
+        from accounts.wallet_service import WalletService
+        wallet = WalletService.get_or_create(request.user)
+        wallet_balance = wallet.balance
+
+        if use_wallet:
+            wallet_covered_amount = min(wallet_balance, subtotal)
+        else:
+            wallet_covered_amount = Decimal("0.00")
+
+        final_due_amount = subtotal - wallet_covered_amount
+        requires_razorpay = final_due_amount > Decimal("0.00")
+
+        summary_payload = {
+            "items": items_summary,
+            "total_cost": total_cost,
+            "subtotal": subtotal,
+            "discount": discount,
+            "wallet_balance": wallet_balance,
+            "wallet_covered_amount": wallet_covered_amount,
+            "final_due_amount": final_due_amount,
+            "requires_razorpay": requires_razorpay,
+            "currency": "INR",
+        }
+        return success_response(
+            message="Order summary calculated successfully.",
+            data=OrderSummaryResponseSerializer(summary_payload).data,
+        )

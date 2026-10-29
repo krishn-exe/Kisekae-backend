@@ -10,6 +10,7 @@ from .views import (
     CustomerOrderReorderView,
     CustomerOrderTrackByNumberView,
     CustomerOrderTrackView,
+    OrderSummaryView,
     PaymentVerifyView,
     RazorpayWebhookView,
 )
@@ -17,6 +18,7 @@ from .views import (
 urlpatterns = [
     # Customer Orders List & Detail
     path("", CustomerOrderListView.as_view(), name="customer-order-list"),
+    path("summary/", OrderSummaryView.as_view(), name="order-summary"),
     path("checkout/", CartCheckoutView.as_view(), name="order-checkout"),
     path("buy-now/", BuyNowView.as_view(), name="order-buy-now"),
     path("verify-payment/", PaymentVerifyView.as_view(), name="order-verify-payment"),

@@ -7,8 +7,6 @@ from drf_spectacular.utils import extend_schema_field
 
 from rest_framework import serializers
 
-
-
 from .models import (
 
     AccountType,
@@ -55,13 +53,7 @@ from .validators import (
 
 )
 
-
-
 User = get_user_model()
-
-
-
-
 
 class StoreMemberUserSerializer(serializers.ModelSerializer):
 
@@ -71,15 +63,9 @@ class StoreMemberUserSerializer(serializers.ModelSerializer):
 
         fields = ["id", "name", "email"]
 
-
-
-
-
 class StoreMemberSerializer(serializers.ModelSerializer):
 
     user = StoreMemberUserSerializer(read_only=True)
-
-
 
     class Meta:
 
@@ -87,15 +73,9 @@ class StoreMemberSerializer(serializers.ModelSerializer):
 
         fields = ["id", "user", "role", "created_at"]
 
-
-
-
-
 class AddMemberSerializer(serializers.Serializer):
 
     email = serializers.EmailField()
-
-
 
     def validate_email(self, value):
 
@@ -119,10 +99,6 @@ class AddMemberSerializer(serializers.Serializer):
 
         return email
 
-
-
-
-
 class StoreSerializer(serializers.ModelSerializer):
 
     my_role = serializers.SerializerMethodField()
@@ -134,8 +110,6 @@ class StoreSerializer(serializers.ModelSerializer):
     logo_url = serializers.CharField(read_only=True, allow_null=True)
 
     banner_url = serializers.CharField(read_only=True, allow_null=True)
-
-
 
     class Meta:
 
@@ -179,8 +153,6 @@ class StoreSerializer(serializers.ModelSerializer):
 
         ]
 
-
-
     @extend_schema_field(serializers.CharField(allow_null=True))
 
     def get_my_role(self, obj):
@@ -209,8 +181,6 @@ class StoreSerializer(serializers.ModelSerializer):
 
         return membership.role if membership else None
 
-
-
     @extend_schema_field(serializers.IntegerField())
 
     def get_member_count(self, obj):
@@ -228,10 +198,6 @@ class StoreSerializer(serializers.ModelSerializer):
             return len(obj.memberships.all())
 
         return obj.memberships.count()
-
-
-
-
 
 class StoreCreateSerializer(serializers.Serializer):
 
@@ -251,8 +217,6 @@ class StoreCreateSerializer(serializers.Serializer):
 
     contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default="", help_text="Customer support contact number")
 
-
-
     def validate_name(self, value):
 
         val = value.strip()
@@ -263,8 +227,6 @@ class StoreCreateSerializer(serializers.Serializer):
 
         return val
 
-
-
     def validate_description(self, value):
 
         val = value.strip()
@@ -274,8 +236,6 @@ class StoreCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Store description must be at least 5 characters.")
 
         return val
-
-
 
     def validate_logo(self, value):
 
@@ -291,8 +251,6 @@ class StoreCreateSerializer(serializers.Serializer):
 
         return value
 
-
-
     def validate_banner(self, value):
 
         if value:
@@ -306,10 +264,6 @@ class StoreCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(list(e.messages) if hasattr(e, "messages") else str(e))
 
         return value
-
-
-
-
 
 class StoreUpdateSerializer(serializers.Serializer):
 
@@ -339,8 +293,6 @@ class StoreUpdateSerializer(serializers.Serializer):
 
     )
 
-
-
     def validate_name(self, value):
 
         val = value.strip()
@@ -350,8 +302,6 @@ class StoreUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Store name must be at least 2 characters.")
 
         return val
-
-
 
     def validate_logo(self, value):
 
@@ -367,8 +317,6 @@ class StoreUpdateSerializer(serializers.Serializer):
 
         return value
 
-
-
     def validate_banner(self, value):
 
         if value:
@@ -383,10 +331,6 @@ class StoreUpdateSerializer(serializers.Serializer):
 
         return value
 
-
-
-
-
 class TransferOwnershipSerializer(serializers.Serializer):
 
     member_id = serializers.IntegerField(
@@ -395,15 +339,9 @@ class TransferOwnershipSerializer(serializers.Serializer):
 
     )
 
-
-
-
-
 class StoreInvitationStoreSerializer(serializers.ModelSerializer):
 
     logo_url = serializers.CharField(read_only=True, allow_null=True)
-
-
 
     class Meta:
 
@@ -411,17 +349,11 @@ class StoreInvitationStoreSerializer(serializers.ModelSerializer):
 
         fields = ["id", "name", "slug", "logo_url"]
 
-
-
-
-
 class StoreInvitationSerializer(serializers.ModelSerializer):
 
     store = StoreInvitationStoreSerializer(read_only=True)
 
     invited_by = StoreMemberUserSerializer(read_only=True)
-
-
 
     class Meta:
 
@@ -447,23 +379,13 @@ class StoreInvitationSerializer(serializers.ModelSerializer):
 
         ]
 
-
-
-
-
 class CreateInvitationSerializer(serializers.Serializer):
 
     email = serializers.EmailField(help_text="Email address to invite to manage this store.")
 
-
-
     def validate_email(self, value):
 
         return value.strip().lower()
-
-
-
-
 
 class AcceptTokenSerializer(serializers.Serializer):
 
@@ -473,25 +395,15 @@ class AcceptTokenSerializer(serializers.Serializer):
 
     )
 
-
-
-
-
 class ImageUploadSerializer(serializers.Serializer):
 
     file = serializers.ImageField(help_text="Image file (JPEG, PNG, WEBP).")
-
-
-
-
 
 class BusinessVerificationSerializer(serializers.ModelSerializer):
 
     store_id = serializers.IntegerField(source="store.id", read_only=True)
 
     store_name = serializers.CharField(source="store.name", read_only=True)
-
-
 
     class Meta:
 
@@ -524,10 +436,6 @@ class BusinessVerificationSerializer(serializers.ModelSerializer):
             "updated_at",
 
         ]
-
-
-
-
 
 class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
 
@@ -563,8 +471,6 @@ class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
 
         }
 
-
-
     def validate_pan_number(self, value):
 
         val = value.strip().upper()
@@ -582,8 +488,6 @@ class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This PAN number is already registered with another store.")
 
         return val
-
-
 
     def validate_gst_number(self, value):
 
@@ -603,15 +507,9 @@ class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
 
         return val
 
-
-
     def validate_business_email(self, value):
 
         return value.strip().lower()
-
-
-
-
 
 # ---------------------------------------------------------------------------
 
@@ -619,13 +517,9 @@ class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
 
 # ---------------------------------------------------------------------------
 
-
-
 class StoreBankAccountSerializer(serializers.ModelSerializer):
 
     account_number_masked = serializers.CharField(read_only=True)
-
-
 
     class Meta:
 
@@ -661,8 +555,6 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
 
         }
 
-
-
     def validate_account_holder_name(self, value):
 
         val = str(value).strip()
@@ -670,8 +562,6 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
         account_holder_validator(val)
 
         return val
-
-
 
     def validate_account_number(self, value):
 
@@ -681,8 +571,6 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
 
         return val
 
-
-
     def validate_ifsc_code(self, value):
 
         val = str(value).strip().upper()
@@ -690,8 +578,6 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
         ifsc_validator(val)
 
         return val
-
-
 
     def to_representation(self, instance):
 
@@ -711,59 +597,37 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
 
         return ret
 
-
-
-
-
 class StorePaymentSettingsSerializer(serializers.ModelSerializer):
-
     class Meta:
-
         model = StorePaymentSettings
-
         fields = [
-
             "settlement_day",
-
             "auto_settlement_enabled",
-
-            "monthly_advertising_budget",
-
             "created_at",
-
             "updated_at",
-
         ]
 
-
-
     def validate_settlement_day(self, value):
-
         raw_val = str(value).strip()
-
         settlement_day_validator(raw_val)
-
         val = int(raw_val)
-
         if val < 1 or val > 31:
-
             raise serializers.ValidationError("Settlement day must be between 1 and 31.")
-
         return val
 
 
+class StoreAdvertisingBudgetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StorePaymentSettings
+        fields = [
+            "monthly_advertising_budget",
+            "updated_at",
+        ]
 
     def validate_monthly_advertising_budget(self, value):
-
         if value < 0:
-
             raise serializers.ValidationError("Monthly advertising budget cannot be negative.")
-
         return value
-
-
-
-
 
 class StoreSettlementSerializer(serializers.ModelSerializer):
 
@@ -799,10 +663,6 @@ class StoreSettlementSerializer(serializers.ModelSerializer):
 
         ]
 
-
-
-
-
 class StoreDirectSettleSerializer(serializers.Serializer):
 
     amount = serializers.DecimalField(
@@ -835,10 +695,6 @@ class StoreDirectSettleSerializer(serializers.Serializer):
 
     )
 
-
-
-
-
 class StoreMonthlySummaryPeriodSerializer(serializers.Serializer):
 
     year = serializers.IntegerField()
@@ -846,10 +702,6 @@ class StoreMonthlySummaryPeriodSerializer(serializers.Serializer):
     month = serializers.IntegerField()
 
     days_in_month = serializers.IntegerField()
-
-
-
-
 
 class StoreMonthlySummaryMetricsSerializer(serializers.Serializer):
 
@@ -869,19 +721,11 @@ class StoreMonthlySummaryMetricsSerializer(serializers.Serializer):
 
     orders_count = serializers.IntegerField()
 
-
-
-
-
 class StoreMonthlySummaryAdvertisingSerializer(serializers.Serializer):
 
     monthly_budget = serializers.CharField()
 
     current_ad_spend = serializers.CharField()
-
-
-
-
 
 class StoreMonthlySummarySettlementSerializer(serializers.Serializer):
 
@@ -898,10 +742,6 @@ class StoreMonthlySummarySettlementSerializer(serializers.Serializer):
     settlement_day = serializers.IntegerField()
 
     next_settlement_date = serializers.CharField(allow_null=True)
-
-
-
-
 
 class StoreMonthlySummaryBankAccountSerializer(serializers.Serializer):
 
@@ -921,10 +761,6 @@ class StoreMonthlySummaryBankAccountSerializer(serializers.Serializer):
 
     added_at = serializers.CharField(allow_null=True)
 
-
-
-
-
 class StorePaymentDashboardSerializer(serializers.Serializer):
 
     period = StoreMonthlySummaryPeriodSerializer()
@@ -938,4 +774,3 @@ class StorePaymentDashboardSerializer(serializers.Serializer):
     settlement_overview = StoreMonthlySummarySettlementSerializer()
 
     bank_account = StoreMonthlySummaryBankAccountSerializer()
-

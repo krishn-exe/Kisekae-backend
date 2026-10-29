@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 staticfiles/
+media/
 test.py
 tests.py
 test/                

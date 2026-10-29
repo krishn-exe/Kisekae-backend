@@ -3,34 +3,38 @@
 {% block title %}Verification Requires Attention - {{ store.name }} - KISEKAE Seller{% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge badge-danger" style="background-color: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA;">ACTION REQUIRED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
+<div style="text-align: center; margin-bottom: 22px;">
+  <span class="badge-danger" style="display: inline-block; background-color: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;">ACTION REQUIRED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 22px; color: inherit; margin: 12px 0 6px 0;">
     Verification Application Update
   </h2>
-  <p style="color: #78716C; font-size: 14px; margin: 0;">
+  <p class="text-subtle" style="color: #78716C; font-size: 14px; margin: 0; line-height: 1.5;">
     We were unable to approve the verification submission for <strong>{{ store.name }}</strong>.
   </p>
 </div>
 
-<div class="info-card info-card-danger">
-  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #B91C1C; font-weight: 600; margin-bottom: 6px;">Status: REJECTED</div>
+<div class="info-card" style="background-color: #FAF8F5; border: 1px solid #EDE8E3; border-left: 4px solid #DC2626; border-radius: 8px; padding: 14px 16px; margin: 18px 0; box-sizing: border-box;">
+  <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #B91C1C; font-weight: 600; margin-bottom: 6px;">Status: REJECTED</div>
   <div style="font-size: 14px; font-weight: 600; color: inherit;">Store Name: {{ store.name }}</div>
   {% if rejection_reason %}
-  <div style="margin-top: 10px; padding: 10px; background-color: #FFF1F2; border-radius: 6px;">
-    <div style="font-size: 12px; font-weight: 600; color: #9F1239;">Reason provided by review team:</div>
-    <div style="font-size: 13px; color: #4C0519; margin-top: 4px;">{{ rejection_reason }}</div>
+  <div style="margin-top: 10px; padding: 10px; background-color: #FFF1F2; border-radius: 6px; box-sizing: border-box;">
+    <div style="font-size: 11px; font-weight: 600; color: #9F1239; text-transform: uppercase; letter-spacing: 0.5px;">Reason provided by review team:</div>
+    <div style="font-size: 13px; color: #4C0519; margin-top: 4px; line-height: 1.4;">{{ rejection_reason }}</div>
   </div>
   {% endif %}
 </div>
 
-<p style="font-size: 14px; color: #44403C; line-height: 1.6; margin-top: 20px;">
+<p class="text-dark" style="font-size: 14px; color: #44403C; line-height: 1.6; margin: 18px 0 0 0;">
   Please log in to your KISEKAE partner account, review the details above, and submit an updated business verification form.
 </p>
 
-<div style="text-align: center; margin-top: 28px;">
-  <a href="https://kisekae.com/seller/settings/verification" class="btn">
-    Resubmit Verification
-  </a>
-</div>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 24px auto;">
+  <tr>
+    <td align="center" class="btn-cell" style="border-radius: 8px; background-color: #802B3E;">
+      <a href="https://kisekae.com/seller/settings/verification" class="btn-responsive" style="display: inline-block; background-color: #802B3E; color: #FFFFFF !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; letter-spacing: 0.5px; text-align: center;">
+        Resubmit Verification
+      </a>
+    </td>
+  </tr>
+</table>
 {% endblock %}

@@ -96,6 +96,10 @@ class UserSettings(models.Model):
         related_name="settings",
     )
     email_notifications = models.BooleanField(default=True)
+    push_notifications = models.BooleanField(
+        default=True,
+        help_text="Master toggle for mobile push notifications via Firebase.",
+    )
     order_alerts = models.BooleanField(default=True)
     stock_alerts = models.BooleanField(default=True)
     low_stock_total_alerts = models.BooleanField(

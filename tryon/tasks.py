@@ -332,6 +332,12 @@ def generate_tryon_task(self, request_id: str) -> bool:
         tryon_req.error_message = ""
         tryon_req.save(update_fields=["result_image", "status", "completed_at", "error_message"])
 
+        try:
+            from notifications.tasks import send_customer_tryon_push_notification_task
+            send_customer_tryon_push_notification_task.delay(tryon_req.id)
+        except Exception as e:
+            logger.warning("Failed to enqueue tryon push notification: %s", e)
+
         logger.info(f"TryOnRequest #{tryon_req.id} completed successfully.")
         return True
 
@@ -340,5 +346,12 @@ def generate_tryon_task(self, request_id: str) -> bool:
         tryon_req.status = TryOnRequestStatus.FAILED
         tryon_req.error_message = str(exc)
         tryon_req.save(update_fields=["status", "error_message"])
+
+        try:
+            from notifications.tasks import send_customer_tryon_push_notification_task
+            send_customer_tryon_push_notification_task.delay(tryon_req.id)
+        except Exception as e:
+            logger.warning("Failed to enqueue tryon push notification: %s", e)
+
         return False
 

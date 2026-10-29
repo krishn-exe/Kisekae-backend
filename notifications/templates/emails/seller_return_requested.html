@@ -3,57 +3,64 @@
 {% block title %}Return Requested #{{ order.order_number }} - KISEKAE Seller{% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge badge-warning" style="background-color: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">RETURN REQUESTED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
+<div style="text-align: center; margin-bottom: 22px;">
+  <span class="badge-warning" style="display: inline-block; background-color: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;">RETURN REQUESTED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 22px; color: inherit; margin: 12px 0 6px 0;">
     Return Requested
   </h2>
-  <p style="color: #78716C; font-size: 14px; margin: 0;">
+  <p class="text-subtle" style="color: #78716C; font-size: 14px; margin: 0; line-height: 1.5;">
     A customer has requested a return for Order <strong>#{{ order.order_number }}</strong>.
   </p>
 </div>
 
-<div class="info-card">
-  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Return Overview</div>
+<div class="info-card" style="background-color: #FAF8F5; border: 1px solid #EDE8E3; border-radius: 8px; padding: 14px 16px; margin: 18px 0; box-sizing: border-box;">
+  <div class="text-subtle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #78716C; margin-bottom: 4px; font-weight: 600;">Return Overview</div>
   <div style="font-size: 14px; font-weight: 600; color: inherit;">Order Number: {{ order.order_number }}</div>
-  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Customer: {{ order.customer_name }} ({{ order.customer_email }})</div>
+  <div class="text-dark" style="font-size: 13px; color: #44403C; margin-top: 2px;">Customer: {{ order.customer_name }} ({{ order.customer_email }})</div>
   <div style="font-size: 14px; font-weight: 700; color: #802B3E; margin-top: 6px;">Total Amount: {{ order.currency }} {{ order.total_amount }}</div>
   {% if order.refund_reason %}
-  <div style="margin-top: 10px; padding: 10px; background-color: #FFFBEB; border-radius: 6px;">
-    <div style="font-size: 12px; font-weight: 600; color: #92400E;">Reason for return:</div>
-    <div style="font-size: 13px; color: #78350F; margin-top: 3px;">{{ order.refund_reason }}</div>
+  <div style="margin-top: 10px; padding: 10px; background-color: #FFFBEB; border-radius: 6px; box-sizing: border-box;">
+    <div style="font-size: 11px; font-weight: 600; color: #92400E; text-transform: uppercase; letter-spacing: 0.5px;">Reason for return:</div>
+    <div style="font-size: 13px; color: #78350F; margin-top: 3px; line-height: 1.4;">{{ order.refund_reason }}</div>
   </div>
   {% endif %}
 </div>
 
-<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 24px 0 12px 0;">Order Items</h3>
-<div class="table-responsive">
-<table class="item-table">
+<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 22px 0 10px 0;">Order Items</h3>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="item-table" style="width: 100% !important; border-collapse: collapse; table-layout: fixed; margin: 12px 0;">
   <thead>
     <tr>
-      <th>Product</th>
-      <th style="text-align: center;">Size</th>
-      <th style="text-align: center;">Qty</th>
-      <th style="text-align: right;">Total</th>
+      <th style="width: 46%; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 4px 8px 0; border-bottom: 1px solid #E7E2DA;">Product</th>
+      <th style="width: 16%; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 2px; border-bottom: 1px solid #E7E2DA;">Size</th>
+      <th style="width: 12%; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 2px; border-bottom: 1px solid #E7E2DA;">Qty</th>
+      <th style="width: 26%; text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 0 8px 2px; border-bottom: 1px solid #E7E2DA;">Total</th>
     </tr>
   </thead>
   <tbody>
     {% for item in order.items.all %}
     <tr>
-      <td><strong style="color: inherit;">{{ item.product_name }}</strong></td>
-      <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
-      <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
-      <td style="text-align: right; font-weight: 600; color: inherit;">{{ order.currency }} {{ item.total_price }}</td>
+      <td style="padding: 10px 4px 10px 0; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; word-break: break-word;">
+        <strong style="color: inherit;">{{ item.product_name }}</strong>
+      </td>
+      <td class="text-subtle" style="padding: 10px 2px; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
+      <td class="text-dark" style="padding: 10px 2px; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; text-align: center; color: #44403C;">{{ item.quantity }}</td>
+      <td style="padding: 10px 0 10px 2px; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; text-align: right; font-weight: 600; color: inherit; white-space: nowrap;">{{ order.currency }} {{ item.total_price }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
-</div>
 
-<div style="text-align: center; margin-top: 28px;">
-  <p style="font-size: 13px; color: #78716C; margin-bottom: 12px;">Please review and approve or reject this return in your seller portal.</p>
-  <a href="https://kisekae.com/seller/orders/{{ order.id }}" class="btn">
-    Review Return Request
-  </a>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin: 24px auto 12px auto;">
+  <tr>
+    <td align="center" class="btn-cell" style="border-radius: 8px; background-color: #802B3E;">
+      <a href="https://kisekae.com/seller/orders/{{ order.id }}" class="btn-responsive" style="display: inline-block; background-color: #802B3E; color: #FFFFFF !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; letter-spacing: 0.5px; text-align: center;">
+        Review Return Request
+      </a>
+    </td>
+  </tr>
+</table>
+
+<div style="text-align: center; margin-top: 16px;">
+  <p class="text-subtle" style="font-size: 12px; color: #78716C; margin: 0; line-height: 1.5;">Please review and approve or reject this return in your seller portal.</p>
 </div>
 {% endblock %}

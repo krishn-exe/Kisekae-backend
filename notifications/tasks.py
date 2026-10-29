@@ -165,3 +165,40 @@ def send_seller_low_stock_alert_task(product_id: int, size: str = "", current_st
         current_stock=current_stock,
         threshold=threshold,
     )
+
+
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def send_customer_order_push_notification_task(order_id: int, event_type: str, notes: str = ""):
+    """
+    Asynchronous task delivering FCM push notifications for order lifecycle updates to customers.
+    """
+    from orders.models import Order
+    from .fcm_service import FCMNotificationService
+
+    order = (
+        Order.objects.filter(pk=order_id)
+        .select_related("user", "store")
+        .first()
+    )
+    if not order:
+        logger.warning("send_customer_order_push_notification_task: Order %d not found.", order_id)
+        return 0
+
+    return FCMNotificationService.send_order_push_notification(order=order, event_type=event_type, notes=notes)
+
+
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def send_customer_tryon_push_notification_task(tryon_request_id):
+    """
+    Asynchronous task delivering FCM push notifications for Virtual Try-On completion to consumers.
+    """
+    from tryon.models import TryOnRequest
+    from .fcm_service import FCMNotificationService
+
+    tryon_req = TryOnRequest.objects.filter(pk=tryon_request_id).select_related("user").first()
+    if not tryon_req:
+        logger.warning("send_customer_tryon_push_notification_task: TryOnRequest %s not found.", tryon_request_id)
+        return 0
+
+    return FCMNotificationService.send_tryon_push_notification(tryon_request=tryon_req)
+

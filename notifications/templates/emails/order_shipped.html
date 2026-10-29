@@ -3,41 +3,45 @@
 {% block title %}Order Shipped #{{ order.order_number }} - KISEKAE{% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge">SHIPPED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
+<div style="text-align: center; margin-bottom: 22px;">
+  <span class="badge-default" style="display: inline-block; background-color: #F9F4F5; color: #802B3E; border: 1px solid #EBD5D9; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;">SHIPPED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 22px; color: inherit; margin: 12px 0 6px 0;">
     Your Package is on the Way!
   </h2>
-  <p style="color: #78716C; font-size: 14px; margin: 0;">
+  <p class="text-subtle" style="color: #78716C; font-size: 14px; margin: 0; line-height: 1.5;">
     Great news! Order <strong>#{{ order.order_number }}</strong> has been shipped by <strong>{{ order.store.name }}</strong>.
   </p>
 </div>
 
-<div class="info-card">
-  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Delivery Address</div>
+<div class="info-card" style="background-color: #FAF8F5; border: 1px solid #EDE8E3; border-radius: 8px; padding: 14px 16px; margin: 18px 0; box-sizing: border-box;">
+  <div class="text-subtle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #78716C; margin-bottom: 4px; font-weight: 600;">Delivery Address</div>
   <div style="font-size: 14px; font-weight: 600; color: inherit;">{{ order.customer_name }}</div>
-  <div style="font-size: 13px; color: #44403C; margin-top: 4px;">{{ order.shipping_address }}</div>
+  <div class="text-dark" style="font-size: 13px; color: #44403C; margin-top: 2px; line-height: 1.4;">{{ order.shipping_address }}</div>
 </div>
 
-<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 24px 0 12px 0;">Items in this Shipment</h3>
-<div class="table-responsive">
-<table class="item-table">
+<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 22px 0 10px 0;">Items in this Shipment</h3>
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="item-table" style="width: 100% !important; border-collapse: collapse; table-layout: fixed; margin: 12px 0;">
   <thead>
     <tr>
-      <th>Product</th>
-      <th style="text-align: center;">Size</th>
-      <th style="text-align: center;">Qty</th>
+      <th style="width: 56%; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 4px 8px 0; border-bottom: 1px solid #E7E2DA;">Product</th>
+      <th style="width: 24%; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 2px; border-bottom: 1px solid #E7E2DA;">Size</th>
+      <th style="width: 20%; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; padding: 8px 0 8px 2px; border-bottom: 1px solid #E7E2DA;">Qty</th>
     </tr>
   </thead>
   <tbody>
     {% for item in order.items.all %}
     <tr>
-      <td><strong style="color: inherit;">{{ item.product_name }}</strong></td>
-      <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
-      <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
+      <td style="padding: 10px 4px 10px 0; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; word-break: break-word;">
+        <strong style="color: inherit;">{{ item.product_name }}</strong>
+      </td>
+      <td class="text-subtle" style="padding: 10px 2px; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
+      <td class="text-dark" style="padding: 10px 0 10px 2px; border-bottom: 1px solid #F4F0EB; font-size: 13px; vertical-align: top; text-align: center; color: #44403C;">{{ item.quantity }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+
+<div style="text-align: center; margin-top: 24px;">
+  <p class="text-subtle" style="font-size: 12px; color: #78716C; margin: 0; line-height: 1.5;">Track your delivery updates directly inside the Kisekae mobile app.</p>
 </div>
 {% endblock %}

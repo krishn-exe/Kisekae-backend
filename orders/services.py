@@ -328,9 +328,14 @@ class OrderService:
             notes=f"Payment verified successfully (ID: {razorpay_payment_id}).",
         )
 
-        from notifications.tasks import send_order_lifecycle_email_task, send_seller_new_order_alert_task
+        from notifications.tasks import (
+            send_customer_order_push_notification_task,
+            send_order_lifecycle_email_task,
+            send_seller_new_order_alert_task,
+        )
         order_id_val = order.id
         transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "CONFIRMED"))
+        transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "CONFIRMED"))
         transaction.on_commit(lambda: send_seller_new_order_alert_task.delay(order_id_val))
 
         return order
@@ -493,9 +498,10 @@ class OrderService:
             notes=reason or "Order cancelled.",
         )
 
-        from notifications.tasks import send_order_lifecycle_email_task
+        from notifications.tasks import send_customer_order_push_notification_task, send_order_lifecycle_email_task
         order_id_val = order.id
         transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "CANCELLED", reason))
+        transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "CANCELLED", reason))
 
         return order
 
@@ -618,10 +624,11 @@ class OrderService:
             notes=notes or "Refund approved and processed via Razorpay.",
         )
 
-        from notifications.tasks import send_order_lifecycle_email_task
+        from notifications.tasks import send_customer_order_push_notification_task, send_order_lifecycle_email_task
         order_id_val = order.id
         notes_val = notes or ""
         transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "REFUNDED", notes_val))
+        transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "REFUNDED", notes_val))
 
         return order
 
@@ -649,10 +656,11 @@ class OrderService:
             notes=notes or "Refund request rejected by seller.",
         )
 
-        from notifications.tasks import send_order_lifecycle_email_task
+        from notifications.tasks import send_customer_order_push_notification_task, send_order_lifecycle_email_task
         order_id_val = order.id
         notes_val = notes or ""
         transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, "REFUND_REJECTED", notes_val))
+        transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, "REFUND_REJECTED", notes_val))
 
         return order
 
@@ -692,10 +700,11 @@ class OrderService:
         )
 
         if new_status in {OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED}:
-            from notifications.tasks import send_order_lifecycle_email_task
+            from notifications.tasks import send_customer_order_push_notification_task, send_order_lifecycle_email_task
             order_id_val = order.id
             status_val = new_status
             transaction.on_commit(lambda: send_order_lifecycle_email_task.delay(order_id_val, status_val))
+            transaction.on_commit(lambda: send_customer_order_push_notification_task.delay(order_id_val, status_val))
 
         return order
 

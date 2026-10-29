@@ -3,26 +3,26 @@
 {% block title %}Order Delivered #{{ order.order_number }} - KISEKAE{% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge badge-success" style="background-color: #F0FDF4; color: #166534; border-color: #BBF7D0;">DELIVERED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
+<div style="text-align: center; margin-bottom: 22px;">
+  <span class="badge-success" style="display: inline-block; background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;">DELIVERED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 22px; color: inherit; margin: 12px 0 6px 0;">
     Your Order Has Arrived!
   </h2>
-  <p style="color: #78716C; font-size: 14px; margin: 0;">
+  <p class="text-subtle" style="color: #78716C; font-size: 14px; margin: 0; line-height: 1.5;">
     Order <strong>#{{ order.order_number }}</strong> has been delivered.
   </p>
 </div>
 
-<div class="info-card">
-  <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Delivery Summary</div>
+<div class="info-card" style="background-color: #FAF8F5; border: 1px solid #EDE8E3; border-radius: 8px; padding: 14px 16px; margin: 18px 0; box-sizing: border-box;">
+  <div class="text-subtle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #78716C; margin-bottom: 4px; font-weight: 600;">Delivery Summary</div>
   <div style="font-size: 14px; font-weight: 600; color: inherit;">Delivered to: {{ order.customer_name }}</div>
-  <div style="font-size: 13px; color: #44403C; margin-top: 2px;">{{ order.shipping_address }}</div>
+  <div class="text-dark" style="font-size: 13px; color: #44403C; margin-top: 2px; line-height: 1.4;">{{ order.shipping_address }}</div>
   {% if order.delivered_at %}
-  <div style="font-size: 13px; color: #78716C; margin-top: 4px;">Delivered at: {{ order.delivered_at|date:"M d, Y h:i A" }}</div>
+  <div class="text-subtle" style="font-size: 12px; color: #78716C; margin-top: 4px;">Delivered at: {{ order.delivered_at|date:"M d, Y h:i A" }}</div>
   {% endif %}
 </div>
 
-<p style="font-size: 14px; color: #44403C; line-height: 1.6;">
+<p class="text-dark" style="font-size: 14px; color: #44403C; line-height: 1.6; margin: 18px 0 0 0;">
   We hope you love your new outfit! You can try on your clothing in augmented reality anytime using your Kisekae profile snapshots, or request a return within the eligible return window directly from your order details page.
 </p>
 {% endblock %}

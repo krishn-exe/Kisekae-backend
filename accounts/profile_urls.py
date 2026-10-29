@@ -18,6 +18,7 @@ from cart.views import (
     CartItemDetailView,
     CartValidateView,
 )
+from notifications.views import CustomerDeviceView
 from tryon.views import (
     ComboDetailView,
     ComboItemAddView,
@@ -32,6 +33,7 @@ urlpatterns = [
     # Personal Information & Account Management
     path("me/", UserDetailView.as_view(), name="profile-me"),
     path("me/settings/", UserSettingsView.as_view(), name="profile-settings"),
+    path("devices/", CustomerDeviceView.as_view(), name="profile-devices"),
 
     # Customer Delivery Addresses
     path("address/", AddressListCreateView.as_view(), name="profile-address-list-create"),

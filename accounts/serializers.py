@@ -355,6 +355,7 @@ class UserSettingsSerializer(serializers.ModelSerializer):
         model = UserSettings
         fields = [
             "email_notifications",
+            "push_notifications",
             "order_alerts",
             "stock_alerts",
             "low_stock_total_alerts",

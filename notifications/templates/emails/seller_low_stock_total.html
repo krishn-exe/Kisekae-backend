@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #FEF2F2; color: #DC2626; border: 1px solid #FECACA;">LOW TOTAL STOCK</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-danger" style="background-color: #FEF2F2; color: #DC2626; border: 1px solid #FECACA;">LOW TOTAL STOCK</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Overall Inventory Below Threshold
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -15,7 +15,7 @@
 
 <div class="info-card">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Product Summary</div>
-  <div style="font-size: 15px; font-weight: 700; color: #2D2527;">{{ product.name }}</div>
+  <div style="font-size: 15px; font-weight: 700; color: inherit;">{{ product.name }}</div>
   {% if product.sku %}
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">SKU: {{ product.sku }}</div>
   {% endif %}
@@ -30,7 +30,7 @@
 </p>
 
 <div style="text-align: center; margin-top: 24px;">
-  <a href="https://kisekae.com/seller/inventory" class="btn" style="background-color: #802B3E; color: #FFFFFF; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block;">
+  <a href="https://kisekae.com/seller/inventory" class="btn">
     Manage Inventory
   </a>
 </div>

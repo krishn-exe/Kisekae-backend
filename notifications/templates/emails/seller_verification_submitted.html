@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">UNDER REVIEW</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-info" style="background-color: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;">UNDER REVIEW</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Verification Application Received
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -15,7 +15,7 @@
 
 <div class="info-card">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 6px;">Application Summary</div>
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Store: {{ store.name }}</div>
+  <div style="font-size: 14px; font-weight: 600; color: inherit;">Store: {{ store.name }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 4px;">PAN: <strong>{{ verification.pan_number }}</strong></div>
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">GSTIN: <strong>{{ verification.gst_number }}</strong></div>
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Business Email: {{ verification.business_email }}</div>

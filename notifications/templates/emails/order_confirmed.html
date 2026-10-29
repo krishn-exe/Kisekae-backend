@@ -5,7 +5,7 @@
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
   <span class="badge">ORDER CONFIRMED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Thank You for Your Order!
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -15,14 +15,15 @@
 
 <div class="info-card">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Delivery Address</div>
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">{{ order.customer_name }}</div>
+  <div style="font-size: 14px; font-weight: 600; color: inherit;">{{ order.customer_name }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">{{ order.shipping_address }}</div>
   {% if order.customer_phone %}
   <div style="font-size: 13px; color: #78716C; margin-top: 4px;">Phone: {{ order.customer_phone }}</div>
   {% endif %}
 </div>
 
-<h3 style="font-size: 15px; font-weight: 600; color: #2D2527; margin: 24px 0 12px 0;">Items Ordered</h3>
+<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 24px 0 12px 0;">Items Ordered</h3>
+<div class="table-responsive">
 <table class="item-table">
   <thead>
     <tr>
@@ -36,15 +37,16 @@
     {% for item in order.items.all %}
     <tr>
       <td>
-        <strong style="color: #2D2527;">{{ item.product_name }}</strong>
+        <strong style="color: inherit;">{{ item.product_name }}</strong>
       </td>
       <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
       <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
-      <td style="text-align: right; font-weight: 600; color: #2D2527;">{{ order.currency }} {{ item.total_price }}</td>
+      <td style="text-align: right; font-weight: 600; color: inherit;">{{ order.currency }} {{ item.total_price }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 <div style="text-align: right; margin-top: 16px; padding-top: 12px; border-top: 1px solid #E7E2DA;">
   <span style="font-size: 14px; color: #78716C; margin-right: 12px;">Total Amount:</span>

@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;">VERIFIED PARTNER</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-success" style="background-color: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;">VERIFIED PARTNER</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Your Store is Verified!
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -13,9 +13,9 @@
   </p>
 </div>
 
-<div class="info-card" style="border-left: 4px solid #059669;">
+<div class="info-card info-card-success">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #047857; font-weight: 600; margin-bottom: 6px;">Status: APPROVED</div>
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Store Name: {{ store.name }}</div>
+  <div style="font-size: 14px; font-weight: 600; color: inherit;">Store Name: {{ store.name }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 4px;">PAN: {{ verification.pan_number }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">GSTIN: {{ verification.gst_number }}</div>
 </div>
@@ -25,7 +25,7 @@
 </p>
 
 <div style="text-align: center; margin-top: 28px;">
-  <a href="https://kisekae.com/seller" class="btn" style="background-color: #802B3E; color: #FFFFFF; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block;">
+  <a href="https://kisekae.com/seller" class="btn">
     Go to Seller Dashboard
   </a>
 </div>

@@ -2,7 +2,7 @@
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="format-detection" content="telephone=no, address=no, email=no, date=no, url=no">
   <meta name="color-scheme" content="light dark">
@@ -17,6 +17,7 @@
       margin: 0 !important;
       padding: 0 !important;
       width: 100% !important;
+      min-width: 100% !important;
       height: 100% !important;
       -webkit-text-size-adjust: 100%;
       -ms-text-size-adjust: 100%;
@@ -40,12 +41,15 @@
       text-decoration: none;
       display: block;
       max-width: 100%;
+      height: auto;
     }
     .wrapper {
       width: 100% !important;
+      max-width: 100% !important;
       background-color: #F4F0EB;
       padding: 30px 12px;
       box-sizing: border-box;
+      margin: 0 auto;
     }
     .container {
       width: 100% !important;
@@ -56,12 +60,14 @@
       border: 1px solid #E7E2DA;
       overflow: hidden;
       box-shadow: 0 4px 14px rgba(45, 37, 39, 0.05);
+      box-sizing: border-box;
     }
     .header {
       padding: 28px 24px 20px 24px;
       text-align: center;
       background-color: #FFFFFF;
       border-bottom: 1px solid #F4F0EB;
+      box-sizing: border-box;
     }
     .brand-title {
       font-family: "Playfair Display", Georgia, "Times New Roman", serif;
@@ -84,6 +90,7 @@
       padding: 28px 24px;
       word-break: break-word;
       overflow-wrap: break-word;
+      box-sizing: border-box;
     }
     .footer {
       padding: 20px 24px;
@@ -92,6 +99,7 @@
       text-align: center;
       font-size: 12px;
       color: #78716C;
+      box-sizing: border-box;
     }
     .footer a {
       color: #802B3E;
@@ -124,10 +132,35 @@
       font-weight: 600;
       letter-spacing: 0.5px;
     }
+    .badge-success {
+      background-color: #ECFDF5 !important;
+      color: #047857 !important;
+      border-color: #A7F3D0 !important;
+    }
+    .badge-danger {
+      background-color: #FEF2F2 !important;
+      color: #B91C1C !important;
+      border-color: #FECACA !important;
+    }
+    .badge-warning {
+      background-color: #FFFBEB !important;
+      color: #92400E !important;
+      border-color: #FDE68A !important;
+    }
+    .badge-info {
+      background-color: #EFF6FF !important;
+      color: #1D4ED8 !important;
+      border-color: #BFDBFE !important;
+    }
+    .table-responsive {
+      width: 100% !important;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 16px 0;
+    }
     .item-table {
       width: 100% !important;
       border-collapse: collapse;
-      margin: 20px 0;
       table-layout: auto;
     }
     .item-table th {
@@ -138,6 +171,7 @@
       color: #78716C;
       padding-bottom: 8px;
       border-bottom: 1px solid #E7E2DA;
+      white-space: nowrap;
     }
     .item-table td {
       padding: 12px 6px 12px 0;
@@ -155,6 +189,12 @@
       box-sizing: border-box;
       word-break: break-word;
       overflow-wrap: break-word;
+    }
+    .info-card-success {
+      border-left: 4px solid #059669 !important;
+    }
+    .info-card-danger {
+      border-left: 4px solid #DC2626 !important;
     }
     .token-box {
       display: block;
@@ -188,23 +228,25 @@
     /* Mobile Responsive Optimizations */
     @media only screen and (max-width: 600px) {
       .wrapper {
-        padding: 12px 8px !important;
+        padding: 8px 4px !important;
       }
       .container {
-        border-radius: 10px !important;
+        border-radius: 8px !important;
+        border-left: none !important;
+        border-right: none !important;
       }
       .header {
-        padding: 20px 16px 16px 16px !important;
+        padding: 18px 14px 14px 14px !important;
       }
       .brand-title {
-        font-size: 22px !important;
-        letter-spacing: 3px !important;
+        font-size: 20px !important;
+        letter-spacing: 2px !important;
       }
       .content {
-        padding: 20px 16px !important;
+        padding: 18px 14px !important;
       }
       .footer {
-        padding: 16px 16px !important;
+        padding: 16px 14px !important;
       }
       .btn {
         display: block !important;
@@ -213,44 +255,45 @@
         box-sizing: border-box !important;
       }
       .token-box {
-        font-size: 14px !important;
-        padding: 10px 12px !important;
+        font-size: 13px !important;
+        padding: 10px 8px !important;
       }
       .otp-box {
-        padding: 14px 20px !important;
+        padding: 12px 16px !important;
       }
       .otp-text {
-        font-size: 26px !important;
-        letter-spacing: 5px !important;
+        font-size: 24px !important;
+        letter-spacing: 4px !important;
       }
       .item-table th, .item-table td {
         font-size: 12px !important;
-        padding: 8px 4px !important;
+        padding: 8px 3px !important;
       }
       .info-card {
         padding: 12px !important;
+        margin: 14px 0 !important;
       }
       h2 {
-        font-size: 20px !important;
+        font-size: 19px !important;
       }
     }
 
-    /* Dark Mode Support for Modern Mail Clients (Apple Mail, iOS, Outlook) */
+    /* Dark Mode Adaptations for Modern Email Clients */
     @media (prefers-color-scheme: dark) {
       body, .wrapper {
-        background-color: #1A1516 !important;
+        background-color: #121011 !important;
       }
       .container {
-        background-color: #241D1F !important;
-        border-color: #382E31 !important;
+        background-color: #1E181A !important;
+        border-color: #33272B !important;
       }
       .header {
-        background-color: #241D1F !important;
-        border-bottom-color: #382E31 !important;
+        background-color: #1E181A !important;
+        border-bottom-color: #33272B !important;
       }
       .footer {
-        background-color: #1E1719 !important;
-        border-top-color: #382E31 !important;
+        background-color: #161213 !important;
+        border-top-color: #33272B !important;
         color: #A8A29E !important;
       }
       .brand-title {
@@ -260,22 +303,22 @@
         color: #A8A29E !important;
       }
       .content {
-        color: #F5F0EB !important;
+        color: #EDE5DE !important;
       }
-      h2, h3, strong, td {
-        color: #F5F0EB !important;
+      h2, h3, strong, td, th {
+        color: #EDE5DE !important;
       }
       .info-card {
-        background-color: #2D2427 !important;
-        border-color: #3E3236 !important;
+        background-color: #272023 !important;
+        border-color: #3A2F33 !important;
       }
       .token-box {
-        background-color: #1A1516 !important;
-        border-color: #4A3C41 !important;
+        background-color: #161213 !important;
+        border-color: #4D3C42 !important;
         color: #E28294 !important;
       }
       .otp-box {
-        background-color: #2D2427 !important;
+        background-color: #272023 !important;
         border-color: #E28294 !important;
       }
       .otp-text {
@@ -286,12 +329,32 @@
         color: #E28294 !important;
         border-color: #522734 !important;
       }
+      .badge-success {
+        background-color: #064E3B !important;
+        color: #6EE7B7 !important;
+        border-color: #047857 !important;
+      }
+      .badge-danger {
+        background-color: #450A0A !important;
+        color: #FCA5A5 !important;
+        border-color: #991B1B !important;
+      }
+      .badge-warning {
+        background-color: #451A03 !important;
+        color: #FCD34D !important;
+        border-color: #92400E !important;
+      }
+      .badge-info {
+        background-color: #172554 !important;
+        color: #93C5FD !important;
+        border-color: #1E40AF !important;
+      }
       .item-table th {
-        border-bottom-color: #3E3236 !important;
+        border-bottom-color: #3A2F33 !important;
         color: #A8A29E !important;
       }
       .item-table td {
-        border-bottom-color: #2D2427 !important;
+        border-bottom-color: #272023 !important;
       }
       .btn {
         background-color: #9E354D !important;

@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">RETURN REQUESTED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-warning" style="background-color: #FEF3C7; color: #92400E; border: 1px solid #FDE68A;">RETURN REQUESTED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Return Requested
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -15,7 +15,7 @@
 
 <div class="info-card">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Return Overview</div>
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Order Number: {{ order.order_number }}</div>
+  <div style="font-size: 14px; font-weight: 600; color: inherit;">Order Number: {{ order.order_number }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 2px;">Customer: {{ order.customer_name }} ({{ order.customer_email }})</div>
   <div style="font-size: 14px; font-weight: 700; color: #802B3E; margin-top: 6px;">Total Amount: {{ order.currency }} {{ order.total_amount }}</div>
   {% if order.refund_reason %}
@@ -26,7 +26,8 @@
   {% endif %}
 </div>
 
-<h3 style="font-size: 15px; font-weight: 600; color: #2D2527; margin: 24px 0 12px 0;">Order Items</h3>
+<h3 style="font-size: 15px; font-weight: 600; color: inherit; margin: 24px 0 12px 0;">Order Items</h3>
+<div class="table-responsive">
 <table class="item-table">
   <thead>
     <tr>
@@ -39,18 +40,19 @@
   <tbody>
     {% for item in order.items.all %}
     <tr>
-      <td><strong style="color: #2D2527;">{{ item.product_name }}</strong></td>
+      <td><strong style="color: inherit;">{{ item.product_name }}</strong></td>
       <td style="text-align: center; color: #78716C;">{{ item.size|default:"—" }}</td>
       <td style="text-align: center; color: #44403C;">{{ item.quantity }}</td>
-      <td style="text-align: right; font-weight: 600; color: #2D2527;">{{ order.currency }} {{ item.total_price }}</td>
+      <td style="text-align: right; font-weight: 600; color: inherit;">{{ order.currency }} {{ item.total_price }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 <div style="text-align: center; margin-top: 28px;">
   <p style="font-size: 13px; color: #78716C; margin-bottom: 12px;">Please review and approve or reject this return in your seller portal.</p>
-  <a href="https://kisekae.com/seller/orders/{{ order.id }}" class="btn" style="background-color: #802B3E; color: #FFFFFF; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-weight: 600; display: inline-block;">
+  <a href="https://kisekae.com/seller/orders/{{ order.id }}" class="btn">
     Review Return Request
   </a>
 </div>

@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #FFFBEB; color: #92400E; border-color: #FDE68A;">LOW STOCK WARNING</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-warning" style="background-color: #FFFBEB; color: #92400E; border-color: #FDE68A;">LOW STOCK WARNING</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Inventory Running Low
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -15,7 +15,7 @@
 
 <div class="info-card">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #78716C; margin-bottom: 4px;">Product Details</div>
-  <div style="font-size: 15px; font-weight: 700; color: #2D2527;">{{ product.name }}</div>
+  <div style="font-size: 15px; font-weight: 700; color: inherit;">{{ product.name }}</div>
   {% if size %}
   <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Size Variant: <strong>{{ size }}</strong></div>
   {% endif %}

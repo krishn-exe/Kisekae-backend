@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="text-align: center; margin-bottom: 24px;">
-  <span class="badge" style="background-color: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA;">RETURN DECLINED</span>
-  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: #2D2527; margin: 12px 0 6px 0;">
+  <span class="badge badge-danger" style="background-color: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA;">RETURN DECLINED</span>
+  <h2 style="font-family: 'Playfair Display', Georgia, serif; font-size: 24px; color: inherit; margin: 12px 0 6px 0;">
     Return Request Update
   </h2>
   <p style="color: #78716C; font-size: 14px; margin: 0;">
@@ -13,9 +13,9 @@
   </p>
 </div>
 
-<div class="info-card" style="border-left: 4px solid #DC2626;">
+<div class="info-card info-card-danger">
   <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #B91C1C; font-weight: 600; margin-bottom: 4px;">Request Status: Declined</div>
-  <div style="font-size: 14px; font-weight: 600; color: #2D2527;">Order Number: {{ order.order_number }}</div>
+  <div style="font-size: 14px; font-weight: 600; color: inherit;">Order Number: {{ order.order_number }}</div>
   <div style="font-size: 13px; color: #44403C; margin-top: 4px;">Store: {{ order.store.name }}</div>
   {% if notes %}
   <div style="margin-top: 8px; padding: 10px; background-color: #FFF1F2; border-radius: 6px;">

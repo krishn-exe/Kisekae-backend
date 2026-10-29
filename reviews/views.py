@@ -7,13 +7,18 @@ from rest_framework.views import APIView
 from accounts.responses import error_response, success_response
 from products.models import Product, ProductStatus
 
-from .models import Review
+from .ai_service import ReviewAIService
+from .models import ProductReviewSummary, Review
 from .pagination import ReviewPagination
 from .serializers import (
+    REVIEW_CHAT_RESPONSE_SCHEMA,
     REVIEW_DELETE_RESPONSE_SCHEMA,
     REVIEW_DETAIL_RESPONSE_SCHEMA,
     REVIEW_ERROR_SCHEMA,
     REVIEW_PAGINATED_LIST_RESPONSE_SCHEMA,
+    REVIEW_SUMMARY_RESPONSE_SCHEMA,
+    ProductReviewSummarySerializer,
+    ReviewChatRequestSerializer,
     ReviewCreateSerializer,
     ReviewSerializer,
     ReviewUpdateSerializer,
@@ -320,3 +325,125 @@ class CustomerMyReviewsView(APIView):
         page = paginator.paginate_queryset(queryset, request)
         serializer = ReviewSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+
+class ProductReviewSummaryView(APIView):
+    """
+    Returns the precomputed 24-hour AI review consensus summary for an active product.
+    """
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=["Reviews & Ratings"],
+        summary="Get 24-hour AI review summary for a product",
+        description="Returns an aggregated AI summary including pros, cons, sizing verdict, and sentiment distribution for products that have reviews. Updated daily.",
+        responses={200: REVIEW_SUMMARY_RESPONSE_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
+    )
+    def get(self, request, product_pk):
+        product = Product.objects.filter(pk=product_pk, status=ProductStatus.ACTIVE).first()
+        if not product:
+            return error_response(
+                message="Product not found or is currently inactive.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        summary = getattr(product, "review_summary", None)
+        if not summary:
+            return error_response(
+                message="No review summary has been generated for this product yet.",
+                code="SUMMARY_NOT_AVAILABLE",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ProductReviewSummarySerializer(summary)
+        return success_response(
+            data=serializer.data,
+            message="Product review summary retrieved successfully.",
+        )
+
+
+class ProductReviewChatView(APIView):
+    """
+    Stateless, guardrailed review assistant.
+    Answers shopper questions grounded strictly in customer reviews with fast Gemini 2.5 Flash response.
+    Chats are completely temporary and never stored server-side.
+    """
+    permission_classes = [AllowAny]
+    throttle_scope = "review_chat"
+
+    @extend_schema(
+        tags=["Reviews & Ratings"],
+        summary="Ask review chatbot a question (stateless, guardrailed)",
+        description="Stateless endpoint allowing shoppers to ask questions about customer reviews. Fast Gemini response, strictly guardrailed to review feedback. Chats are not stored on the server.",
+        request=ReviewChatRequestSerializer,
+        responses={200: REVIEW_CHAT_RESPONSE_SCHEMA, 400: REVIEW_ERROR_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
+    )
+    def post(self, request, product_pk):
+        product = Product.objects.filter(pk=product_pk, status=ProductStatus.ACTIVE).first()
+        if not product:
+            return error_response(
+                message="Product not found or is currently inactive.",
+                code="PRODUCT_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if product.review_count == 0:
+            return success_response(
+                data={
+                    "reply": "This product does not have any customer reviews yet.",
+                    "is_guardrail_refusal": True,
+                },
+                message="No reviews available.",
+            )
+
+        serializer = ReviewChatRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return error_response(
+                message="Invalid review chat request payload.",
+                code="INVALID_PAYLOAD",
+                details=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        question = serializer.validated_data["question"]
+        history = serializer.validated_data.get("history", [])
+
+        # Tier 1 Guardrail: Deterministic pre-flight check
+        is_safe, refusal_reason = ReviewAIService.check_preflight_guardrails(question)
+        if not is_safe:
+            return success_response(
+                data={
+                    "reply": refusal_reason,
+                    "is_guardrail_refusal": True,
+                },
+                message="Chat response generated.",
+            )
+
+        # Retrieve precomputed summary and a representative sample of reviews
+        summary = getattr(product, "review_summary", None)
+        reviews_sample = list(
+            Review.objects.filter(product=product)
+            .values("rating", "title", "description", "is_verified_buyer")[:25]
+        )
+
+        reply = ReviewAIService.ask_review_question(
+            product_name=product.name,
+            summary_obj=summary,
+            reviews_sample=reviews_sample,
+            question=question,
+            history=history,
+        )
+
+        is_refusal = (
+            "I can only answer questions regarding customer reviews" in reply
+            or "do not mention this aspect" in reply
+        )
+
+        return success_response(
+            data={
+                "reply": reply,
+                "is_guardrail_refusal": is_refusal,
+            },
+            message="Chat response generated successfully.",
+        )

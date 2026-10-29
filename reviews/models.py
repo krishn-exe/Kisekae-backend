@@ -75,3 +75,48 @@ class Review(models.Model):
         super().delete(*args, **kwargs)
         if product:
             product.update_rating_stats()
+
+
+class ProductReviewSummary(models.Model):
+    """
+    Precomputed daily AI summary of customer reviews for an active product.
+    Refreshed every 24 hours by Celery task for products with reviews.
+    """
+    product = models.OneToOneField(
+        "products.Product",
+        on_delete=models.CASCADE,
+        related_name="review_summary",
+        db_index=True,
+    )
+    summary_text = models.TextField(
+        help_text="Concise 2-3 sentence overview of reviewer consensus.",
+    )
+    pros = models.JSONField(
+        default=list,
+        help_text="Key praises and positive highlights from reviewers.",
+    )
+    cons = models.JSONField(
+        default=list,
+        help_text="Common criticisms or concerns mentioned by reviewers.",
+    )
+    sizing_verdict = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Consensus on fit (e.g. 'True to size', 'Runs small by 1 size').",
+    )
+    sentiment_distribution = models.JSONField(
+        default=dict,
+        help_text="Estimated sentiment percentages: {'positive': 80, 'neutral': 15, 'negative': 5}",
+    )
+    review_count_at_summary = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of reviews evaluated when this summary was generated.",
+    )
+    generated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-generated_at"]
+
+    def __str__(self):
+        return f"AI Review Summary for {self.product.name} ({self.review_count_at_summary} reviews)"

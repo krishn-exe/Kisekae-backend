@@ -151,3 +151,65 @@ REVIEW_DELETE_RESPONSE_SCHEMA = inline_serializer(
         "data": serializers.JSONField(allow_null=True),
     },
 )
+
+
+class ProductReviewSummarySerializer(serializers.ModelSerializer):
+    """Serializer for precomputed 24-hour review consensus summary."""
+    class Meta:
+        from .models import ProductReviewSummary
+        model = ProductReviewSummary
+        fields = [
+            "product_id",
+            "summary_text",
+            "pros",
+            "cons",
+            "sizing_verdict",
+            "sentiment_distribution",
+            "review_count_at_summary",
+            "generated_at",
+        ]
+
+
+class ReviewChatHistoryItemSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=["user", "model"])
+    content = serializers.CharField(max_length=300)
+
+
+class ReviewChatRequestSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        max_length=300,
+        required=True,
+        help_text="Customer question about this product's reviews.",
+    )
+    history = serializers.ListField(
+        child=ReviewChatHistoryItemSerializer(),
+        required=False,
+        default=list,
+        max_length=5,
+        help_text="Client-side ephemeral prior chat turns (max 5). Not saved server-side.",
+    )
+
+
+REVIEW_SUMMARY_RESPONSE_SCHEMA = inline_serializer(
+    name="ReviewSummaryResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ProductReviewSummarySerializer(),
+    },
+)
+
+REVIEW_CHAT_RESPONSE_SCHEMA = inline_serializer(
+    name="ReviewChatResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": inline_serializer(
+            name="ReviewChatResponseData",
+            fields={
+                "reply": serializers.CharField(help_text="Concise review-grounded reply."),
+                "is_guardrail_refusal": serializers.BooleanField(help_text="True if question was out of scope or triggered guardrails."),
+            },
+        ),
+    },
+)

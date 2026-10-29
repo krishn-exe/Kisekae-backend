@@ -11,7 +11,11 @@ from .views import (
     SearchHistoryDetailView,
     SearchHistoryListView,
 )
-from reviews.views import ProductReviewListCreateView
+from reviews.views import (
+    ProductReviewChatView,
+    ProductReviewListCreateView,
+    ProductReviewSummaryView,
+)
 
 urlpatterns = [
     # Public Product Browsing & Listing (with filters & pagination)
@@ -41,4 +45,10 @@ urlpatterns = [
 
     # Product Reviews & Ratings (List, Filter & Create)
     path("<int:product_pk>/reviews/", ProductReviewListCreateView.as_view(), name="product-reviews-list-create"),
+
+    # AI Review Consensus Summary (24-Hour Refresh)
+    path("<int:product_pk>/reviews/summary/", ProductReviewSummaryView.as_view(), name="product-reviews-summary"),
+
+    # Ephemeral Guardrailed Review Chatbot (Stateless)
+    path("<int:product_pk>/reviews/chat/", ProductReviewChatView.as_view(), name="product-reviews-chat"),
 ]

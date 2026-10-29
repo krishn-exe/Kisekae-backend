@@ -192,6 +192,7 @@ REST_FRAMEWORK = {
         'store_read': '300/hour',
         'store_write': '60/hour',
         'store_invite': '60/hour',
+        'review_chat': '60/hour',
     },
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -346,6 +347,10 @@ CELERY_BEAT_SCHEDULE = {
     'expire_stale_pending_orders_every_minute': {
         'task': 'orders.tasks.expire_stale_pending_orders_task',
         'schedule': 60.0,
+    },
+    'refresh_product_review_summaries_daily': {
+        'task': 'reviews.tasks.refresh_all_product_review_summaries_task',
+        'schedule': crontab(hour=3, minute=30),
     },
 }
 

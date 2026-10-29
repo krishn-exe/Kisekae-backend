@@ -575,7 +575,13 @@ AWS_DEFAULT_ACL = None
 
 AWS_S3_FILE_OVERWRITE = False
 
-AWS_QUERYSTRING_AUTH = False
+AWS_QUERYSTRING_AUTH = os.getenv("AWS_QUERYSTRING_AUTH", "True").lower() in ("true", "1", "yes")
+
+AWS_QUERYSTRING_EXPIRE = int(os.getenv("AWS_QUERYSTRING_EXPIRE", "86400"))
+
+AWS_S3_SIGNATURE_VERSION = os.getenv("AWS_S3_SIGNATURE_VERSION", "s3v4")
+
+AWS_S3_ADDRESSING_STYLE = os.getenv("AWS_S3_ADDRESSING_STYLE", "virtual")
 
 AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
 
@@ -603,7 +609,7 @@ if AWS_STORAGE_BUCKET_NAME and 'test' not in sys.argv:
 
         "default": {
 
-            "BACKEND": "storages.backends.s3.S3Storage",
+            "BACKEND": "KiseKaeDjango.storage.KiseKaeS3Storage",
 
         },
 

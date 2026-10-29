@@ -49,6 +49,15 @@ services:
     image: redis:7-alpine
     container_name: kisekae-redis
     restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy volatile-lru
+      --save 900 1
+      --save 300 10
+      --lazyfree-lazy-eviction yes
+      --lazyfree-lazy-expire yes
+    mem_limit: 384m
     volumes:
       - redis_data:/data
     healthcheck:
@@ -119,4 +128,4 @@ volumes:
 
 secrets:
   prometheus_token:
-    environment: PROMETHEUS_METRICS_TOKEN
+    environment: PROMETHEUS_METRICS_TOKEN

@@ -774,3 +774,52 @@ class StorePaymentDashboardSerializer(serializers.Serializer):
     settlement_overview = StoreMonthlySummarySettlementSerializer()
 
     bank_account = StoreMonthlySummaryBankAccountSerializer()
+
+
+class PromotedProductItemSerializer(serializers.Serializer):
+    promoted_product_id = serializers.IntegerField(source="id")
+    product_id = serializers.IntegerField(source="product.id")
+    product_name = serializers.CharField(source="product.name")
+    product_price = serializers.DecimalField(source="product.price", max_digits=10, decimal_places=2)
+    is_active = serializers.BooleanField()
+    created_at = serializers.DateTimeField()
+
+
+class PromoteProductsRequestSerializer(serializers.Serializer):
+    product_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        help_text="List of product IDs to promote for this store.",
+    )
+
+
+class PromotedProductUpdateSerializer(serializers.Serializer):
+    is_active = serializers.BooleanField(help_text="Enable or disable sponsored promotion for this product.")
+
+
+class AdvertisingProductStatSerializer(serializers.Serializer):
+    promoted_product_id = serializers.IntegerField()
+    product_id = serializers.IntegerField()
+    product_name = serializers.CharField()
+    product_price = serializers.CharField()
+    is_active = serializers.BooleanField()
+    clicks = serializers.IntegerField()
+    orders = serializers.IntegerField()
+    units_sold = serializers.IntegerField()
+    spend = serializers.CharField()
+    created_at = serializers.CharField()
+
+
+class StoreAdvertisingAnalyticsSerializer(serializers.Serializer):
+    period = serializers.CharField()
+    monthly_budget = serializers.CharField()
+    current_spend = serializers.CharField()
+    remaining_budget = serializers.CharField()
+    total_clicks = serializers.IntegerField()
+    total_orders = serializers.IntegerField()
+    total_units_sold = serializers.IntegerField()
+    conversion_rate = serializers.FloatField()
+    cpc_rate = serializers.CharField()
+    cpa_rate = serializers.CharField()
+    promoted_products_count = serializers.IntegerField()
+    products = AdvertisingProductStatSerializer(many=True)

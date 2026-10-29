@@ -251,6 +251,10 @@ class OrderItem(models.Model):
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    is_promoted = models.BooleanField(
+        default=False,
+        help_text="Whether this purchased item was attributed to a sponsored ad.",
+    )
 
     def save(self, *args, **kwargs):
         self.total_price = self.unit_price * self.quantity

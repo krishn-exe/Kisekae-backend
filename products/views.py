@@ -61,7 +61,19 @@ STORE_PRODUCT_LIST_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProdu
 CATEGORY_LIST_RESPONSE_SCHEMA = api_response(CategoryItemSerializer, "CategoryListResponse", many=True, message="Categories fetched successfully.")
 VARIANT_IMAGE_LIST_RESPONSE_SCHEMA = api_response(ProductVariantImageSerializer, "VariantImageListResponse", many=True)
 PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = api_response(ProductListingStatusSerializer, "ProductListingStatusResponse")
-PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "ProductListPaginatedData")
+PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="ProductListPaginatedData",
+        fields={
+            "count": serializers.IntegerField(help_text="Total product count."),
+            "next": serializers.CharField(allow_null=True, help_text="URL for next page."),
+            "previous": serializers.CharField(allow_null=True, help_text="URL for previous page."),
+            "results": ProductCardSerializer(many=True),
+            "ad_products": ProductCardSerializer(many=True, required=False, help_text="Top sponsored ad products for page 1."),
+        },
+    ),
+    "ProductListPaginatedResponse",
+)
 PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = api_response(
     inline_serializer(
         name="ProductSearchPaginatedData",
@@ -71,13 +83,26 @@ PRODUCT_SEARCH_PAGINATED_RESPONSE_SCHEMA = api_response(
             "next": serializers.CharField(allow_null=True, help_text="URL for next page of search results."),
             "previous": serializers.CharField(allow_null=True, help_text="URL for previous page of search results."),
             "results": ProductCardSerializer(many=True),
+            "ad_products": ProductCardSerializer(many=True, required=False),
         },
     ),
     "ProductSearchPaginatedResponse",
 )
 PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(PublicProductDetailSerializer, "PublicProductDetailResponse")
 SEARCH_HISTORY_LIST_RESPONSE_SCHEMA = api_response(SearchHistorySerializer, "SearchHistoryListResponse", many=True)
-RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = paginated_response(ProductCardSerializer, "RecommendationFeedPaginatedData")
+RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="RecommendationFeedPaginatedData",
+        fields={
+            "count": serializers.IntegerField(help_text="Total results count."),
+            "next": serializers.CharField(allow_null=True, help_text="URL for next page."),
+            "previous": serializers.CharField(allow_null=True, help_text="URL for previous page."),
+            "results": ProductCardSerializer(many=True),
+            "ad_products": ProductCardSerializer(many=True, required=False),
+        },
+    ),
+    "RecommendationFeedPaginatedResponse",
+)
 PRODUCT_SIMILAR_RESPONSE_SCHEMA = api_response(ProductCardSerializer, "ProductSimilarListResponse", many=True)
 PRODUCT_RECOMMENDED_COMBOS_RESPONSE_SCHEMA = api_response(RecommendedComboSerializer, "ProductRecommendedCombosListResponse", many=True)
 PRODUCT_AUTOCOMPLETE_RESPONSE_SCHEMA = api_response(AutocompleteResponseSerializer, "ProductAutocompleteResponse")
@@ -986,7 +1011,7 @@ class PublicProductListView(APIView):
         operation_id="public_product_list",
         tags=["Public Products"],
         summary="Browse all available products",
-        description="Returns all active products with filters for category/type, size, color, price range, and in-stock status. Optimized to return full product cards without N+1 query overhead.",
+        description="Returns all active products with filters for category/type, size, color, price range, and in-stock status. On Page 1, returns top 4 sponsored products in 'ad_products' (deduplicated from 'results'). Optimized to return full product cards without N+1 query overhead.",
         parameters=[
             OpenApiParameter(name="category", description="Filter by category (One-Piece, Top, Bottom, Footwear, Headwear, Eyewear, Outerwear, Accessories)", required=False, type=str),
             OpenApiParameter(name="type", description="Alias for category filter", required=False, type=str),
@@ -1068,13 +1093,34 @@ class PublicProductListView(APIView):
         page = paginator.paginate_queryset(queryset.distinct(), request)
         serializer = ProductCardSerializer(page, many=True)
 
+        page_num_str = request.query_params.get("page", "1")
+        try:
+            page_num = int(page_num_str)
+        except (ValueError, TypeError):
+            page_num = 1
+
+        ad_products_data = []
+        if page_num == 1:
+            from stores.advertising_service import AdvertisingService
+            eligible_ads = AdvertisingService.get_eligible_promoted_products(queryset=queryset, limit=4)
+            if eligible_ads:
+                ad_serializer = ProductCardSerializer(eligible_ads, many=True)
+                ad_products_data = ad_serializer.data
+                ad_product_ids = {p.id for p in eligible_ads}
+                results_data = [item for item in serializer.data if item["id"] not in ad_product_ids]
+            else:
+                results_data = serializer.data
+        else:
+            results_data = serializer.data
+
         return success_response(
             message="Products fetched successfully.",
             data={
                 "count": paginator.page.paginator.count,
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
-                "results": serializer.data,
+                "results": results_data,
+                "ad_products": ad_products_data,
             })
 
 
@@ -1094,6 +1140,7 @@ class ProductSearchView(APIView):
         description=(
             "Searches active products using hybrid keyword and vector semantic search. "
             "Supports multi-attribute filters for category/type, size, color, price range, and stock. "
+            "On Page 1, returns top 4 sponsored products in 'ad_products' (deduplicated from 'results'). "
             "Returns product cards including first image thumbnail and available sizes."
         ),
         parameters=[
@@ -1257,6 +1304,26 @@ class ProductSearchView(APIView):
 
         serializer = ProductCardSerializer(page, many=True)
 
+        page_num_str = request.query_params.get("page", "1")
+        try:
+            page_num = int(page_num_str)
+        except (ValueError, TypeError):
+            page_num = 1
+
+        ad_products_data = []
+        if page_num == 1:
+            from stores.advertising_service import AdvertisingService
+            eligible_ads = AdvertisingService.get_eligible_promoted_products(queryset=queryset, limit=4)
+            if eligible_ads:
+                ad_serializer = ProductCardSerializer(eligible_ads, many=True)
+                ad_products_data = ad_serializer.data
+                ad_product_ids = {p.id for p in eligible_ads}
+                results_data = [item for item in serializer.data if item["id"] not in ad_product_ids]
+            else:
+                results_data = serializer.data
+        else:
+            results_data = serializer.data
+
         return success_response(
             message=f"Search results for '{query}'" if query else "Products fetched successfully.",
             data={
@@ -1264,7 +1331,8 @@ class ProductSearchView(APIView):
                 "count": paginator.page.paginator.count,
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
-                "results": serializer.data,
+                "results": results_data,
+                "ad_products": ad_products_data,
             })
 
 
@@ -1402,6 +1470,14 @@ class PublicProductDetailView(APIView):
         tags=["Public Products"],
         summary="Get public product detail",
         description="Returns full details for an active product, including all gallery images (up to 10), category, color, and size breakdown.",
+        parameters=[
+            OpenApiParameter(
+                name="from_ad",
+                type=bool,
+                required=False,
+                description="Whether the user navigated to this product from a sponsored ad card (triggers CPC billing with 15-minute cooldown).",
+            ),
+        ],
         responses={200: PUBLIC_PRODUCT_DETAIL_RESPONSE_SCHEMA, 404: PRODUCT_ERROR_SCHEMA})
     def get(self, request, product_pk):
         product = (
@@ -1424,6 +1500,11 @@ class PublicProductDetailView(APIView):
 
         if request.user and request.user.is_authenticated:
             record_product_view_task.delay(request.user.id, product.id)
+
+        from_ad = request.query_params.get("from_ad", "").strip().lower() in ("true", "1", "yes")
+        if from_ad:
+            from stores.advertising_service import AdvertisingService
+            AdvertisingService.record_ad_click(request, product)
 
         return success_response(
             message="Product details fetched successfully.",
@@ -1597,6 +1678,7 @@ class RecommendedFeedView(APIView):
             "Returns a curated feed of recommended products for the user. "
             "Utilizes pgvector cosine similarity matching against a multi-signal taste profile "
             "(purchases, cart, wishlist, search history, views). "
+            "On Page 1, returns top 4 sponsored products in 'ad_products' (deduplicated from 'results'). "
             "Cold-start users and guests receive cached trending products."
         ),
         parameters=[
@@ -1605,7 +1687,7 @@ class RecommendedFeedView(APIView):
             OpenApiParameter(name="page", type=int, required=False),
             OpenApiParameter(name="page_size", type=int, required=False),
         ],
-        responses={200: PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA})
+        responses={200: RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA})
     def get(self, request):
         exclude_cart_param = request.query_params.get("exclude_cart", "true").strip().lower()
         exclude_cart = exclude_cart_param in ("true", "1", "yes")
@@ -1622,11 +1704,32 @@ class RecommendedFeedView(APIView):
         page = paginator.paginate_queryset(queryset, request)
         serializer = ProductCardSerializer(page, many=True)
 
+        page_num_str = request.query_params.get("page", "1")
+        try:
+            page_num = int(page_num_str)
+        except (ValueError, TypeError):
+            page_num = 1
+
+        ad_products_data = []
+        if page_num == 1:
+            from stores.advertising_service import AdvertisingService
+            eligible_ads = AdvertisingService.get_eligible_promoted_products(queryset=queryset, limit=4)
+            if eligible_ads:
+                ad_serializer = ProductCardSerializer(eligible_ads, many=True)
+                ad_products_data = ad_serializer.data
+                ad_product_ids = {p.id for p in eligible_ads}
+                results_data = [item for item in serializer.data if item["id"] not in ad_product_ids]
+            else:
+                results_data = serializer.data
+        else:
+            results_data = serializer.data
+
         return success_response(
             message="Recommended feed fetched successfully.",
             data={
                 "count": paginator.page.paginator.count,
                 "next": paginator.get_next_link(),
                 "previous": paginator.get_previous_link(),
-                "results": serializer.data,
+                "results": results_data,
+                "ad_products": ad_products_data,
             })

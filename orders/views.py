@@ -50,7 +50,7 @@ STORE_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, 
 CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
 CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
 ORDER_SUMMARY_RESPONSE_SCHEMA = api_response(OrderSummaryResponseSerializer, "OrderSummaryApiResponse")
-COUPON_VALIDATE_RESPONSE_SCHEMA = api_response(CouponValidateResponseSerializer, "CouponValidateResponse")
+COUPON_VALIDATE_RESPONSE_SCHEMA = api_response(CouponValidateResponseSerializer, "CouponValidateApiResponse")
 BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
     inline_serializer(
         name="BulkOrderUpdateData",

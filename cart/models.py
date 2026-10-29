@@ -79,6 +79,10 @@ class CartItem(models.Model):
         help_text="Selected size for apparel or footwear (e.g. S, M, L, XL, 8).",
     )
     quantity = models.PositiveIntegerField(default=1)
+    is_promoted = models.BooleanField(
+        default=False,
+        help_text="Whether this cart item was added via a sponsored ad click.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

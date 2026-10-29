@@ -589,3 +589,97 @@ class StoreSettlement(models.Model):
 
     def __str__(self):
         return f"{self.settlement_number} - {self.store.name}: INR {self.amount} ({self.status})"
+
+
+class PromotedProduct(models.Model):
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="promoted_products",
+    )
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.CASCADE,
+        related_name="promoted_records",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether this product is currently active in advertising campaigns.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["store", "product"],
+                name="unique_store_promoted_product",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Promoted: {self.product.name} ({self.store.name}) - Active: {self.is_active}"
+
+
+class AdEventType(models.TextChoices):
+    CLICK = "CLICK", "Product Detail Click"
+    ORDER = "ORDER", "Order Unit Conversion"
+
+
+class AdEvent(models.Model):
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE,
+        related_name="ad_events",
+    )
+    product = models.ForeignKey(
+        "products.Product",
+        on_delete=models.CASCADE,
+        related_name="ad_events",
+    )
+    event_type = models.CharField(
+        max_length=10,
+        choices=AdEventType.choices,
+        db_index=True,
+    )
+    cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Amount billed for this ad event (INR).",
+    )
+    units = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of units converted (applicable for ORDER events).",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ad_events",
+    )
+    order = models.ForeignKey(
+        "orders.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ad_events",
+    )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional tracking metadata (e.g. client IP hash, session ID).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["store", "created_at"]),
+            models.Index(fields=["product", "event_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type} - {self.product.name} (Store {self.store_id}) - INR {self.cost}"

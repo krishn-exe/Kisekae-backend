@@ -96,8 +96,16 @@ class AddToCartView(BaseCartView):
         variant_id = serializer.validated_data.get("variant_id")
         quantity = serializer.validated_data.get("quantity", 1)
         size = serializer.validated_data.get("size", "")
+        from_ad = serializer.validated_data.get("from_ad", False)
 
-        CartService.add_item(cart=cart, product_id=product_id, variant_id=variant_id, quantity=quantity, size=size)
+        CartService.add_item(
+            cart=cart,
+            product_id=product_id,
+            variant_id=variant_id,
+            quantity=quantity,
+            size=size,
+            from_ad=from_ad,
+        )
 
         cart = self._load_cart_prefetched(cart.id) or cart
         return success_response(

@@ -226,6 +226,7 @@ class OrderService:
                 unit_price=product.price,
                 quantity=qty,
                 total_price=item_total,
+                is_promoted=bool(item_data.get("is_promoted", False)),
             )
 
         # Coupon Code validation and deduction
@@ -318,6 +319,12 @@ class OrderService:
                 changed_by=user,
                 notes=f"Order fully paid using wallet balance (₹{wallet_debit:.2f}). Confirmed directly.",
             )
+
+            from stores.advertising_service import AdvertisingService
+            AdvertisingService.record_order_conversions(order)
+
+            from stores.advertising_service import AdvertisingService
+            AdvertisingService.record_order_conversions(order)
 
             from notifications.tasks import (
                 send_customer_order_push_notification_task,

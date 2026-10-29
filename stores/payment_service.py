@@ -110,10 +110,20 @@ class StorePaymentService:
         net_platform_cut = max(Decimal("0.00"), gross_platform_cut - coupon_discounts).quantize(Decimal("0.01"))
         absorbed_coupon_cost = min(gross_platform_cut, coupon_discounts).quantize(Decimal("0.01"))
 
-        # Store payment settings
+        # Store payment settings & advertising spend
         payment_settings, _ = StorePaymentSettings.objects.get_or_create(store=store)
         advertising_budget = payment_settings.monthly_advertising_budget.quantize(Decimal("0.01"))
-        advertising_cost = advertising_budget  # Store advertising budget allocated as monthly cost
+        from .models import AdEvent
+        month_ad_events = AdEvent.objects.filter(
+            store=store,
+            created_at__gte=start_date,
+            created_at__lte=end_date,
+        )
+        if month_ad_events.exists():
+            ad_spend_agg = month_ad_events.aggregate(s=Sum("cost"))["s"] or Decimal("0.00")
+            advertising_cost = min(advertising_budget, ad_spend_agg).quantize(Decimal("0.01"))
+        else:
+            advertising_cost = advertising_budget
 
         # Final Gross Profit for the month
         final_gross_profit = (total_revenue - net_platform_cut - advertising_cost).quantize(Decimal("0.01"))
@@ -155,7 +165,12 @@ class StorePaymentService:
         total_settled_lifetime = (total_settled_lifetime_agg or Decimal("0.00")).quantize(Decimal("0.01"))
 
         # Lifetime advertising cost
-        lifetime_advertising_cost = advertising_cost
+        lifetime_ad_events = AdEvent.objects.filter(store=store)
+        if lifetime_ad_events.exists():
+            lifetime_ad_spend_agg = lifetime_ad_events.aggregate(s=Sum("cost"))["s"] or Decimal("0.00")
+            lifetime_advertising_cost = lifetime_ad_spend_agg.quantize(Decimal("0.01"))
+        else:
+            lifetime_advertising_cost = advertising_cost
 
         lifetime_gross_profit = max(
             Decimal("0.00"),
@@ -191,6 +206,7 @@ class StorePaymentService:
             "advertising": {
                 "monthly_budget": str(advertising_budget),
                 "current_ad_spend": str(advertising_cost),
+                "remaining_budget": str(max(Decimal("0.00"), advertising_budget - advertising_cost)),
             },
             "settlement_overview": {
                 "available_unsettled_balance": str(available_unsettled_balance),

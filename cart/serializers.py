@@ -61,6 +61,7 @@ class CartItemSerializer(serializers.ModelSerializer):
             "unit_price",
             "total_price",
             "is_available",
+            "is_promoted",
             "created_at",
             "updated_at",
         ]
@@ -103,6 +104,11 @@ class AddToCartSerializer(serializers.Serializer):
         help_text="Product size (e.g. S, M, L, XL for clothing; 6-10 for shoes).",
     )
     quantity = serializers.IntegerField(default=1, min_value=1, help_text="Quantity to add (default: 1).")
+    from_ad = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether this product was added to cart via an advertisement click.",
+    )
 
 
 class UpdateCartItemSerializer(serializers.Serializer):

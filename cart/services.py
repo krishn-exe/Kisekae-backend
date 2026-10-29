@@ -54,7 +54,7 @@ class CartService:
 
     @staticmethod
     @transaction.atomic
-    def add_item(cart, product_id, variant_id=None, quantity=1, size=""):
+    def add_item(cart, product_id, variant_id=None, quantity=1, size="", from_ad=False):
         if quantity <= 0:
             raise ValidationError("Quantity must be greater than zero.")
 
@@ -140,9 +140,12 @@ class CartService:
                 f"Cannot add {quantity} item(s). Only {available_stock - current_quantity} more item(s) available{color_note}{size_note}."
             )
 
+        is_promoted = bool(from_ad)
         if cart_item:
             cart_item.quantity = target_quantity
-            cart_item.save(update_fields=["quantity", "updated_at"])
+            if is_promoted:
+                cart_item.is_promoted = True
+            cart_item.save(update_fields=["quantity", "is_promoted", "updated_at"])
         else:
             cart_item = CartItem.objects.create(
                 cart=cart,
@@ -150,6 +153,7 @@ class CartService:
                 variant=variant,
                 size=clean_size,
                 quantity=target_quantity,
+                is_promoted=is_promoted,
             )
 
         cart.save(update_fields=["updated_at"])
@@ -321,6 +325,7 @@ class CartService:
                     "variant_id": item.variant.id if item.variant else None,
                     "size": item.size,
                     "quantity": item.quantity,
+                    "is_promoted": item.is_promoted,
                 }
                 for item in store_items
             ]

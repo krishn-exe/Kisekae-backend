@@ -1,4 +1,5 @@
 from decimal import Decimal
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import Wallet, WalletTransaction
@@ -44,6 +45,7 @@ class WalletSerializer(serializers.ModelSerializer):
         remaining = max(Decimal("0.00"), WalletService.LIMIT - obj.balance)
         return str(remaining)
 
+    @extend_schema_field(WalletTransactionSerializer(many=True))
     def get_recent_transactions(self, obj):
         txns = obj.transactions.all()[:10]
         return WalletTransactionSerializer(txns, many=True).data

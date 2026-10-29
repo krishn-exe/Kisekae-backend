@@ -24,7 +24,7 @@ from .wallet_service import WalletService
 logger = logging.getLogger(__name__)
 
 WALLET_DETAIL_SCHEMA = api_response(WalletSerializer, "WalletDetailResponse")
-WALLET_ADD_FUNDS_SCHEMA = api_response(WalletAddFundsResponseSerializer, "WalletAddFundsResponse")
+WALLET_ADD_FUNDS_SCHEMA = api_response(WalletAddFundsResponseSerializer, "WalletAddFundsApiResponse")
 WALLET_TRANSACTIONS_SCHEMA = paginated_response(WalletTransactionSerializer, "WalletTransactionsResponse")
 
 

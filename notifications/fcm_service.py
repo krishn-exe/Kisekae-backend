@@ -101,16 +101,18 @@ class FCMNotificationService:
             "Content-Type": "application/json; UTF-8",
         }
 
-        # Data values in FCM v1 must be strings
+        # Data values in FCM v1 must be strings.
+        # Everything (including title & body) is placed into the data payload (data-only message),
+        # allowing the mobile app full control over background display, sounds, and deep link routing.
         str_data = {str(k): str(v) for k, v in (data or {}).items()}
+        if title and "title" not in str_data:
+            str_data["title"] = str(title)
+        if body and "body" not in str_data:
+            str_data["body"] = str(body)
 
         payload = {
             "message": {
                 "token": token,
-                "notification": {
-                    "title": title,
-                    "body": body,
-                },
                 "data": str_data,
             }
         }

@@ -47,7 +47,7 @@ ORDER_DETAIL_RESPONSE_SCHEMA = api_response(OrderDetailSerializer, "OrderDetailR
 STORE_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "StoreOrderPaginatedResponse")
 CUSTOMER_ORDER_PAGINATED_RESPONSE_SCHEMA = paginated_response(OrderListSerializer, "CustomerOrderPaginatedResponse")
 CUSTOMER_ORDER_TRACK_RESPONSE_SCHEMA = api_response(CustomerOrderTrackSerializer, "CustomerOrderTrackResponse")
-ORDER_SUMMARY_RESPONSE_SCHEMA = api_response(OrderSummaryResponseSerializer, "OrderSummaryResponse")
+ORDER_SUMMARY_RESPONSE_SCHEMA = api_response(OrderSummaryResponseSerializer, "OrderSummaryApiResponse")
 BULK_ORDER_UPDATE_RESPONSE_SCHEMA = api_response(
     inline_serializer(
         name="BulkOrderUpdateData",

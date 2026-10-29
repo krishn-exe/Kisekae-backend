@@ -355,3 +355,17 @@ def generate_tryon_task(self, request_id: str) -> bool:
 
         return False
 
+
+@shared_task
+def cleanup_expired_tryon_records_task(expiration_hours: int = 1) -> dict:
+    """
+    Periodic Celery task scheduled to run hourly.
+    Purges TryOnRequest records older than `expiration_hours` (default 1 hour) along with:
+    1. Uploaded user selfie / person photos (person_image) from S3 / storage.
+    2. AI-generated try-on result images (result_image) from S3 / storage.
+    Ensures generated results only persist for 1 hour.
+    """
+    from .services import TryOnService
+    return TryOnService.purge_expired_requests(hours=expiration_hours)
+
+

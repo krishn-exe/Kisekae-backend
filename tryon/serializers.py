@@ -268,6 +268,7 @@ class TryOnRequestDetailSerializer(serializers.ModelSerializer):
     combo_name = serializers.CharField(source="combo.name", read_only=True, allow_null=True)
     person_image_url = serializers.SerializerMethodField()
     result_image_url = serializers.SerializerMethodField()
+    expires_at = serializers.SerializerMethodField()
 
     class Meta:
         model = TryOnRequest
@@ -284,7 +285,12 @@ class TryOnRequestDetailSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "completed_at",
+            "expires_at",
         ]
+
+    @extend_schema_field(serializers.DateTimeField(allow_null=True))
+    def get_expires_at(self, obj):
+        return obj.expires_at
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_person_image_url(self, obj) -> str | None:

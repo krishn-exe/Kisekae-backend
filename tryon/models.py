@@ -1,7 +1,9 @@
 import uuid
+from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from products.models import ProductCategory
 
 TRYON_SUPPORTED_CATEGORIES = {
@@ -256,6 +258,18 @@ class TryOnRequest(models.Model):
     def __str__(self):
         target = self.product.name if self.product else (self.combo.name if self.combo else "None")
         return f"TryOn {self.id} ({self.status}) for {target}"
+
+    @property
+    def expires_at(self):
+        if not self.created_at:
+            return None
+        return self.created_at + timedelta(hours=1)
+
+    @property
+    def is_expired(self) -> bool:
+        if not self.created_at:
+            return False
+        return timezone.now() > self.expires_at
 
     def clean(self):
         super().clean()

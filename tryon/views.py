@@ -30,7 +30,7 @@ from .serializers import (
     TryOnGenerateRequestSerializer,
     TryOnRequestDetailSerializer,
 )
-from .services import ComboService
+from .services import ComboService, TryOnService
 from .tasks import generate_tryon_task
 
 from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
@@ -541,7 +541,7 @@ class TryOnRequestDetailView(APIView):
         operation_id="tryon_status",
         tags=["Virtual Try-On"],
         summary="Get Try-On request status",
-        description="Polls the status and returns the rendered result image URL once READY.",
+        description="Polls the status and returns the rendered result image URL once READY. Generated results expire after 1 hour.",
         responses={200: TRYON_DETAIL_RESPONSE_SCHEMA, 404: COMBO_ERROR_SCHEMA},
     )
     def get(self, request, request_id):
@@ -557,16 +557,49 @@ class TryOnRequestDetailView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
+        if tryon_req.is_expired:
+            TryOnService.delete_tryon_request(tryon_req)
+            return error_response(
+                message="Try-On request has expired and is no longer available.",
+                code="REQUEST_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
         serializer = TryOnRequestDetailSerializer(tryon_req)
         return success_response(
             message="Try-On status retrieved successfully.",
             data=serializer.data,
         )
 
+    @extend_schema(
+        operation_id="tryon_delete_request",
+        tags=["Virtual Try-On"],
+        summary="Delete Try-On request and images",
+        description="Permanently deletes an individual virtual try-on request and purges uploaded person photos and generated S3 images.",
+        responses={
+            200: inline_serializer(
+                name="TryOnDeleteResponse",
+                fields={"success": serializers.BooleanField(), "message": serializers.CharField()},
+            ),
+            404: COMBO_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request, request_id):
+        tryon_req = TryOnRequest.objects.filter(pk=request_id, user=request.user).first()
+        if not tryon_req:
+            return error_response(
+                message="Try-On request not found.",
+                code="REQUEST_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        TryOnService.delete_tryon_request(tryon_req)
+        return success_response(message="Try-On request and associated images deleted successfully.")
+
 
 class TryOnHistoryListView(APIView):
     """
     Customer API: Retrieve previous Virtual Try-On history for the authenticated user.
+    Results are retained for up to 1 hour before being automatically purged.
     """
     permission_classes = [IsAuthenticated]
 
@@ -574,7 +607,7 @@ class TryOnHistoryListView(APIView):
         operation_id="tryon_history_list",
         tags=["Virtual Try-On"],
         summary="List customer Try-On history",
-        description="Returns customer's past virtual try-on requests and generated images with filters for status and product.",
+        description="Returns customer's past virtual try-on requests from the last hour (generated results expire after 1 hour).",
         parameters=[
             OpenApiParameter(name="status", description="Filter by Try-On render status", required=False, type=str, enum=[s.value for s in TryOnRequestStatus]),
             OpenApiParameter(name="product_id", description="Filter try-on history for a specific product ID", required=False, type=int),
@@ -584,8 +617,9 @@ class TryOnHistoryListView(APIView):
         responses={200: TRYON_LIST_RESPONSE_SCHEMA},
     )
     def get(self, request):
+        cutoff = TryOnService.get_expiration_cutoff()
         requests_qs = (
-            TryOnRequest.objects.filter(user=request.user)
+            TryOnRequest.objects.filter(user=request.user, created_at__gte=cutoff)
             .select_related("product", "combo")
         )
 
@@ -618,5 +652,27 @@ class TryOnHistoryListView(APIView):
         return success_response(
             message="Try-on history retrieved successfully.",
             data=serializer.data,
+        )
+
+    @extend_schema(
+        operation_id="tryon_clear_history",
+        tags=["Virtual Try-On"],
+        summary="Clear customer Try-On history",
+        description="Clears all virtual try-on history for the customer and purges all uploaded user photos and generated S3 images.",
+        responses={
+            200: inline_serializer(
+                name="TryOnClearHistoryResponse",
+                fields={"success": serializers.BooleanField(), "message": serializers.CharField()},
+            ),
+        },
+    )
+    def delete(self, request):
+        user_requests = list(TryOnRequest.objects.filter(user=request.user))
+        count = 0
+        for req in user_requests:
+            TryOnService.delete_tryon_request(req)
+            count += 1
+        return success_response(
+            message=f"Cleared {count} try-on history record(s) and associated images."
         )
 

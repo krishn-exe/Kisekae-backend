@@ -715,6 +715,14 @@ CELERY_BEAT_SCHEDULE = {
 
     },
 
+    'cleanup_expired_tryon_records_hourly': {
+
+        'task': 'tryon.tasks.cleanup_expired_tryon_records_task',
+
+        'schedule': crontab(minute=0),
+
+    },
+
 }
 
 

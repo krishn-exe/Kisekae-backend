@@ -4,8 +4,9 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import IntegrityError, models, transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from pgvector.django import HnswIndex, VectorField
 
@@ -14,6 +15,11 @@ def product_image_upload_path(instance, filename):
     ext = filename.split(".")[-1].lower() if "." in filename else "jpg"
     return f"products/{instance.store_id}/{uuid.uuid4().hex}.{ext}"
 
+
+
+def seasonal_sale_banner_upload_path(instance, filename):
+    ext = filename.split(".")[-1].lower() if "." in filename else "jpg"
+    return f"sales/banners/{uuid.uuid4().hex}.{ext}"
 
 def product_gallery_image_upload_path(instance, filename):
     ext = filename.split(".")[-1].lower() if "." in filename else "jpg"
@@ -192,6 +198,41 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.store.name})"
+
+    @property
+    def active_seasonal_sale(self):
+        """Returns the active live SeasonalSaleProduct instance if enrolled in an ongoing seasonal sale."""
+        now = timezone.now()
+        if hasattr(self, "_active_seasonal_sale"):
+            return self._active_seasonal_sale
+        entry = (
+            self.seasonal_sale_entries.filter(
+                is_active=True,
+                sale__is_active=True,
+                sale__start_time__lte=now,
+                sale__end_time__gte=now,
+            )
+            .select_related("sale")
+            .first()
+        )
+        self._active_seasonal_sale = entry
+        return entry
+
+    @property
+    def effective_price(self):
+        """Returns the discounted price if currently in an active live seasonal sale, else regular price."""
+        entry = self.active_seasonal_sale
+        if entry:
+            return entry.discounted_price
+        return self.price
+
+    @property
+    def effective_compare_at_price(self):
+        """Returns original price / compare_at_price when participating in a seasonal sale."""
+        entry = self.active_seasonal_sale
+        if entry:
+            return self.compare_at_price if self.compare_at_price is not None else entry.original_price
+        return self.compare_at_price
 
     @property
     def is_active(self):
@@ -677,3 +718,177 @@ class SearchSuggestion(models.Model):
     def __str__(self):
         return f"{self.query} (score: {self.score})"
 
+
+class SeasonalSale(models.Model):
+    """
+    Platform-wide seasonal sale event created and managed exclusively by
+    platform administrators via Django Admin. Stores can opt-in to participate
+    by enrolling their products for the sale's designated discount percentage.
+    """
+    title = models.CharField(
+        max_length=255,
+        help_text="Public title of the seasonal sale (e.g. 'Diwali Mega Sale', 'Summer Clearance 2026').",
+    )
+    slug = models.SlugField(
+        max_length=280,
+        unique=True,
+        blank=True,
+        help_text="URL slug for the seasonal sale.",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Promotional description and terms of the seasonal sale.",
+    )
+    banner_image = models.ImageField(
+        upload_to=seasonal_sale_banner_upload_path,
+        null=True,
+        blank=True,
+        help_text="Hero banner image displayed at the top of the mobile app home screen.",
+    )
+    discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01")), MaxValueValidator(Decimal("99.99"))],
+        help_text="Flat discount percentage applied to all participating products (e.g. 20.00 for 20%).",
+    )
+    start_time = models.DateTimeField(
+        default=timezone.now,
+        help_text="Date and time when the seasonal sale goes live.",
+    )
+    end_time = models.DateTimeField(
+        help_text="Stop / expiry date and time of the seasonal sale.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Master activation toggle controlled by platform admins in Django Admin.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-start_time", "-created_at"]
+        indexes = [
+            models.Index(fields=["is_active", "start_time", "end_time"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.discount_percentage}% OFF)"
+
+    def clean(self):
+        super().clean()
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError({"end_time": "Sale end time must be strictly after start time."})
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.title) or "sale"
+            slug = base_slug
+            counter = 1
+            while SeasonalSale.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        self.clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_live(self):
+        now = timezone.now()
+        return self.is_active and self.start_time <= now <= self.end_time
+
+    @property
+    def is_expired(self):
+        return timezone.now() > self.end_time
+
+    @property
+    def time_remaining_seconds(self):
+        now = timezone.now()
+        if self.end_time > now:
+            return int((self.end_time - now).total_seconds())
+        return 0
+
+    @property
+    def banner_url(self):
+        if self.banner_image and hasattr(self.banner_image, "url"):
+            return self.banner_image.url
+        return None
+
+
+class SeasonalSaleProduct(models.Model):
+    """
+    Enrollment of a store product into a platform seasonal sale.
+    Automatically snapshots original price and calculates the discounted price.
+    """
+    sale = models.ForeignKey(
+        SeasonalSale,
+        on_delete=models.CASCADE,
+        related_name="participating_products",
+        help_text="Associated seasonal sale.",
+    )
+    store = models.ForeignKey(
+        "stores.Store",
+        on_delete=models.CASCADE,
+        related_name="seasonal_sale_products",
+        help_text="Store offering this product in the seasonal sale.",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="seasonal_sale_entries",
+        help_text="Product enrolled in the seasonal sale.",
+    )
+    original_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Snapshot of the regular price at time of enrollment.",
+    )
+    discounted_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Calculated discounted price during the sale.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Store toggle to enable/pause participation of this product in the sale.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sale", "product"],
+                name="unique_product_per_seasonal_sale",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["sale", "is_active"]),
+            models.Index(fields=["store", "sale"]),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} in {self.sale.title} - INR {self.discounted_price} (Orig: {self.original_price})"
+
+    def clean(self):
+        super().clean()
+        if self.product_id and self.store_id and self.product.store_id != self.store_id:
+            raise ValidationError("Product must belong to the participating store.")
+        if self.sale_id and self.store_id:
+            existing_count = SeasonalSaleProduct.objects.filter(
+                sale_id=self.sale_id,
+                store_id=self.store_id,
+            ).exclude(pk=self.pk).count()
+            if existing_count >= 5:
+                raise ValidationError("Each store can add a maximum of 5 products to a specific seasonal sale.")
+
+    def save(self, *args, **kwargs):
+        if self.product:
+            if not self.original_price:
+                self.original_price = self.product.price
+            if self.sale and self.sale.discount_percentage:
+                discount_multiplier = Decimal("1.00") - (self.sale.discount_percentage / Decimal("100.00"))
+                self.discounted_price = (self.original_price * discount_multiplier).quantize(Decimal("0.01"))
+        self.clean()
+        super().save(*args, **kwargs)

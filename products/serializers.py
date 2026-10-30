@@ -3,6 +3,8 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from .models import (
+    SeasonalSale,
+    SeasonalSaleProduct,
     CLOTHING_CATEGORIES,
     CLOTHING_SIZES,
     FOOTWEAR_CATEGORIES,
@@ -502,3 +504,123 @@ class AutocompleteResponseSerializer(serializers.Serializer):
     )
 
 
+class PublicSeasonalSaleSerializer(serializers.ModelSerializer):
+    banner_image = serializers.SerializerMethodField(help_text="URL of the promotional hero banner image.")
+    is_live = serializers.BooleanField(read_only=True, help_text="True if sale is currently running within active window.")
+    time_remaining_seconds = serializers.IntegerField(read_only=True, help_text="Countdown seconds remaining until sale expiry.")
+    participating_products_count = serializers.SerializerMethodField(help_text="Number of active products participating in the sale.")
+
+    class Meta:
+        model = SeasonalSale
+        fields = [
+            "id",
+            "title",
+            "slug",
+            "description",
+            "banner_image",
+            "discount_percentage",
+            "start_time",
+            "end_time",
+            "is_live",
+            "time_remaining_seconds",
+            "participating_products_count",
+            "created_at",
+        ]
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_banner_image(self, obj):
+        return obj.banner_url
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_participating_products_count(self, obj):
+        if hasattr(obj, "active_products_count"):
+            return obj.active_products_count
+        return obj.participating_products.filter(
+            is_active=True,
+            product__status="ACTIVE",
+            product__store__status="ACTIVE",
+        ).count()
+
+
+class PublicSeasonalSaleDetailSerializer(PublicSeasonalSaleSerializer):
+    participating_stores_count = serializers.SerializerMethodField(help_text="Number of distinct active stores participating.")
+
+    class Meta(PublicSeasonalSaleSerializer.Meta):
+        fields = PublicSeasonalSaleSerializer.Meta.fields + ["participating_stores_count"]
+
+    @extend_schema_field(serializers.IntegerField())
+    def get_participating_stores_count(self, obj):
+        return obj.participating_products.filter(
+            is_active=True,
+            product__status="ACTIVE",
+            product__store__status="ACTIVE",
+        ).values("store_id").distinct().count()
+
+
+class SeasonalSaleProductCardSerializer(serializers.ModelSerializer):
+    """
+    Product card representation for products participating in a seasonal sale.
+    Features the calculated discounted sale price and strikethrough original price.
+    """
+    sale_product_id = serializers.IntegerField(source="id", read_only=True)
+    product_id = serializers.IntegerField(source="product.id", read_only=True)
+    id = serializers.IntegerField(source="product.id", read_only=True)
+    name = serializers.CharField(source="product.name", read_only=True)
+    slug = serializers.CharField(source="product.slug", read_only=True)
+    store_id = serializers.IntegerField(source="product.store_id", read_only=True)
+    store_name = serializers.CharField(source="product.store.name", read_only=True)
+    store_slug = serializers.CharField(source="product.store.slug", read_only=True)
+    price = serializers.DecimalField(source="discounted_price", max_digits=10, decimal_places=2, read_only=True)
+    original_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    compare_at_price = serializers.SerializerMethodField(read_only=True)
+    discount_percentage = serializers.DecimalField(source="sale.discount_percentage", max_digits=5, decimal_places=2, read_only=True)
+    currency = serializers.CharField(source="product.currency", read_only=True)
+    thumbnail = serializers.CharField(source="product.thumbnail", read_only=True, allow_null=True)
+    image_url = serializers.CharField(source="product.thumbnail", read_only=True, allow_null=True)
+    category = serializers.CharField(source="product.category", read_only=True)
+    category_display = serializers.CharField(source="product.get_category_display", read_only=True)
+    product_type = serializers.CharField(source="product.product_type", read_only=True)
+    product_type_display = serializers.CharField(source="product.get_product_type_display", read_only=True)
+    color = serializers.CharField(source="product.color", read_only=True)
+    stock = serializers.IntegerField(source="product.stock", read_only=True)
+    is_in_stock = serializers.BooleanField(source="product.is_in_stock", read_only=True)
+    available_sizes = serializers.ListField(source="product.available_sizes", child=serializers.CharField(), read_only=True)
+    average_rating = serializers.FloatField(source="product.average_rating", read_only=True)
+    review_count = serializers.IntegerField(source="product.review_count", read_only=True)
+
+    class Meta:
+        model = SeasonalSaleProduct
+        fields = [
+            "id",
+            "product_id",
+            "sale_product_id",
+            "name",
+            "slug",
+            "store_id",
+            "store_name",
+            "store_slug",
+            "price",
+            "original_price",
+            "compare_at_price",
+            "discount_percentage",
+            "currency",
+            "thumbnail",
+            "image_url",
+            "category",
+            "category_display",
+            "product_type",
+            "product_type_display",
+            "color",
+            "stock",
+            "is_in_stock",
+            "available_sizes",
+            "average_rating",
+            "review_count",
+        ]
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_compare_at_price(self, obj):
+        prod = obj.product
+        if prod.compare_at_price and prod.compare_at_price > obj.original_price:
+            return str(prod.compare_at_price)
+        return str(obj.original_price)

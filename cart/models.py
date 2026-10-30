@@ -102,7 +102,7 @@ class CartItem(models.Model):
 
     @property
     def unit_price(self):
-        return self.product.price
+        return self.product.effective_price
 
     @property
     def total_price(self):

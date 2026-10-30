@@ -823,3 +823,55 @@ class StoreAdvertisingAnalyticsSerializer(serializers.Serializer):
     cpa_rate = serializers.CharField()
     promoted_products_count = serializers.IntegerField()
     products = AdvertisingProductStatSerializer(many=True)
+
+
+class StoreSeasonalSaleProductItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(help_text="Enrollment record ID.")
+    product_id = serializers.IntegerField(help_text="Product ID.")
+    product_name = serializers.CharField(source="product.name")
+    product_slug = serializers.CharField(source="product.slug")
+    thumbnail = serializers.CharField(source="product.thumbnail", allow_null=True)
+    original_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    discount_percentage = serializers.DecimalField(source="sale.discount_percentage", max_digits=5, decimal_places=2)
+    discounted_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    is_active = serializers.BooleanField()
+    stock = serializers.IntegerField(source="product.stock")
+    created_at = serializers.DateTimeField()
+
+
+class StoreSeasonalSaleListSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    slug = serializers.CharField()
+    description = serializers.CharField()
+    banner_image = serializers.SerializerMethodField()
+    discount_percentage = serializers.DecimalField(max_digits=5, decimal_places=2)
+    start_time = serializers.DateTimeField()
+    end_time = serializers.DateTimeField()
+    is_live = serializers.BooleanField()
+    status = serializers.CharField(help_text="Sale status: ACTIVE, UPCOMING, or EXPIRED.")
+    time_remaining_seconds = serializers.IntegerField()
+    is_participating = serializers.BooleanField(help_text="Whether this store currently has products enrolled.")
+    enrolled_products_count = serializers.IntegerField(help_text="Number of products enrolled by this store.")
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_banner_image(self, obj):
+        if isinstance(obj, dict):
+            return obj.get("banner_image")
+        return getattr(obj, "banner_url", None)
+
+
+class StoreSeasonalSaleDetailSerializer(StoreSeasonalSaleListSerializer):
+    enrolled_products = StoreSeasonalSaleProductItemSerializer(many=True)
+
+
+class StoreEnrollSeasonalSaleProductsSerializer(serializers.Serializer):
+    product_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        help_text="List of store product IDs to enroll in this seasonal sale.",
+    )
+
+
+class StoreUpdateSeasonalSaleProductSerializer(serializers.Serializer):
+    is_active = serializers.BooleanField(help_text="Enable or pause this product's participation in the sale.")

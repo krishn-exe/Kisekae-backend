@@ -7,6 +7,9 @@ from .views import (
     PublicProductDetailView,
     PublicProductListView,
     PublicProductRecommendedCombosView,
+    PublicSeasonalSaleDetailView,
+    PublicSeasonalSaleListView,
+    PublicSeasonalSaleProductsView,
     PublicProductSimilarView,
     RecommendedFeedView,
     SearchHistoryDetailView,
@@ -19,6 +22,11 @@ from reviews.views import (
 )
 
 urlpatterns = [
+    # Public Seasonal Sales (Hero Banners & Discounted Product Showcase)
+    path("sales/", PublicSeasonalSaleListView.as_view(), name="public-seasonal-sales-list"),
+    path("sales/<int:sale_pk>/", PublicSeasonalSaleDetailView.as_view(), name="public-seasonal-sales-detail"),
+    path("sales/<int:sale_pk>/products/", PublicSeasonalSaleProductsView.as_view(), name="public-seasonal-sales-products"),
+
     # Public Product Browsing & Listing (with filters & pagination)
     path("", PublicProductListView.as_view(), name="public-product-list"),
 

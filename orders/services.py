@@ -208,10 +208,11 @@ class OrderService:
                 from inventory.services import InventoryService
                 InventoryService._check_stock_alert(product, prev_stock=prev_stock, new_stock=new_stock)
 
-            item_total = product.price * qty
+            effective_unit_price = product.effective_price
+            item_total = effective_unit_price * qty
             subtotal_amount += item_total
-            item_compare_price = product.compare_at_price if product.compare_at_price is not None else product.price
-            compare_at_total += (item_compare_price * qty)
+            effective_comp_price = product.effective_compare_at_price if product.effective_compare_at_price is not None else effective_unit_price
+            compare_at_total += (effective_comp_price * qty)
 
             OrderItem.objects.create(
                 order=order,
@@ -223,7 +224,7 @@ class OrderService:
                 color_name=variant.color_name if variant else (product.color or ""),
                 color_hex=variant.color_hex if variant else "#000000",
                 size=size_name,
-                unit_price=product.price,
+                unit_price=effective_unit_price,
                 quantity=qty,
                 total_price=item_total,
                 is_promoted=bool(item_data.get("is_promoted", False)),

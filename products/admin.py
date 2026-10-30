@@ -9,6 +9,8 @@ from .models import (
     ProductView,
     SearchHistory,
     SearchSuggestion,
+    SeasonalSale,
+    SeasonalSaleProduct,
     UserTasteProfile,
 )
 
@@ -102,3 +104,47 @@ class SearchSuggestionAdmin(admin.ModelAdmin):
     search_fields = ("query",)
     readonly_fields = ("created_at", "updated_at")
 
+
+class SeasonalSaleProductInline(admin.TabularInline):
+    model = SeasonalSaleProduct
+    extra = 0
+    autocomplete_fields = ["product", "store"]
+    fields = ("store", "product", "original_price", "discounted_price", "is_active", "created_at")
+    readonly_fields = ("original_price", "discounted_price", "created_at")
+
+
+@admin.register(SeasonalSale)
+class SeasonalSaleAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "discount_percentage",
+        "start_time",
+        "end_time",
+        "is_active",
+        "is_live_display",
+        "participating_products_count",
+        "created_at",
+    )
+    list_filter = ("is_active", "start_time", "end_time", "created_at")
+    search_fields = ("title", "description", "slug")
+    prepopulated_fields = {"slug": ("title",)}
+    readonly_fields = ("created_at", "updated_at")
+    inlines = [SeasonalSaleProductInline]
+
+    def is_live_display(self, obj):
+        return obj.is_live
+    is_live_display.boolean = True
+    is_live_display.short_description = "Live Now"
+
+    def participating_products_count(self, obj):
+        return obj.participating_products.filter(is_active=True).count()
+    participating_products_count.short_description = "Active Products"
+
+
+@admin.register(SeasonalSaleProduct)
+class SeasonalSaleProductAdmin(admin.ModelAdmin):
+    list_display = ("sale", "store", "product", "original_price", "discounted_price", "is_active", "created_at")
+    list_filter = ("sale", "is_active", "created_at")
+    search_fields = ("product__name", "store__name", "sale__title")
+    autocomplete_fields = ["sale", "store", "product"]
+    readonly_fields = ("original_price", "discounted_price", "created_at", "updated_at")

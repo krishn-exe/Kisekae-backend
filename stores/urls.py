@@ -63,4 +63,7 @@ urlpatterns = [
 
     # Store Advertising
     path("<int:pk>/advertising/", include("stores.advertising_urls")),
+
+    # Store Seasonal Sales Participation
+    path("<int:pk>/seasonal-sales/", include("stores.seasonal_sales_urls")),
 ]

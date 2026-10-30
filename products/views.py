@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.db import connection
 from django.db.models import Case, Count, FloatField, IntegerField, Prefetch, Q, Value, When
+from django.utils import timezone
 from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiParameter,
@@ -31,6 +32,8 @@ from .models import (
     SearchHistory,
     ProductVariant,
     SearchSuggestion,
+    SeasonalSale,
+    SeasonalSaleProduct,
     normalize_category_param)
 from .serializers import (
     AutocompleteResponseSerializer,
@@ -42,6 +45,9 @@ from .serializers import (
     ProductSerializer,
     ProductUpdateSerializer,
     ProductVariantImageSerializer,
+    PublicSeasonalSaleDetailSerializer,
+    PublicSeasonalSaleSerializer,
+    SeasonalSaleProductCardSerializer,
     ProductVariantSerializer,
     PublicProductDetailSerializer,
     RecommendedComboSerializer,
@@ -106,6 +112,23 @@ RECOMMENDATION_FEED_PAGINATED_RESPONSE_SCHEMA = api_response(
 PRODUCT_SIMILAR_RESPONSE_SCHEMA = api_response(ProductCardSerializer, "ProductSimilarListResponse", many=True)
 PRODUCT_RECOMMENDED_COMBOS_RESPONSE_SCHEMA = api_response(RecommendedComboSerializer, "ProductRecommendedCombosListResponse", many=True)
 PRODUCT_AUTOCOMPLETE_RESPONSE_SCHEMA = api_response(AutocompleteResponseSerializer, "ProductAutocompleteResponse")
+
+
+SEASONAL_SALE_LIST_RESPONSE_SCHEMA = api_response(PublicSeasonalSaleSerializer, "PublicSeasonalSaleListResponse", many=True)
+SEASONAL_SALE_DETAIL_RESPONSE_SCHEMA = api_response(PublicSeasonalSaleDetailSerializer, "PublicSeasonalSaleDetailResponse")
+SEASONAL_SALE_PRODUCTS_PAGINATED_RESPONSE_SCHEMA = api_response(
+    inline_serializer(
+        name="SeasonalSaleProductsPaginatedData",
+        fields={
+            "sale": PublicSeasonalSaleSerializer(),
+            "count": serializers.IntegerField(help_text="Total product count in sale."),
+            "next": serializers.CharField(allow_null=True, help_text="URL for next page."),
+            "previous": serializers.CharField(allow_null=True, help_text="URL for previous page."),
+            "results": SeasonalSaleProductCardSerializer(many=True),
+        },
+    ),
+    "SeasonalSaleProductsPaginatedResponse",
+)
 
 MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
 
@@ -1733,3 +1756,207 @@ class RecommendedFeedView(APIView):
                 "results": results_data,
                 "ad_products": ad_products_data,
             })
+
+
+class PublicSeasonalSaleListView(APIView):
+    """
+    Public API: Fetch all active and running seasonal sales.
+    Powers the top hero sale banners on the mobile app home screen.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="public_seasonal_sales_list",
+        tags=["Public Sales"],
+        summary="List active seasonal sales",
+        description="Returns all active, currently running seasonal sales with banner images, discount percentages, and countdown timers.",
+        responses={200: SEASONAL_SALE_LIST_RESPONSE_SCHEMA},
+    )
+    def get(self, request):
+        now = timezone.now()
+        sales_qs = SeasonalSale.objects.filter(
+            is_active=True,
+            start_time__lte=now,
+            end_time__gte=now,
+        ).order_by("-start_time", "-created_at")
+
+        serializer = PublicSeasonalSaleSerializer(sales_qs, many=True)
+        return success_response(
+            message="Active seasonal sales fetched successfully.",
+            data=serializer.data,
+        )
+
+
+class PublicSeasonalSaleDetailView(APIView):
+    """
+    Public API: View details of a specific seasonal sale.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        operation_id="public_seasonal_sale_detail",
+        tags=["Public Sales"],
+        summary="Get seasonal sale details",
+        description="Returns full promotional details of a seasonal sale including participation statistics.",
+        responses={200: SEASONAL_SALE_DETAIL_RESPONSE_SCHEMA, 404: ERROR_SCHEMA},
+    )
+    def get(self, request, sale_pk):
+        sale = SeasonalSale.objects.filter(pk=sale_pk, is_active=True).first()
+        if not sale:
+            return error_response(
+                message="Seasonal sale not found or inactive.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="SALE_NOT_FOUND",
+            )
+
+        serializer = PublicSeasonalSaleDetailSerializer(sale)
+        return success_response(
+            message="Seasonal sale details fetched successfully.",
+            data=serializer.data,
+        )
+
+
+class PublicSeasonalSaleProductsView(APIView):
+    """
+    Public API: Browse discounted products participating in a seasonal sale.
+    Supports filtering by category, size, color, price range, stock, and keyword search.
+    """
+    throttle_scope = "store_read"
+    permission_classes = [AllowAny]
+    pagination_class = ProductPagination
+
+    @extend_schema(
+        operation_id="public_seasonal_sale_products",
+        tags=["Public Sales"],
+        summary="Browse products in seasonal sale",
+        description="Returns paginated product cards enrolled in this seasonal sale with applied discount pricing and original strikethrough prices.",
+        parameters=[
+            OpenApiParameter(name="q", description="Keyword search across product name, description, color, store", required=False, type=str),
+            OpenApiParameter(name="category", description="Filter by category (One-Piece, Top, Bottom, Footwear, Headwear, Eyewear, Outerwear, Accessories)", required=False, type=str),
+            OpenApiParameter(name="size", description="Filter by size (e.g. S, M, L, XL, 8)", required=False, type=str),
+            OpenApiParameter(name="color", description="Filter by color (e.g. Black, White, Red)", required=False, type=str),
+            OpenApiParameter(name="min_price", description="Minimum discounted price filter", required=False, type=float),
+            OpenApiParameter(name="max_price", description="Maximum discounted price filter", required=False, type=float),
+            OpenApiParameter(name="in_stock", description="If true, only return in-stock products", required=False, type=bool),
+            OpenApiParameter(name="ordering", description="Sort order: 'price', '-price', 'newest', 'rating', 'name'", required=False, type=str),
+            OpenApiParameter(name="page", type=int, required=False),
+            OpenApiParameter(name="page_size", type=int, required=False),
+        ],
+        responses={200: SEASONAL_SALE_PRODUCTS_PAGINATED_RESPONSE_SCHEMA, 404: ERROR_SCHEMA},
+    )
+    def get(self, request, sale_pk):
+        sale = SeasonalSale.objects.filter(pk=sale_pk, is_active=True).first()
+        if not sale:
+            return error_response(
+                message="Seasonal sale not found or inactive.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                code="SALE_NOT_FOUND",
+            )
+
+        queryset = (
+            SeasonalSaleProduct.objects.filter(
+                sale=sale,
+                is_active=True,
+                product__status=ProductStatus.ACTIVE,
+                store__status=StoreStatus.ACTIVE,
+                store__archived_at__isnull=True,
+            )
+            .select_related("sale", "product", "product__store")
+            .prefetch_related(
+                "product__variants__sizes",
+                "product__variants__images",
+                "product__sizes",
+                "product__images",
+            )
+        )
+
+        # 1. Search Query Filter
+        search_query = (request.query_params.get("q") or request.query_params.get("search") or "").strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(product__name__icontains=search_query)
+                | Q(product__description__icontains=search_query)
+                | Q(product__color__icontains=search_query)
+                | Q(store__name__icontains=search_query)
+            )
+
+        # 2. Category Filter
+        category_param = request.query_params.get("category")
+        if category_param:
+            cat_code = normalize_category_param(category_param)
+            if cat_code:
+                queryset = queryset.filter(product__category=cat_code)
+
+        # 3. Size Filter
+        size_param = request.query_params.get("size")
+        if size_param:
+            clean_size = str(size_param).strip().upper()
+            queryset = queryset.filter(
+                Q(product__variants__sizes__size=clean_size, product__variants__sizes__stock__gt=0)
+                | Q(product__sizes__size=clean_size, product__sizes__stock__gt=0)
+            )
+
+        # 4. Color Filter
+        color_param = request.query_params.get("color")
+        if color_param:
+            c_str = color_param.strip()
+            queryset = queryset.filter(
+                Q(product__color__icontains=c_str)
+                | Q(product__variants__color_name__icontains=c_str)
+            )
+
+        # 5. Price Range Filter (on discounted_price)
+        min_price = request.query_params.get("min_price")
+        if min_price:
+            try:
+                queryset = queryset.filter(discounted_price__gte=Decimal(str(min_price)))
+            except Exception:
+                pass
+
+        max_price = request.query_params.get("max_price")
+        if max_price:
+            try:
+                queryset = queryset.filter(discounted_price__lte=Decimal(str(max_price)))
+            except Exception:
+                pass
+
+        # 6. In-Stock Filter
+        in_stock_param = request.query_params.get("in_stock", "").strip().lower()
+        if in_stock_param in ("true", "1", "yes"):
+            queryset = queryset.filter(product__stock__gt=0)
+
+        # 7. Ordering
+        ordering = request.query_params.get("ordering", "newest").strip().lower()
+        order_map = {
+            "price": "discounted_price",
+            "price_asc": "discounted_price",
+            "-price": "-discounted_price",
+            "price_desc": "-discounted_price",
+            "newest": "-created_at",
+            "-created_at": "-created_at",
+            "oldest": "created_at",
+            "created_at": "created_at",
+            "rating": "-product__average_rating",
+            "top_rated": "-product__average_rating",
+            "name": "product__name",
+            "-name": "-product__name",
+        }
+        order_col = order_map.get(ordering, "-created_at")
+        queryset = queryset.order_by(order_col)
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset.distinct(), request)
+        serializer = SeasonalSaleProductCardSerializer(page, many=True)
+
+        return success_response(
+            message=f"Products for sale '{sale.title}' fetched successfully.",
+            data={
+                "sale": PublicSeasonalSaleSerializer(sale).data,
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "results": serializer.data,
+            },
+        )

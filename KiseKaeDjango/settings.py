@@ -775,19 +775,20 @@ GOOGLE_IOS_CALLBACK_URL = os.getenv('GOOGLE_IOS_CALLBACK_URL', 'live.kisekae.app
 
 # Allowlist of accepted Google Client IDs (Web, Android, iOS)
 
-GOOGLE_ALLOWED_CLIENT_IDS = [
-
-    cid for cid in [
-
-        GOOGLE_OAUTH_CLIENT_ID,
-
-        GOOGLE_ANDROID_CLIENT_ID,
-
-        GOOGLE_IOS_CLIENT_ID,
-
-    ] if cid
-
+_env_extra_client_ids = [
+    cid.strip() for cid in os.getenv('GOOGLE_EXTRA_CLIENT_IDS', '').split(',') if cid.strip()
+] + [
+    cid.strip() for cid in os.getenv('GOOGLE_ALLOWED_CLIENT_IDS', '').split(',') if cid.strip()
 ]
+
+GOOGLE_ALLOWED_CLIENT_IDS = list(dict.fromkeys([
+    cid for cid in [
+        GOOGLE_OAUTH_CLIENT_ID,
+        GOOGLE_ANDROID_CLIENT_ID,
+        GOOGLE_IOS_CLIENT_ID,
+        *_env_extra_client_ids,
+    ] if cid
+]))
 
 
 
@@ -884,6 +885,14 @@ if GOOGLE_IOS_CLIENT_ID:
         'key': '',
 
     })
+
+for _extra_cid in _env_extra_client_ids:
+    if _extra_cid not in (GOOGLE_OAUTH_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID):
+        GOOGLE_APPS_CONFIG.append({
+            'client_id': _extra_cid,
+            'secret': os.getenv(f'GOOGLE_SECRET_{_extra_cid}', ''),
+            'key': '',
+        })
 
 
 

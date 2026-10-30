@@ -106,13 +106,15 @@ def exchange_google_pkce_tokens(
 
 def verify_google_id_token(
     id_token_str: str,
-    expected_client_id: str | None = None,
+    expected_client_id: str | list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     """
     Verifies a Google ID token JWT using Google's public JWKS certificates.
     Ensures signature, expiration, issuer, audience, and email verification.
+    Supports single or multiple allowed client IDs.
     """
-    audience = expected_client_id or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
+    audience = expected_client_id or allowed_client_ids or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
     if not audience:
         raise ValueError("No Google client ID configured for ID token verification.")
 
@@ -134,6 +136,11 @@ def verify_google_id_token(
     if not id_info.get("email_verified", False):
         raise ValueError("The email address associated with this Google account is not verified.")
 
+    token_aud = id_info.get("aud")
+    if allowed_client_ids and token_aud and token_aud not in allowed_client_ids:
+        logger.warning("Google ID token audience '%s' not in allowed client IDs", token_aud)
+        raise ValueError("Google ID token was not issued for an authorized client ID.")
+
     return id_info
 
 
@@ -152,14 +159,16 @@ def process_google_pkce_login(
     if not code_verifier:
         raise ValueError("code_verifier is required for PKCE flow.")
 
+    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
     effective_client_id = (
         client_id
+        or (allowed_client_ids[0] if len(allowed_client_ids) == 1 else None)
         or getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", "")
         or getattr(settings, "GOOGLE_IOS_CLIENT_ID", "")
         or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "")
     )
     if not effective_client_id:
-        raise ValueError("No Google client ID configured on the server.")
+        raise ValueError("No Google client ID configured on the server. Please specify client_id.")
 
     allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
     if allowed_client_ids and effective_client_id not in allowed_client_ids:
@@ -185,7 +194,80 @@ def process_google_pkce_login(
         )
         raise ValueError("Google authorization response did not include an ID token.")
 
-    id_info = verify_google_id_token(id_token_str, expected_client_id=effective_client_id)
+    id_info = verify_google_id_token(id_token_str, expected_client_id=effective_client_id or allowed_client_ids)
+
+    email = id_info.get("email")
+    if not email:
+        raise ValueError("Google account did not provide an email address.")
+    email = email.strip().lower()
+
+    uid = str(id_info.get("sub"))
+    raw_name = (
+        id_info.get("name")
+        or f"{id_info.get('given_name', '')} {id_info.get('family_name', '')}".strip()
+    )
+    clean_name = sanitize_social_name(raw_name)
+
+    user = User.objects.filter(email__iexact=email).first()
+    created = False
+
+    if user:
+        updated_fields = []
+        if not user.is_email_verified:
+            user.set_unusable_password()
+            user.is_email_verified = True
+            updated_fields.extend(["password", "is_email_verified"])
+        if not user.name and clean_name:
+            user.name = clean_name
+            updated_fields.append("name")
+        if updated_fields:
+            user.save(update_fields=updated_fields)
+
+        if not SocialAccount.objects.filter(provider="google", uid=uid).exists():
+            SocialAccount.objects.create(
+                user=user,
+                provider="google",
+                uid=uid,
+                extra_data=id_info,
+            )
+    else:
+        user = User.objects.create_user(
+            email=email,
+            name=clean_name,
+            is_email_verified=True,
+        )
+        SocialAccount.objects.create(
+            user=user,
+            provider="google",
+            uid=uid,
+            extra_data=id_info,
+        )
+        created = True
+
+    from .models import PendingRegistration
+    PendingRegistration.objects.filter(email__iexact=email).delete()
+
+    return user, created, "Google"
+
+
+
+
+
+def process_google_id_token_login(
+    request,
+    id_token_str: str,
+    client_id: str | None = None,
+) -> Tuple[User, bool, str]:
+    """
+    Handles mobile / direct Google login using a verified Google ID token.
+    Accepts any configured/allowed Google client ID.
+    """
+    allowed_client_ids = getattr(settings, "GOOGLE_ALLOWED_CLIENT_IDS", [])
+    if client_id and allowed_client_ids and client_id not in allowed_client_ids:
+        raise ValueError("Untrusted or invalid Google client ID.")
+
+    expected_audience = client_id or allowed_client_ids or getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", None)
+    id_info = verify_google_id_token(id_token_str, expected_client_id=expected_audience)
 
     email = id_info.get("email")
     if not email:
@@ -249,12 +331,32 @@ def process_social_login(
     access_token: str | None = None,
     code_verifier: str | None = None,
     client_id: str | None = None,
+    id_token: str | None = None,
 ) -> Tuple[User, bool, str]:
     raw_request = getattr(request, "_request", request)
     if not hasattr(raw_request, "session"):
         raw_request.session = {}
 
     adapter = adapter_class(raw_request)
+
+    # Route direct ID token to verification handler
+    if id_token:
+        if adapter.provider_id == "google":
+            return process_google_id_token_login(
+                request=request,
+                id_token_str=id_token,
+                client_id=client_id,
+            )
+        else:
+            raise ValueError(f"Direct ID token verification is not supported for {adapter.provider_id}.")
+
+    # Route JWT passed as access_token to ID token handler for Google
+    if access_token and adapter.provider_id == "google" and access_token.startswith("eyJ") and access_token.count(".") == 2:
+        return process_google_id_token_login(
+            request=request,
+            id_token_str=access_token,
+            client_id=client_id,
+        )
 
     # If code_verifier is present, route to PKCE flow (mobile clients without client secret)
     if code_verifier and code:
@@ -287,9 +389,13 @@ def process_social_login(
     if not app:
         app = provider.app
 
-    if not app or not app.client_id or not app.secret:
+    if not app or not app.client_id:
         logger.error("OAuth credentials not configured for provider: %s", adapter.provider_id)
         raise ValueError(f"OAuth credentials for {provider.name} are not configured on the server.")
+
+    if code and not app.secret:
+        logger.error("OAuth client secret not configured for confidential client: %s", app.client_id)
+        raise ValueError(f"OAuth client secret for {provider.name} is not configured on the server.")
 
     if code:
         redirect_uri = callback_url or adapter.get_callback_url(raw_request, app)

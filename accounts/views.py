@@ -756,6 +756,7 @@ class BaseOAuthView(APIView):
         access_token = serializer.validated_data.get("access_token")
         code_verifier = serializer.validated_data.get("code_verifier")
         client_id = serializer.validated_data.get("client_id")
+        id_token = serializer.validated_data.get("id_token")
 
         try:
             user, created, provider_name = process_social_login(
@@ -765,7 +766,8 @@ class BaseOAuthView(APIView):
                 callback_url=callback_url,
                 access_token=access_token,
                 code_verifier=code_verifier,
-                client_id=client_id)
+                client_id=client_id,
+                id_token=id_token)
 
             if not user.is_active:
                 return error_response(

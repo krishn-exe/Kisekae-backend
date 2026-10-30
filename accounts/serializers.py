@@ -265,12 +265,18 @@ class OAuthLoginSerializer(serializers.Serializer):
         allow_blank=False,
         help_text="Optional direct OAuth access token if already obtained by client.",
     )
+    id_token = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        help_text="Optional OpenID Connect ID token (JWT) if already obtained by client.",
+    )
 
     def validate(self, attrs):
         code = attrs.get("code")
         access_token = attrs.get("access_token")
-        if not code and not access_token:
-            raise serializers.ValidationError({"code": "Authorization code or access token is required."})
+        id_token = attrs.get("id_token")
+        if not code and not access_token and not id_token:
+            raise serializers.ValidationError({"code": "Authorization code, access token, or ID token is required."})
         return attrs
 
 
@@ -285,7 +291,7 @@ class GoogleOAuthSerializer(OAuthLoginSerializer):
     client_id = serializers.CharField(
         required=False,
         allow_blank=False,
-        help_text="OAuth client ID (Web, Android, or iOS). Must be in the allowed client IDs list.",
+        help_text="OAuth client ID (Web, Android, iOS, or custom). Must be in the allowed client IDs list.",
     )
 
     def validate(self, attrs):

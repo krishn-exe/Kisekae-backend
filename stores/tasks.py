@@ -1,4 +1,5 @@
-import logging
+import logging
+import os
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
@@ -14,7 +15,7 @@ def send_store_invitation_email_task(target_email, store_name, inviter_name, raw
     """
     subject = f"You're invited to manage {store_name} on Kisekae"
     accept_url = f"kisekae://invitations/accept?token={raw_token}"
-    backend_base = (getattr(settings, "BACKEND_BASE_URL", None) or os.getenv("BACKEND_BASE_URL", "https://api.kisekae.live")).rstrip("/")
+    backend_base = (getattr(settings, "BACKEND_BASE_URL", None) or os.getenv("BACKEND_BASE_URL", "https://kisekae.live")).rstrip("/")
     web_redirect_url = f"{backend_base}/stores/invitations/redirect/?token={raw_token}"
     expires_days = getattr(settings, 'STORE_INVITATION_TTL_DAYS', 7)
     plain_message = (

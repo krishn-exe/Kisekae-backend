@@ -643,7 +643,7 @@ else:
 
 STORE_INVITATION_TTL_DAYS = int(os.getenv("STORE_INVITATION_TTL_DAYS", 7))
 
-BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "https://api.kisekae.live")
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "https://kisekae.live")
 
 
 

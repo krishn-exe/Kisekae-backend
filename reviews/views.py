@@ -64,7 +64,6 @@ class ProductReviewListCreateView(APIView):
 
         all_product_reviews = Review.objects.filter(product=product)
 
-        # Compute rating summary for all product reviews (unfiltered)
         agg_stats = all_product_reviews.aggregate(
             avg_rating=Avg("rating"),
             total_reviews=Count("id"),
@@ -73,7 +72,6 @@ class ProductReviewListCreateView(APIView):
         average_rating = round(float(avg), 2) if avg is not None else 0.0
         total_reviews = agg_stats["total_reviews"] or 0
 
-        # Star breakdown distribution
         breakdown_counts = {str(star): 0 for star in range(1, 6)}
         distribution_agg = all_product_reviews.values("rating").annotate(count=Count("id"))
         for row in distribution_agg:
@@ -87,10 +85,8 @@ class ProductReviewListCreateView(APIView):
             "rating_breakdown": breakdown_counts,
         }
 
-        # Filtered queryset for pagination
         queryset = all_product_reviews.select_related("user", "product")
 
-        # 1. Exact star rating filter
         rating_param = request.query_params.get("rating")
         if rating_param:
             try:
@@ -100,7 +96,6 @@ class ProductReviewListCreateView(APIView):
             except (ValueError, TypeError):
                 pass
 
-        # 2. Minimum star rating filter
         min_rating_param = request.query_params.get("min_rating")
         if min_rating_param:
             try:
@@ -110,17 +105,14 @@ class ProductReviewListCreateView(APIView):
             except (ValueError, TypeError):
                 pass
 
-        # 3. Lettering filter (title starts with letter)
         letter_param = request.query_params.get("letter", "").strip()
         if letter_param:
             queryset = queryset.filter(title__istartswith=letter_param[0])
 
-        # 4. Verified buyer filter
         verified_param = request.query_params.get("verified_only")
         if verified_param and str(verified_param).lower() in ("true", "1", "yes"):
             queryset = queryset.filter(is_verified_buyer=True)
 
-        # 5. Ordering
         ordering_param = request.query_params.get("ordering", "-created_at").strip().lower()
         valid_orderings = {
             "-created_at": "-created_at",
@@ -156,7 +148,6 @@ class ProductReviewListCreateView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check for existing review by this user
         existing_review = Review.objects.filter(product=product, user=request.user).first()
         if existing_review:
             return error_response(
@@ -409,7 +400,6 @@ class ProductReviewChatView(APIView):
         question = serializer.validated_data["question"]
         history = serializer.validated_data.get("history", [])
 
-        # Tier 1 Guardrail: Deterministic pre-flight check
         is_safe, refusal_reason = ReviewAIService.check_preflight_guardrails(question)
         if not is_safe:
             return success_response(
@@ -420,7 +410,6 @@ class ProductReviewChatView(APIView):
                 message="Chat response generated.",
             )
 
-        # Retrieve precomputed summary and a representative sample of reviews
         summary = getattr(product, "review_summary", None)
         reviews_sample = list(
             Review.objects.filter(product=product)

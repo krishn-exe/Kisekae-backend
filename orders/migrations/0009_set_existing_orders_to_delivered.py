@@ -7,7 +7,6 @@ def migrate_existing_orders_to_delivered(apps, schema_editor):
     OrderStatusHistory = apps.get_model("orders", "OrderStatusHistory")
     now = timezone.now()
 
-    # Transition all existing orders not already in DELIVERED status
     orders_to_update = Order.objects.exclude(status="DELIVERED")
     for order in orders_to_update:
         old_status = order.status

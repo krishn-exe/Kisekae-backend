@@ -38,7 +38,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
             logger.warning(f"Product #{product_id} not found for AR preprocessing.")
             return False
 
-        # 1. Immediate rejection for unsupported categories
         if (
             product.category in TRYON_UNSUPPORTED_CATEGORIES
             or product.category not in TRYON_SUPPORTED_CATEGORIES
@@ -63,7 +62,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
 
         asset, _ = TryOnProductAsset.objects.get_or_create(product=product)
 
-        # 2. Incremental check: if already AVAILABLE and all 3 angle images still exist, no re-scan needed
         if asset.status == ARStatus.AVAILABLE and asset.has_all_angles:
             existing_image_ids = set(product.images.values_list("id", flat=True))
             required_ids = {asset.front_image_id, asset.back_image_id, asset.side_image_id}
@@ -73,7 +71,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
                 )
                 return True
 
-        # 3. Gather all product images
         gallery_images = list(product.images.all())
         if not gallery_images and not product.image:
             asset.status = ARStatus.REJECTED
@@ -83,19 +80,16 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
             asset.save(update_fields=["status", "rejection_reason", "updated_at"])
             return True
 
-        # Mark as PROCESSING while inspecting
         asset.status = ARStatus.PROCESSING
         asset.rejection_reason = "Analyzing product images..."
         asset.save(update_fields=["status", "rejection_reason", "updated_at"])
 
-        # 4. Gemini Inspection Triage
         found_angles: dict[str, Any] = {}
         has_model_photos = False
         has_category_mismatch = False
         mismatched_category = ""
         has_valid_clothing = False
 
-        # Inspect gallery images
         for img in gallery_images:
             try:
                 if not img.image:
@@ -135,7 +129,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
                 elif "FRONT" not in found_angles:
                     found_angles["FRONT"] = img
 
-        # If primary legacy image exists and we still need angles, inspect it as well
         if len(found_angles) < 3 and product.image:
             try:
                 product.image.open("rb")
@@ -152,7 +145,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
             except Exception as e:
                 logger.warning(f"Could not inspect legacy thumbnail for product #{product_id}: {e}")
 
-        # 5. Resolve ARStatus & Rejection Reason
         if "FRONT" in found_angles and "BACK" in found_angles and "SIDE" in found_angles:
             asset.front_image = found_angles["FRONT"] if hasattr(found_angles["FRONT"], "id") else None
             asset.back_image = found_angles["BACK"] if hasattr(found_angles["BACK"], "id") else None
@@ -185,7 +177,6 @@ def preprocess_product_image_task(self, product_id: int) -> bool:
                 )
             asset.status = ARStatus.REJECTED
 
-            # Save any partial angles found
             if "FRONT" in found_angles and hasattr(found_angles["FRONT"], "id"):
                 asset.front_image = found_angles["FRONT"]
                 asset.candidate_image = asset.front_image
@@ -272,7 +263,6 @@ def generate_tryon_task(self, request_id: str) -> bool:
 
         angle = tryon_req.angle or TryOnAngle.AUTO
 
-        # Auto-detect customer pose perspective using Gemini if AUTO
         if angle == TryOnAngle.AUTO:
             pose_info = GeminiVisionService.detect_person_pose(
                 image_bytes=person_bytes,
@@ -290,14 +280,12 @@ def generate_tryon_task(self, request_id: str) -> bool:
             logger.info(f"Gemini auto-detected pose for TryOn #{tryon_req.id}: {angle}")
 
         if tryon_req.product:
-            # Single Garment Prediction
             garment_bytes = get_garment_image_bytes(tryon_req.product, angle=angle)
             result_bytes = VertexAIVirtualTryOnClient.predict(
                 person_image_bytes=person_bytes,
                 garment_image_bytes=garment_bytes,
             )
         elif tryon_req.combo:
-            # Sequential Combo Chaining
             combo = (
                 tryon_req.combo.__class__.objects.filter(pk=tryon_req.combo_id)
                 .prefetch_related("items__product__tryon_asset")
@@ -307,7 +295,6 @@ def generate_tryon_task(self, request_id: str) -> bool:
                 raise ValueError("Combo contains no items for Virtual Try-On.")
 
             items = list(combo.items.all())
-            # Sort items by layering hierarchy: BOTTOM (1) -> TOP/ONE_PIECE (2) -> OUTERWEAR (3)
             sorted_items = sorted(
                 items,
                 key=lambda it: CATEGORY_TRYON_ORDER.get(it.category, 99),
@@ -324,7 +311,6 @@ def generate_tryon_task(self, request_id: str) -> bool:
         else:
             raise ValueError("TryOnRequest has neither a product nor a combo specified.")
 
-        # Save result image
         filename = f"tryon_result_{tryon_req.id}.png"
         tryon_req.result_image.save(filename, ContentFile(result_bytes), save=False)
         tryon_req.status = TryOnRequestStatus.READY

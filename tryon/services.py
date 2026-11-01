@@ -74,7 +74,6 @@ class ComboValidationService:
                 )
             cat_counts[cat] = cat_counts.get(cat, 0) + 1
 
-        # Rule 1: Max one per category
         for cat, count in cat_counts.items():
             if count > 1:
                 raise ValidationError(
@@ -86,7 +85,6 @@ class ComboValidationService:
         has_top = ProductCategory.TOP in cat_counts
         has_bottom = ProductCategory.BOTTOM in cat_counts
 
-        # Rule 2: ONE_PIECE vs TOP/BOTTOM mutual exclusivity
         if has_one_piece and (has_top or has_bottom):
             conflicts = []
             if has_top:
@@ -99,7 +97,6 @@ class ComboValidationService:
                 code="ONE_PIECE_CONFLICT",
             )
 
-        # Rule 3: Max outfit size
         if len(categories) > 3:
             raise ValidationError(
                 "A combo cannot exceed 3 items (Top + Bottom + Outerwear, or One-Piece + Outerwear).",
@@ -118,7 +115,6 @@ class ComboValidationService:
         if not product_ids:
             return []
 
-        # Check for duplicate IDs in payload
         if len(product_ids) != len(set(product_ids)):
             raise ValidationError("Duplicate product IDs provided.", code="DUPLICATE_PRODUCT")
 

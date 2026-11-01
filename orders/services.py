@@ -123,23 +123,19 @@ class OrderService:
                 if not variant:
                     raise ValidationError(f"Color variant ID {variant_id} not found for product '{product.name}'.")
             else:
-                # Default to first active variant if exists
                 variant = product.variants.filter(is_active=True).first()
 
             size_name = str(item_data.get("size", "")).strip().upper()
             size_obj = None
 
-            # Look up size in the specific variant if variant exists
             if variant and variant.sizes.exists():
                 if size_name:
                     size_obj = variant.sizes.select_for_update().filter(size=size_name).first()
                 else:
-                    # Pick size="" or first in-stock size if no sizes
                     size_obj = variant.sizes.select_for_update().filter(size="").first()
                     if not size_obj and variant.sizes.count() == 1:
                         size_obj = variant.sizes.select_for_update().first()
             elif product.sizes.exists():
-                # Fallback to product sizes
                 if size_name:
                     size_obj = product.sizes.select_for_update().filter(size=size_name).first()
                 else:
@@ -159,7 +155,6 @@ class OrderService:
                 size_obj.stock = new_size_stock
                 size_obj.save(update_fields=["stock", "updated_at"])
 
-                # Exact audit logging (BUG-11 fix)
                 StockUpdate.objects.create(
                     product=product,
                     variant=variant,
@@ -184,7 +179,6 @@ class OrderService:
                     new_total_stock=new_total_stock,
                 )
             else:
-                # General product stock fallback if no size objects exist
                 if product.stock < qty:
                     raise ValidationError(
                         f"Insufficient stock for '{product.name}'. Available: {product.stock}, requested: {qty}."
@@ -230,7 +224,6 @@ class OrderService:
                 is_promoted=bool(item_data.get("is_promoted", False)),
             )
 
-        # Coupon Code validation and deduction
         coupon_obj = None
         coupon_discount = Decimal("0.00")
         if coupon_code:
@@ -353,7 +346,6 @@ class OrderService:
         if not order:
             raise ValidationError("Order not found.", code="ORDER_NOT_FOUND")
 
-        # Signature verification
         is_valid = RazorpayService.verify_payment_signature(
             razorpay_order_id=razorpay_order_id or order.razorpay_order_id,
             razorpay_payment_id=razorpay_payment_id,
@@ -363,9 +355,7 @@ class OrderService:
             raise ValidationError("Invalid payment signature from payment gateway.", code="INVALID_SIGNATURE")
 
         now = timezone.now()
-        # Check if 5-minute TTL elapsed
         if order.expires_at and now > order.expires_at and order.status != OrderStatus.CONFIRMED:
-            # Order expired: refund payment and fail
             logger.warning("Payment received after 5-minute window for order %s. Initiating auto-refund.", order.order_number)
             refund_data = RazorpayService.initiate_refund(
                 razorpay_payment_id=razorpay_payment_id,
@@ -525,7 +515,6 @@ class OrderService:
 
         old_status = order.status
 
-        # Issue refund if payment was already captured
         if order.payment_status == PaymentStatus.PAID and order.razorpay_payment_id:
             refund_data = RazorpayService.initiate_refund(
                 razorpay_payment_id=order.razorpay_payment_id,
@@ -550,7 +539,6 @@ class OrderService:
             )
             order.refund_amount = (order.refund_amount or Decimal("0.00")) + order.wallet_amount_used
 
-        # Restore inventory
         for item in order.items.select_related("product", "variant", "variant_size").all():
             size_obj = None
             if item.variant_size:
@@ -677,7 +665,6 @@ class OrderService:
             order.refund_amount = order.total_amount
             order.payment_status = PaymentStatus.REFUNDED
 
-        # Restore inventory
         for item in order.items.select_related("product", "variant", "variant_size").all():
             size_obj = None
             if item.variant_size:
@@ -850,7 +837,6 @@ class OrderService:
 
         events = []
 
-        # 1. Order Confirmed
         if order.status in {
             OrderStatus.CONFIRMED,
             OrderStatus.SHIPPED,
@@ -866,7 +852,6 @@ class OrderService:
                 "timestamp": conf_ts,
             })
 
-        # 2. Shipped
         if order.shipped_at or order.status in {
             OrderStatus.SHIPPED,
             OrderStatus.OUT_FOR_DELIVERY,
@@ -882,7 +867,6 @@ class OrderService:
                     "timestamp": shipped_ts,
                 })
 
-        # 3. Out For Delivery
         if order.out_for_delivery_at or order.status in {
             OrderStatus.OUT_FOR_DELIVERY,
             OrderStatus.DELIVERED,
@@ -897,7 +881,6 @@ class OrderService:
                     "timestamp": ofd_ts,
                 })
 
-        # 4. Delivered
         if order.delivered_at or order.status in {
             OrderStatus.DELIVERED,
             OrderStatus.REFUND_REQUESTED,
@@ -911,7 +894,6 @@ class OrderService:
                     "timestamp": deliv_ts,
                 })
 
-        # 5. Cancelled
         if order.status == OrderStatus.CANCELLED:
             cancel_ts = order.cancelled_at or hist_by_status.get(OrderStatus.CANCELLED, order.updated_at)
             events.append({

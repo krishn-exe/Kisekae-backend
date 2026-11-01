@@ -23,10 +23,9 @@ class CouponService:
             discount = (subtotal * coupon.discount_value) / Decimal("100.00")
             if coupon.max_discount_cap is not None:
                 discount = min(discount, coupon.max_discount_cap)
-        else:  # FLAT
+        else:
             discount = coupon.discount_value
 
-        # Discount cannot exceed subtotal
         return min(discount, subtotal).quantize(Decimal("0.01"))
 
     @staticmethod

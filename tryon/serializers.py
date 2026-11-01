@@ -232,11 +232,10 @@ class TryOnGenerateRequestSerializer(serializers.Serializer):
     )
 
     def validate_person_image(self, value):
-        max_size = 7 * 1024 * 1024  # 7 MB limit
+        max_size = 7 * 1024 * 1024
         if value.size > max_size:
             raise serializers.ValidationError("Customer image file size cannot exceed 7MB.")
 
-        # Check content type / extension
         ext = value.name.split(".")[-1].lower() if "." in value.name else ""
         if ext not in ["jpg", "jpeg", "png", "webp"]:
             raise serializers.ValidationError("Unsupported image format. Allowed formats: JPG, PNG, WebP.")

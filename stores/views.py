@@ -564,7 +564,6 @@ class StoreLeaveView(APIView):
         )
 
 
-# --- INVITATION VIEWS ---
 
 
 class StoreInvitationListCreateView(APIView):
@@ -843,7 +842,6 @@ class InviteeInvitationTokenAcceptView(APIView):
         )
 
 
-# --- INVITATION REDIRECT VIEW ---
 
 
 class StoreInvitationRedirectView(APIView):
@@ -891,7 +889,6 @@ class StoreInvitationRedirectView(APIView):
         return HttpResponse(html_content, content_type="text/html")
 
 
-# --- BUSINESS VERIFICATION VIEWS ---
 
 
 class BusinessVerificationView(APIView):

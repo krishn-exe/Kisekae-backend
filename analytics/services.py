@@ -40,7 +40,6 @@ class AnalyticsService:
         if to_d:
             orders = orders.filter(created_at__date__lte=to_d)
 
-        # Single conditional aggregation (PERF-04 fix)
         agg_data = orders.aggregate(
             total_orders=Count("id"),
             delivered_orders=Count("id", filter=Q(status=OrderStatus.DELIVERED)),
@@ -77,7 +76,6 @@ class AnalyticsService:
             else Decimal("0.00")
         )
 
-        # Total units sold from paid/confirmed orders
         paid_orders_qs = orders.filter(
             status__in=[OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED]
         )
@@ -97,7 +95,6 @@ class AnalyticsService:
             else 0.0
         )
 
-        # Scalable SQL low stock count
         low_stock_count = InventoryService.get_low_stock_products_queryset(store).count()
 
         return {
@@ -216,7 +213,6 @@ class AnalyticsService:
         except (ValueError, TypeError):
             lim = 20
 
-        # Group by product_id and product_sku
         items_agg = (
             items.values("product_id", "product_name", "product_sku")
             .annotate(
@@ -406,7 +402,6 @@ class AnalyticsService:
                 ])
 
         else:
-            # Sales report with line-item detail
             writer.writerow([
                 "Order Number",
                 "Date",

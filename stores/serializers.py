@@ -511,11 +511,8 @@ class BusinessVerificationSubmitSerializer(serializers.ModelSerializer):
 
         return value.strip().lower()
 
-# ---------------------------------------------------------------------------
 
-# Store Payments & Settlement Serializers
 
-# ---------------------------------------------------------------------------
 
 class StoreBankAccountSerializer(serializers.ModelSerializer):
 
@@ -583,13 +580,11 @@ class StoreBankAccountSerializer(serializers.ModelSerializer):
 
         ret = super().to_representation(instance)
 
-        # Mask account number for security in responses unless context asks for full
 
         request = self.context.get("request")
 
         user = getattr(request, "user", None)
 
-        # Only full account number for owner when specifically allowed
 
         if not self.context.get("show_full_account", False):
 

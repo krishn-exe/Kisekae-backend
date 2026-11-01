@@ -70,7 +70,6 @@ def record_search_query_task(self, user_id: int, query: str):
 
         logger.info(f"Recorded search query '{clean_query}' for user #{user_id}.")
 
-        # Upsert into SearchSuggestion vocabulary
         clean_q_lower = clean_query.lower()
         if len(clean_q_lower) >= 2:
             try:
@@ -83,7 +82,6 @@ def record_search_query_task(self, user_id: int, query: str):
             except Exception:
                 pass
 
-        # Keep user taste profile updated with this recent discovery signal
         recompute_user_taste_task.delay(user_id)
         return True
     except Exception as exc:
@@ -116,7 +114,6 @@ def record_product_view_task(self, user_id: int, product_id: int):
 
         logger.info(f"Recorded product view on product #{product_id} by user #{user_id}.")
 
-        # Refresh taste profile to reflect this browsing interest
         recompute_user_taste_task.delay(user_id)
         return True
     except Exception as exc:

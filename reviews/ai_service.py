@@ -112,7 +112,6 @@ Return ONLY a valid JSON object matching this schema:
         if not api_key:
             return "AI review assistant is currently unavailable."
 
-        # Assemble review context with XML isolation
         context_block = f"Product: {product_name}\n"
         if summary_obj:
             context_block += f"Consensus Summary: {summary_obj.summary_text}\n"
@@ -132,7 +131,6 @@ Return ONLY a valid JSON object matching this schema:
             context_block += f"- Rating: {rating}★ | Headline: {title} | Details: {desc} ({verified})\n"
         context_block += "</untrusted_customer_reviews>\n"
 
-        # Construct ephemeral dialog history
         formatted_contents = [
             {"role": "user", "parts": [{"text": f"Here is the product review data:\n{context_block}"}]},
             {"role": "model", "parts": [{"text": "Understood. I will answer customer questions strictly based on these reviews."}]},
@@ -168,7 +166,6 @@ Return ONLY a valid JSON object matching this schema:
             candidates = data.get("candidates", [])
             if candidates and "content" in candidates[0]:
                 reply = candidates[0]["content"]["parts"][0]["text"].strip()
-                # Post-generation sanity check: prevent prompt regurgitation
                 for p in JAILBREAK_PATTERNS[:4]:
                     if re.search(p, reply, re.IGNORECASE):
                         return FALLBACK_REFUSAL

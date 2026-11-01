@@ -47,8 +47,8 @@ settlement_day_validator = RegexValidator(
 )
 
 ALLOWED_IMAGE_TYPES = ["JPEG", "PNG", "WEBP"]
-MAX_LOGO_SIZE = 2 * 1024 * 1024       # 2MB
-MAX_BANNER_SIZE = 5 * 1024 * 1024     # 5MB
+MAX_LOGO_SIZE = 2 * 1024 * 1024
+MAX_BANNER_SIZE = 5 * 1024 * 1024
 MAX_DIMENSION = 4096
 
 

@@ -31,14 +31,12 @@ class EmbeddingService:
     def __init__(self):
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}...")
         try:
-            # First attempt standard loading
             self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         except Exception as e:
             logger.warning(f"Standard loading of {EMBEDDING_MODEL_NAME} failed ({e}), trying local cache...")
             try:
                 self.model = SentenceTransformer(EMBEDDING_MODEL_NAME, local_files_only=True)
             except Exception:
-                # If neither worked, retry with HF_HUB_OFFLINE=1
                 os.environ["HF_HUB_OFFLINE"] = "1"
                 self.model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         logger.info("Embedding model loaded successfully.")
@@ -102,7 +100,6 @@ class EmbeddingService:
     def build_product_text(self, product) -> str:
         parts = [product.name]
 
-        # Target demographic / category type (e.g. Men, Women, Kids, Ethnic, Formal, Sports)
         if hasattr(product, "product_type") and product.product_type:
             pt_display = (
                 product.get_product_type_display()
@@ -111,7 +108,6 @@ class EmbeddingService:
             )
             parts.append(f"Style: {pt_display}")
 
-        # Apparel category & synonyms
         if hasattr(product, "category") and product.category:
             cat_display = (
                 product.get_category_display()
@@ -123,7 +119,6 @@ class EmbeddingService:
             if cat_code in CATEGORY_SYNONYMS:
                 parts.append(f"Tags: {CATEGORY_SYNONYMS[cat_code]}")
 
-        # Primary color & variant colors
         colors = set()
         if hasattr(product, "color") and product.color:
             colors.add(product.color.strip())

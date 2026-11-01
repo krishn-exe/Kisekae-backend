@@ -61,6 +61,7 @@ def error_response(
     payload = {
         "success": False,
         "message": message,
+        "data": None,
         "error": {
             "code": code,
             "details": details,
@@ -179,6 +180,7 @@ def custom_exception_handler(exc, context):
     response.data = {
         "success": False,
         "message": message,
+        "data": None,
         "error": {
             "code": error_code,
             "details": details,

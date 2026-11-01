@@ -73,7 +73,6 @@ class InventoryService:
             locked_product.sync_total_stock()
             return locked_product, update_record
 
-        # General product stock addition
         prev_stock = locked_product.stock
         new_stock = prev_stock + delta
         locked_product.stock = new_stock
@@ -271,7 +270,6 @@ class InventoryService:
         delta = new_stock - prev_stock
 
         if locked_product.sizes.exists():
-            # If product has sizes, adjust the primary size
             primary_size = locked_product.sizes.select_for_update().first()
             if primary_size:
                 primary_size.stock = max(0, primary_size.stock + delta)
@@ -328,7 +326,6 @@ class InventoryService:
 
         prod_id_val = product.id
 
-        # 1. Check variant size low stock (threshold < 20)
         if size:
             if prev_stock >= 20 and new_stock < 20:
                 curr_stock_val = new_stock
@@ -339,7 +336,6 @@ class InventoryService:
                     )
                 )
 
-        # 2. Check total product stock low stock (threshold < 250)
         if prev_total_stock is not None and new_total_stock is not None:
             if prev_total_stock >= 250 and new_total_stock < 250:
                 tot_stock_val = new_total_stock

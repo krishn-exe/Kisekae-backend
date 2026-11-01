@@ -135,7 +135,6 @@ class WalletAddFundsVerifyView(APIView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Check if transaction was already credited for this payment ID to prevent double credits
         existing = WalletTransaction.objects.filter(razorpay_payment_id=data["razorpay_payment_id"]).first()
         if existing:
             wallet = WalletService.get_or_create(request.user)

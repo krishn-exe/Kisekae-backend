@@ -78,7 +78,6 @@ class StoreService:
     @transaction.atomic
     def archive_store(store):
         store.archive()
-        # Revoke any pending invitations for this store
         store.invitations.filter(status=InvitationStatus.PENDING).update(
             status=InvitationStatus.REVOKED,
             responded_at=timezone.now(),
@@ -89,7 +88,6 @@ class StoreService:
     @transaction.atomic
     def suspend_store(store):
         store.suspend()
-        # Revoke any pending invitations for this store
         store.invitations.filter(status=InvitationStatus.PENDING).update(
             status=InvitationStatus.REVOKED,
             responded_at=timezone.now(),
@@ -188,7 +186,6 @@ class StoreService:
         membership.delete()
         return True
 
-    # --- INVITATION SERVICES ---
 
     @staticmethod
     @transaction.atomic
@@ -200,11 +197,9 @@ class StoreService:
         if store.status == StoreStatus.SUSPENDED:
             raise ValidationError("Cannot invite members to a suspended store.")
 
-        # Check if already a member
         if StoreMembership.objects.filter(store=store, user__email__iexact=email).exists():
             raise ValidationError("A user with this email is already a member of this store.")
 
-        # Check for existing pending invitation
         pending_inv = StoreInvitation.objects.filter(
             store=store,
             email__iexact=email,
@@ -214,7 +209,6 @@ class StoreService:
         if pending_inv:
             if not pending_inv.is_expired:
                 raise ValidationError("An invitation is already pending for this email address.")
-            # If expired, mark as expired so we can create a fresh one
             pending_inv.status = InvitationStatus.EXPIRED
             pending_inv.save(update_fields=["status"])
 
@@ -396,7 +390,6 @@ class StoreService:
 
         return StoreService.accept_invitation(invitation, user)
 
-    # --- MEDIA (LOGO & BANNER) SERVICES ---
 
     @staticmethod
     def set_store_logo(store, image_file):

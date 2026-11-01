@@ -494,8 +494,6 @@ class StoreBankAccount(models.Model):
         self.clean()
         super().save(*args, **kwargs)
 
-        # On adding bank account details, configure default automatic settlement day
-        # to the day of month when bank details were added.
         if is_new:
             added_day = self.created_at.day if self.created_at else timezone.now().day
             settings_obj, created = StorePaymentSettings.objects.get_or_create(

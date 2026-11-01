@@ -206,7 +206,6 @@ class StoreBankAccountView(APIView):
                 code="STORE_NOT_FOUND",
             )
 
-        # STRICT PERMISSION: ONLY STORE OWNER
         if membership.role != StoreRole.OWNER:
             return error_response(
                 message="Only the store owner can modify bank account details.",

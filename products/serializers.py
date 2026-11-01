@@ -123,7 +123,6 @@ class VariantImageUploadSerializer(serializers.Serializer):
     )
 
 
-# Backward-compatible aliases
 ProductSizeSerializer = ProductVariantSizeSerializer
 ProductImageSerializer = ProductVariantImageSerializer
 
@@ -301,7 +300,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         default=list,
         help_text="List of color variants, each with its own hex code (#RRGGBB) and size/stock configuration.",
     )
-    # Backward compatibility: allow top-level sizes / color
     sizes = serializers.ListField(
         child=VariantSizeInputSerializer(),
         required=False,
@@ -345,7 +343,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         variants = attrs.get("variants", [])
         sizes = attrs.get("sizes", [])
 
-        # Validate variant colors and nested sizes
         if variants:
             seen_colors = set()
             for v_idx, variant in enumerate(variants):
@@ -354,7 +351,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({"variants": f"Duplicate color '{variant.get('color_name')}' provided."})
                 seen_colors.add(c_name)
 
-                # Validate sizes inside variant
                 v_sizes = variant.get("sizes", [])
                 seen_sizes = set()
                 for s_item in v_sizes:
@@ -379,7 +375,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                                 {"variants": f"Category '{category}' has no sizes. Leave size blank."}
                             )
 
-        # Validate legacy top-level sizes if passed
         elif sizes:
             seen_sizes = set()
             for s_item in sizes:

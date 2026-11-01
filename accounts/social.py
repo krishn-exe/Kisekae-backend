@@ -23,20 +23,15 @@ def extract_verified_oauth_email(social_login, provider) -> str:
     """
     email_addresses = getattr(social_login, "email_addresses", []) or []
 
-    # 1. Check allauth's parsed EmailAddress list (populated for GitHub and Google)
     if email_addresses:
-        # Prioritize primary verified email
         for ea in email_addresses:
             if getattr(ea, "verified", False) and getattr(ea, "primary", False) and getattr(ea, "email", None):
                 return ea.email.strip().lower()
-        # Fallback to any verified email
         for ea in email_addresses:
             if getattr(ea, "verified", False) and getattr(ea, "email", None):
                 return ea.email.strip().lower()
-        # If email_addresses were returned but none are verified, reject!
         raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
 
-    # 2. Check extra_data (e.g., Google ID token / userinfo)
     extra_data = getattr(social_login.account, "extra_data", {}) or {}
     email_verified = extra_data.get("email_verified")
     if email_verified is None:
@@ -51,11 +46,9 @@ def extract_verified_oauth_email(social_login, provider) -> str:
         raise ValueError(f"{provider.name} account did not provide an email address.")
 
     provider_id = (getattr(provider, "id", "") or getattr(provider, "name", "")).lower()
-    # For GitHub, email_addresses should always be present; public profile email alone is untrusted
     if "github" in provider_id:
         raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
 
-    # For Google and OIDC providers with email_verified boolean
     if email_verified is False:
         raise ValueError(f"The email address associated with this {provider.name} account is not verified.")
 
@@ -339,7 +332,6 @@ def process_social_login(
 
     adapter = adapter_class(raw_request)
 
-    # Route direct ID token to verification handler
     if id_token:
         if adapter.provider_id == "google":
             return process_google_id_token_login(
@@ -350,7 +342,6 @@ def process_social_login(
         else:
             raise ValueError(f"Direct ID token verification is not supported for {adapter.provider_id}.")
 
-    # Route JWT passed as access_token to ID token handler for Google
     if access_token and adapter.provider_id == "google" and access_token.startswith("eyJ") and access_token.count(".") == 2:
         return process_google_id_token_login(
             request=request,
@@ -358,7 +349,6 @@ def process_social_login(
             client_id=client_id,
         )
 
-    # If code_verifier is present, route to PKCE flow (mobile clients without client secret)
     if code_verifier and code:
         if adapter.provider_id == "google":
             return process_google_pkce_login(
@@ -440,7 +430,6 @@ def process_social_login(
     if user:
         updated_fields = []
         if not user.is_email_verified:
-            # Prevent pre-account takeover: reset any attacker-set password
             user.set_unusable_password()
             user.is_email_verified = True
             updated_fields.extend(["password", "is_email_verified"])

@@ -42,7 +42,6 @@ class VertexAIVirtualTryOnClient:
             import google.auth
             import google.auth.transport.requests
 
-            # Ensure relative credential path resolves from BASE_DIR
             cred_path = getattr(settings, "GOOGLE_APPLICATION_CREDENTIALS", "") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
             if cred_path:
                 if not os.path.isabs(cred_path):
@@ -84,7 +83,6 @@ class VertexAIVirtualTryOnClient:
         project_id = cls.get_project_id()
         location = cls.get_location()
 
-        # If project is explicitly set to mock, or during test runs without GCP credentials
         if project_id == "mock" or (not project_id and os.getenv("DJANGO_SETTINGS_MODULE")):
             logger.info("Vertex AI running in mock/offline mode. Returning synthetic try-on result.")
             return cls._create_mock_result_image()

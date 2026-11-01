@@ -29,7 +29,7 @@ from .validators import (
 
 logger = logging.getLogger(__name__)
 
-PLATFORM_CUT_PERCENTAGE = Decimal("0.15")  # 15% platform cut
+PLATFORM_CUT_PERCENTAGE = Decimal("0.15")
 
 
 class StorePaymentService:
@@ -75,7 +75,6 @@ class StorePaymentService:
             OrderStatus.DELIVERED,
         ]
 
-        # Monthly orders aggregation
         monthly_orders = Order.objects.filter(
             store=store,
             status__in=eligible_statuses,
@@ -102,15 +101,11 @@ class StorePaymentService:
         coupon_discounts = monthly_agg["coupon_discounts"] or Decimal("0.00")
         coupon_discounts = coupon_discounts.quantize(Decimal("0.01"))
 
-        # 15% platform cut
         gross_platform_cut = (total_revenue * PLATFORM_CUT_PERCENTAGE).quantize(Decimal("0.01"))
 
-        # Platform absorbs coupon costs from its 15% cut
-        # Net platform cut = max(0, gross_cut - coupon_discount)
         net_platform_cut = max(Decimal("0.00"), gross_platform_cut - coupon_discounts).quantize(Decimal("0.01"))
         absorbed_coupon_cost = min(gross_platform_cut, coupon_discounts).quantize(Decimal("0.01"))
 
-        # Store payment settings & advertising spend
         payment_settings, _ = StorePaymentSettings.objects.get_or_create(store=store)
         advertising_budget = payment_settings.monthly_advertising_budget.quantize(Decimal("0.01"))
         from .models import AdEvent
@@ -125,10 +120,8 @@ class StorePaymentService:
         else:
             advertising_cost = advertising_budget
 
-        # Final Gross Profit for the month
         final_gross_profit = (total_revenue - net_platform_cut - advertising_cost).quantize(Decimal("0.01"))
 
-        # Monthly settlements
         monthly_settled_agg = StoreSettlement.objects.filter(
             store=store,
             status=SettlementStatus.COMPLETED,
@@ -137,7 +130,6 @@ class StorePaymentService:
         ).aggregate(s=Sum("amount"))["s"]
         monthly_settled = (monthly_settled_agg or Decimal("0.00")).quantize(Decimal("0.01"))
 
-        # Lifetime calculations for overall settlement balance
         lifetime_orders = Order.objects.filter(
             store=store,
             status__in=eligible_statuses,
@@ -157,14 +149,12 @@ class StorePaymentService:
         lifetime_gross_platform_cut = (lifetime_revenue * PLATFORM_CUT_PERCENTAGE).quantize(Decimal("0.01"))
         lifetime_net_platform_cut = max(Decimal("0.00"), lifetime_gross_platform_cut - lifetime_coupons).quantize(Decimal("0.01"))
 
-        # Lifetime settlements completed
         total_settled_lifetime_agg = StoreSettlement.objects.filter(
             store=store,
             status=SettlementStatus.COMPLETED,
         ).aggregate(s=Sum("amount"))["s"]
         total_settled_lifetime = (total_settled_lifetime_agg or Decimal("0.00")).quantize(Decimal("0.01"))
 
-        # Lifetime advertising cost
         lifetime_ad_events = AdEvent.objects.filter(store=store)
         if lifetime_ad_events.exists():
             lifetime_ad_spend_agg = lifetime_ad_events.aggregate(s=Sum("cost"))["s"] or Decimal("0.00")
@@ -182,7 +172,6 @@ class StorePaymentService:
             lifetime_gross_profit - total_settled_lifetime,
         ).quantize(Decimal("0.01"))
 
-        # Linked bank details & next settlement date
         bank_account = StoreBankAccount.objects.filter(store=store).first()
         next_settlement_date = cls.calculate_next_settlement_date(payment_settings.settlement_day)
 
@@ -238,14 +227,12 @@ class StorePaymentService:
         today = timezone.now().date()
         target_day = settlement_day
 
-        # Check if settlement day is later this month
         max_days_current = calendar.monthrange(today.year, today.month)[1]
         effective_day_current = min(target_day, max_days_current)
 
         if today.day < effective_day_current:
             return today.replace(day=effective_day_current)
 
-        # Otherwise next month
         if today.month == 12:
             next_year = today.year + 1
             next_month = 1
@@ -264,7 +251,6 @@ class StorePaymentService:
         Only the store owner can create or modify bank account details.
         Applies proper regex validations.
         """
-        # Permission check: OWNER ONLY
         membership = StoreMembership.objects.filter(store=store, user=user).first()
         if not membership or membership.role != StoreRole.OWNER:
             raise PermissionDenied("Only the store owner can modify bank account details.")
@@ -276,7 +262,6 @@ class StorePaymentService:
         branch_name = str(data.get("branch_name", "")).strip()
         account_type = data.get("account_type", AccountType.CURRENT)
 
-        # Validate with regex
         account_holder_validator(account_holder_name)
         bank_account_validator(account_number)
         ifsc_validator(ifsc_code)
@@ -358,7 +343,6 @@ class StorePaymentService:
                 code="NO_BANK_ACCOUNT",
             )
 
-        # Calculate available unsettled balance
         summary = cls.get_monthly_summary(store)
         available_balance = Decimal(summary["settlement_overview"]["available_unsettled_balance"])
 
@@ -420,9 +404,7 @@ class StorePaymentService:
         days_in_month = calendar.monthrange(today.year, today.month)[1]
         is_month_end = today_day == days_in_month
 
-        # Find stores scheduled for today
         if is_month_end:
-            # Handles day 31 (or 29-31) in shorter months
             qualifying_settings = StorePaymentSettings.objects.filter(
                 auto_settlement_enabled=True,
                 settlement_day__gte=today_day,

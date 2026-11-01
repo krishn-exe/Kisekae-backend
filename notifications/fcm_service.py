@@ -101,9 +101,6 @@ class FCMNotificationService:
             "Content-Type": "application/json; UTF-8",
         }
 
-        # Data values in FCM v1 must be strings.
-        # Everything (including title & body) is placed into the data payload (data-only message),
-        # allowing the mobile app full control over background display, sounds, and deep link routing.
         str_data = {str(k): str(v) for k, v in (data or {}).items()}
         if title and "title" not in str_data:
             str_data["title"] = str(title)
@@ -128,7 +125,6 @@ class FCMNotificationService:
             error_details = resp_json.get("error", {})
             error_code = error_details.get("status")
 
-            # Token no longer valid: deactivate it in DB
             if error_code in ("UNREGISTERED", "INVALID_ARGUMENT") or resp.status_code in (400, 404):
                 logger.info("Deactivating invalid or expired FCM token %s...", token[:16])
                 CustomerDevice.objects.filter(registration_token=token).update(is_active=False)
@@ -147,7 +143,6 @@ class FCMNotificationService:
         if not user:
             return 0
 
-        # Check customer notification preferences
         if hasattr(user, "settings"):
             if not user.settings.push_notifications:
                 logger.info("Push notification suppressed for user %s: push_notifications=False", user.email)

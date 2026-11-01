@@ -6,6 +6,7 @@ ERROR_SCHEMA = inline_serializer(
     fields={
         "success": serializers.BooleanField(default=False),
         "message": serializers.CharField(),
+        "data": serializers.JSONField(allow_null=True, required=False, default=None),
         "error": inline_serializer(
             name="StandardErrorDetail",
             fields={

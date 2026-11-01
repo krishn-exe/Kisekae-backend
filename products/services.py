@@ -64,7 +64,6 @@ class ProductService:
                     s_obj.full_clean()
                     s_obj.save()
         elif sizes_data:
-            # Legacy sizes fallback: create default variant
             default_variant = ProductVariant.objects.create(
                 product=product,
                 color_name=color or "Standard",
@@ -123,7 +122,6 @@ class ProductService:
         update_fields = []
 
         if variants_data is not None:
-            # Safe in-place update/upsert for variants and sizes (BUG-03 fix)
             existing_variants = {v.color_name.lower(): v for v in product.variants.all()}
             for v_data in variants_data:
                 c_name = v_data.get("color_name", "").strip()
@@ -168,7 +166,6 @@ class ProductService:
                     )
 
         elif sizes_data is not None:
-            # Legacy size list update: upsert sizes
             primary_variant = product.variants.first()
             if not primary_variant:
                 primary_variant = ProductVariant.objects.create(
@@ -193,7 +190,7 @@ class ProductService:
 
         if update_fields:
             if "name" in update_fields:
-                product.slug = ""  # Re-generated in save()
+                product.slug = ""
                 update_fields.append("slug")
             update_fields.append("updated_at")
             product.save(update_fields=list(set(update_fields)))
@@ -207,10 +204,8 @@ class ProductService:
     @staticmethod
     @transaction.atomic
     def delete_product(product):
-        # Clean up legacy image
         if product.image:
             product.image.delete(save=False)
-        # Clean up gallery images
         for img in product.images.all():
             if img.image:
                 img.image.delete(save=False)

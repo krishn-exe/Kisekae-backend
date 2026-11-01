@@ -88,12 +88,11 @@ class StoreSeasonalSaleListView(APIView):
             sales_qs = SeasonalSale.objects.filter(end_time__lt=now)
         elif status_filter == "all":
             sales_qs = SeasonalSale.objects.all()
-        else:  # default 'active'
+        else:
             sales_qs = sales_qs.filter(start_time__lte=now, end_time__gte=now)
 
         sales_qs = sales_qs.order_by("-start_time", "-created_at")
 
-        # Map store participation
         store_participations = {
             item["sale_id"]: item["count"]
             for item in SeasonalSaleProduct.objects.filter(store=store)
@@ -254,7 +253,6 @@ class StoreEnrollSeasonalSaleProductsView(APIView):
 
         product_ids = serializer.validated_data["product_ids"]
 
-        # Validate 5-product limit
         current_enrolled_count = SeasonalSaleProduct.objects.filter(sale=sale, store=store).count()
         existing_enrolled_pids = set(
             SeasonalSaleProduct.objects.filter(sale=sale, store=store, product_id__in=product_ids).values_list("product_id", flat=True)
@@ -271,7 +269,6 @@ class StoreEnrollSeasonalSaleProductsView(APIView):
                 code="SALE_PRODUCT_LIMIT_EXCEEDED",
             )
 
-        # Validate products belong to store and are active
         valid_products = list(
             Product.objects.filter(
                 store=store,

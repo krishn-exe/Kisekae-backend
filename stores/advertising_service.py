@@ -11,9 +11,9 @@ from products.models import Product, ProductStatus
 
 logger = logging.getLogger(__name__)
 
-AD_CLICK_COST = Decimal("0.10")        # ?100 per 1,000 clicks = ?0.10 per click
-AD_ORDER_UNIT_COST = Decimal("1.00")   # ?1.00 per unit ordered
-AD_CLICK_COOLDOWN_SECONDS = 900        # 15 minutes
+AD_CLICK_COST = Decimal("0.10")
+AD_ORDER_UNIT_COST = Decimal("1.00")
+AD_CLICK_COOLDOWN_SECONDS = 900
 
 
 class AdvertisingService:
@@ -126,7 +126,6 @@ class AdvertisingService:
         if store.status != StoreStatus.ACTIVE or store.archived_at is not None:
             return {"recorded": False, "reason": "store_inactive"}
 
-        # 1. Product must be in active promotion
         is_promoted = PromotedProduct.objects.filter(
             store=store,
             product=product,
@@ -135,11 +134,9 @@ class AdvertisingService:
         if not is_promoted:
             return {"recorded": False, "reason": "not_promoted"}
 
-        # 2. Check store budget availability
         if not cls.has_available_budget(store, prospective_cost=AD_CLICK_COST):
             return {"recorded": False, "reason": "budget_exhausted"}
 
-        # 3. 15-minute Redis Cooldown (atomic lock)
         client_id = cls.get_client_identifier(request)
         cooldown_key = f"ad_clk:{client_id}:{product.id}"
         is_new_click = cache.add(cooldown_key, 1, timeout=AD_CLICK_COOLDOWN_SECONDS)
@@ -147,7 +144,6 @@ class AdvertisingService:
         if not is_new_click:
             return {"recorded": False, "reason": "cooldown_active"}
 
-        # 4. Billable event creation
         event = AdEvent.objects.create(
             store=store,
             product=product,
@@ -187,7 +183,6 @@ class AdvertisingService:
             unit_qty = item.quantity or 1
             cost = (AD_ORDER_UNIT_COST * unit_qty).quantize(Decimal("0.01"))
 
-            # Calculate available budget headroom
             current_spend = cls.get_store_monthly_ad_spend(store, now.year, now.month)
             try:
                 settings_obj = store.payment_settings
@@ -250,7 +245,6 @@ class AdvertisingService:
 
         conversion_rate = round((orders_count / clicks_count * 100), 2) if clicks_count > 0 else 0.0
 
-        # Per-product performance
         promoted_records = (
             PromotedProduct.objects.filter(store=store)
             .select_related("product")

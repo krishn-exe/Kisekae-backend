@@ -34,13 +34,11 @@ from datetime import timedelta
 
 
 
-# Load environment variables
 
 dotenv.load_dotenv()
 
 
 
-# Base directory
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -48,9 +46,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 
-# Quick-start development settings - unsuitable for production
 
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 
 
@@ -58,7 +54,6 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-build-placeholder-k
 
 
 
-# SECURITY WARNING: don't run with debug turned on in production!
 
 DEBUG = True if os.getenv("DJANGO_DEBUG") == "True" else False
 
@@ -78,7 +73,6 @@ CSRF_TRUSTED_ORIGINS = os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") i
 
 
 
-# Application definition
 
 
 
@@ -220,9 +214,7 @@ WSGI_APPLICATION = 'KiseKaeDjango.wsgi.application'
 
 
 
-# Database
 
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
 
 
@@ -302,9 +294,7 @@ if "test" in sys.argv:
 
 
 
-# Password validation
 
-# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
 
 
@@ -511,9 +501,7 @@ SIMPLE_JWT = {
 
 
 
-# Internationalization
 
-# https://docs.djangoproject.com/en/6.1/topics/i18n/
 
 
 
@@ -535,9 +523,7 @@ USE_TZ = True
 
 
 
-# Static files (CSS, JavaScript, Images)
 
-# https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 
 
@@ -559,7 +545,6 @@ if os.getenv("DJANGO_USE_WHITENOISE", "False") == "True":
 
 
 
-# Media & Storage configuration (S3 if bucket configured, else FileSystemStorage)
 
 AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
 
@@ -647,7 +632,6 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "https://kisekae.live")
 
 
 
-# CELERY
 
 from celery.schedules import crontab
 
@@ -735,7 +719,6 @@ if 'test' in sys.argv:
 
 
 
-# Email
 
 
 
@@ -761,7 +744,6 @@ GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 
 
 
-# Mobile Google OAuth (PKCE)
 
 GOOGLE_ANDROID_CLIENT_ID = os.getenv('GOOGLE_ANDROID_CLIENT_ID', '')
 
@@ -773,7 +755,6 @@ GOOGLE_IOS_CALLBACK_URL = os.getenv('GOOGLE_IOS_CALLBACK_URL', 'live.kisekae.app
 
 
 
-# Allowlist of accepted Google Client IDs (Web, Android, iOS)
 
 _env_extra_client_ids = [
     cid.strip() for cid in os.getenv('GOOGLE_EXTRA_CLIENT_IDS', '').split(',') if cid.strip()
@@ -792,7 +773,6 @@ GOOGLE_ALLOWED_CLIENT_IDS = list(dict.fromkeys([
 
 
 
-# Allowlist of accepted Google Redirect URIs
 
 GOOGLE_ALLOWED_REDIRECT_URIS = [
 
@@ -936,7 +916,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 
-# Virtual Try-On & Vertex AI Configuration
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
@@ -948,7 +927,6 @@ GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 
 
 
-# Razorpay Payments
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_test_placeholder")
 
@@ -958,7 +936,6 @@ RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 
 
 
-# Firebase Cloud Messaging (FCM) - Customer Push Notifications
 
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 

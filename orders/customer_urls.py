@@ -17,7 +17,6 @@ from .views import (
 )
 
 urlpatterns = [
-    # Customer Orders List & Detail
     path("", CustomerOrderListView.as_view(), name="customer-order-list"),
     path("summary/", OrderSummaryView.as_view(), name="order-summary"),
     path("coupon/validate/", CouponValidateView.as_view(), name="coupon-validate"),

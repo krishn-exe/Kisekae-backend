@@ -111,9 +111,6 @@ class BaseOrderView(APIView):
         return store, membership, None
 
 
-# ==============================================================================
-# SELLER STORE ORDER MANAGEMENT VIEWS
-# ==============================================================================
 
 class OrderListView(BaseOrderView):
     pagination_class = StorePagination
@@ -456,9 +453,6 @@ class StoreOrderRefundRejectView(BaseOrderView):
         )
 
 
-# ==============================================================================
-# CONSUMER ORDER CHECKOUT, PAYMENT & SELF-SERVICE VIEWS
-# ==============================================================================
 
 class BuyNowView(APIView):
     """
@@ -896,7 +890,6 @@ class OrderSummaryView(APIView):
         items_summary = []
 
         if product_id:
-            # Direct "Buy Now" preview mode
             product = Product.objects.select_related("store").filter(pk=product_id).first()
             if not product:
                 return error_response("Product not found.", "PRODUCT_NOT_FOUND", status.HTTP_404_NOT_FOUND)
@@ -927,7 +920,6 @@ class OrderSummaryView(APIView):
                 "compare_at_total": total_item_compare,
             })
         else:
-            # Active Cart preview mode
             cart = CartService.get_or_create_cart(user=request.user)
             cart_items_qs = cart.items.select_related("product", "variant", "product__store").all()
             if store_id:
@@ -966,7 +958,6 @@ class OrderSummaryView(APIView):
         subtotal = sum(item["total_price"] for item in items_summary)
         discount = max(Decimal("0.00"), total_cost - subtotal)
 
-        # Coupon Code calculation
         coupon_code_input = data.get("coupon_code", "").strip()
         coupon_discount = Decimal("0.00")
         coupon_error = None
@@ -974,10 +965,8 @@ class OrderSummaryView(APIView):
 
         if coupon_code_input:
             from .coupon_service import CouponService
-            # Resolve store context if single store item or store_id passed
             target_store_id = store_id
             if not target_store_id and items_summary:
-                # Check if all items belong to same store
                 first_prod = Product.objects.filter(pk=items_summary[0]["product_id"]).first()
                 if first_prod:
                     target_store_id = first_prod.store_id

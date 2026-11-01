@@ -452,7 +452,6 @@ class TryOnGenerateView(APIView):
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
-            # Category constraint check
             if target_product.category in TRYON_UNSUPPORTED_CATEGORIES or target_product.category not in TRYON_SUPPORTED_CATEGORIES:
                 display_name = target_product.get_category_display() if hasattr(target_product, "get_category_display") else target_product.category
                 return error_response(
@@ -461,7 +460,6 @@ class TryOnGenerateView(APIView):
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # AR Availability check
             asset = getattr(target_product, "tryon_asset", None)
             if not asset or asset.status != ARStatus.AVAILABLE:
                 reason = asset.rejection_reason if asset else "Product images have not been processed for AR."
@@ -491,7 +489,6 @@ class TryOnGenerateView(APIView):
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Verify each item in combo
             for item in target_combo.items.all():
                 p = item.product
                 if p.category in TRYON_UNSUPPORTED_CATEGORIES or p.category not in TRYON_SUPPORTED_CATEGORIES:
@@ -508,7 +505,6 @@ class TryOnGenerateView(APIView):
                         status_code=status.HTTP_400_BAD_REQUEST,
                     )
 
-        # Create TryOnRequest record
         tryon_req = TryOnRequest.objects.create(
             user=request.user,
             product=target_product,
@@ -518,7 +514,6 @@ class TryOnGenerateView(APIView):
             status=TryOnRequestStatus.PENDING,
         )
 
-        # Queue async task
         generate_tryon_task.delay(str(tryon_req.id))
 
         return success_response(

@@ -95,9 +95,6 @@ class RatingSummarySerializer(serializers.Serializer):
     )
 
 
-# ==============================================================================
-# SPECTACULAR RESPONSE ENVELOPES
-# ==============================================================================
 
 REVIEW_ERROR_SCHEMA = inline_serializer(
     name="ReviewErrorEnvelope",

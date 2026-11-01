@@ -24,7 +24,6 @@ class PaymentStatus(models.TextChoices):
     REFUNDED = "REFUNDED", "Refunded"
 
 
-# Valid state transitions
 VALID_TRANSITIONS = {
     OrderStatus.PENDING: {OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.CANCELLED},
     OrderStatus.CONFIRMED: {OrderStatus.SHIPPED, OrderStatus.OUT_FOR_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELLED},

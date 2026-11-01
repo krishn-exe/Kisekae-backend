@@ -15,7 +15,6 @@ from .views import (
 )
 
 urlpatterns = [
-    # Authentication & Registration
     path("register/", RegisterView.as_view(), name="register"),
     path("login/password/", LoginPasswordView.as_view(), name="login-password"),
     path("oauth/google/", GoogleOAuthView.as_view(), name="google-oauth"),

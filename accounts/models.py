@@ -207,13 +207,11 @@ class Address(models.Model):
         return f"{self.title}: {self.address_line_1}, {self.postal_code} ({self.user.email})"
 
     def save(self, *args, **kwargs):
-        # If this is the user's first address, mark it as default automatically
         if not self.pk and not Address.objects.filter(user=self.user).exists():
             self.is_default = True
 
         super().save(*args, **kwargs)
 
-        # If marked as default, unset default for all other addresses of this user
         if self.is_default:
             Address.objects.filter(user=self.user, is_default=True).exclude(pk=self.pk).update(is_default=False)
 

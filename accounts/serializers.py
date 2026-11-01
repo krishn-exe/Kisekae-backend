@@ -320,7 +320,6 @@ class GoogleOAuthSerializer(OAuthLoginSerializer):
             elif getattr(settings, "GOOGLE_IOS_CLIENT_ID", None) and not getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", None):
                 attrs["client_id"] = settings.GOOGLE_IOS_CLIENT_ID
 
-        # Fill default callback URL if PKCE and omitted
         if code_verifier and not callback_url:
             effective_client_id = attrs.get("client_id")
             if effective_client_id and effective_client_id == getattr(settings, "GOOGLE_ANDROID_CLIENT_ID", None):
@@ -544,6 +543,7 @@ class WishlistItemSerializer(serializers.ModelSerializer):
 class AddWishlistSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(
         required=True,
+        min_value=1,
         help_text="ID of the product to add to wishlist.",
     )
     note = serializers.CharField(
@@ -555,6 +555,8 @@ class AddWishlistSerializer(serializers.Serializer):
     )
 
     def validate_product_id(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Product ID must be a positive integer greater than 0.")
         product = Product.objects.select_related("store").filter(pk=value).first()
         if not product:
             raise serializers.ValidationError("Product not found.")
@@ -577,8 +579,36 @@ class UpdateWishlistNoteSerializer(serializers.Serializer):
 
 class BulkMoveWishlistToCartSerializer(serializers.Serializer):
     product_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
+        child=serializers.IntegerField(),
         required=False,
         default=list,
         help_text="Optional list of product IDs to move to cart. If empty or omitted, all items currently in the user's wishlist will be moved.",
     )
+    product_id = serializers.IntegerField(
+        required=False,
+        help_text="Optional single product ID to move to cart.",
+    )
+    item_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        default=list,
+        help_text="Optional list of wishlist item IDs to move to cart.",
+    )
+    wishlist_item_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        default=list,
+        help_text="Alias for item_ids.",
+    )
+
+    def validate(self, attrs):
+        raw_pids = list(attrs.get("product_ids") or [])
+        single_pid = attrs.get("product_id")
+        if single_pid is not None and single_pid > 0:
+            raw_pids.append(single_pid)
+        item_ids = list(attrs.get("item_ids") or [])
+        wl_ids = list(attrs.get("wishlist_item_ids") or [])
+        all_ids = raw_pids + item_ids + wl_ids
+        clean_ids = [int(x) for x in all_ids if isinstance(x, (int, str)) and str(x).isdigit() and int(x) > 0]
+        attrs["product_ids"] = list(dict.fromkeys(clean_ids))
+        return attrs

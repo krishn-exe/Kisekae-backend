@@ -88,7 +88,6 @@ class RazorpayService:
         _, key_secret, _ = cls.get_credentials()
 
         if cls.is_mock_mode():
-            # In testing or mock mode, accept mock_signature or any non-empty test signature
             if razorpay_signature in {"mock_signature", "test_signature"} or razorpay_signature.startswith("mock_"):
                 return True
 

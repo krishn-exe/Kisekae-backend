@@ -43,9 +43,6 @@ class ReportDownloadQuerySerializer(AnalyticsDateFilterSerializer):
     )
 
 
-# ==========================================
-# Response Serializers for OpenAPI / Swagger
-# ==========================================
 
 class DashboardMetricsDataSerializer(serializers.Serializer):
     total_revenue = serializers.FloatField(

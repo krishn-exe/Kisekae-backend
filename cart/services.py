@@ -75,7 +75,6 @@ class CartService:
 
         clean_size = str(size or "").strip().upper()
 
-        # Resolve variant
         variant = None
         if variant_id:
             variant = product.variants.filter(pk=variant_id).first()
@@ -84,10 +83,15 @@ class CartService:
             if not variant.is_active:
                 raise ValidationError("Selected color variant is inactive.")
         else:
-            # Default to first active variant if available
-            variant = product.variants.filter(is_active=True).first()
+            active_variants = list(product.variants.filter(is_active=True))
+            if active_variants:
+                if clean_size:
+                    variant = next((v for v in active_variants if any(s.size == clean_size and s.stock > 0 for s in v.sizes.all())), None)
+                if not variant:
+                    variant = next((v for v in active_variants if any(s.stock > 0 for s in v.sizes.all())), None)
+                if not variant:
+                    variant = active_variants[0]
 
-        # Handle size selection and stock
         available_stock = product.stock
         if variant and variant.sizes.exists():
             if not clean_size:
@@ -303,13 +307,11 @@ class CartService:
         if not items:
             raise ValidationError("Cannot checkout an empty cart.")
 
-        # Validate cart stock and store active status
         report = CartService.validate_cart(cart)
         if not report["is_valid"]:
             issue_msgs = [f"{iss['product_name']}: {iss['issue']}" for iss in report["issues"]]
             raise ValidationError(f"Cart cannot be checked out due to inventory issues: {'; '.join(issue_msgs)}")
 
-        # Group items by store
         items_by_store = {}
         for item in items:
             store = item.product.store
@@ -340,7 +342,6 @@ class CartService:
             )
             created_orders.append(order)
 
-        # Clear items from cart upon successful reservation
         cart.items.all().delete()
         cart.save(update_fields=["updated_at"])
 

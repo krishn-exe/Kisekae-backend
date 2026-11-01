@@ -47,7 +47,6 @@ class Command(BaseCommand):
             service = EmbeddingService.get_instance()
             processed = 0
 
-            # Process in true batch chunks for high GPU/CPU vectorization performance
             batch_products = []
             for product in queryset.iterator(chunk_size=batch_size):
                 batch_products.append(product)

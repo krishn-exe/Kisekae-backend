@@ -12,7 +12,6 @@ class Command(BaseCommand):
         count_created = 0
         count_updated = 0
 
-        # 1. Seed from past search queries
         search_records = SearchHistory.objects.all().values("query", "search_count")
         for rec in search_records:
             q = rec["query"].strip().lower()
@@ -30,7 +29,6 @@ class Command(BaseCommand):
                     obj.save(update_fields=["score", "updated_at"])
                     count_updated += 1
 
-        # 2. Seed from active product titles
         active_products = Product.objects.filter(status=ProductStatus.ACTIVE).values("name", "category")
         for prod in active_products:
             name = prod["name"].strip().lower()

@@ -28,9 +28,9 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-COLD_START_CACHE_TTL = 60 * 15  # 15 minutes
-MAX_HISTORY_SIGNALS = 150       # Cap recent interactions to keep taste profile fresh
-COLD_START_THRESHOLD = 3        # Min weighted interactions before personal vector activates
+COLD_START_CACHE_TTL = 60 * 15
+MAX_HISTORY_SIGNALS = 150
+COLD_START_THRESHOLD = 3
 PROFILE_REFRESH_STALENESS = timedelta(hours=6)
 
 
@@ -77,7 +77,6 @@ class RecommendationService:
         weighted_vectors: List[Tuple[List[float], float]] = []
         interaction_count = 0
 
-        # 1. Purchases (weight 5.0) - completed or active orders
         try:
             purchases = (
                 OrderItem.objects.filter(
@@ -101,7 +100,6 @@ class RecommendationService:
         except Exception as e:
             logger.warning(f"Error fetching purchases for user {user.id}: {e}")
 
-        # 2. Virtual Try-On Requests (weight 3.5) - direct engagement signal
         try:
             from tryon.models import TryOnRequest
             tryon_requests = (
@@ -125,7 +123,6 @@ class RecommendationService:
         except Exception as e:
             logger.warning(f"Error fetching try-on requests for user {user.id}: {e}")
 
-        # 3. Cart Items (weight 3.0)
         try:
             cart_items = (
                 CartItem.objects.filter(cart__user=user, product__isnull=False)
@@ -145,7 +142,6 @@ class RecommendationService:
         except Exception as e:
             logger.warning(f"Error fetching cart items for user {user.id}: {e}")
 
-        # 4. Combo Items (weight 2.5) - outfit curation
         try:
             from tryon.models import ComboItem
             combo_items = (
@@ -166,7 +162,6 @@ class RecommendationService:
         except Exception as e:
             logger.warning(f"Error fetching combo items for user {user.id}: {e}")
 
-        # 5. Wishlist Items (weight 2.0)
         try:
             wishlist_items = (
                 WishlistItem.objects.filter(user=user, product__isnull=False)
@@ -186,7 +181,6 @@ class RecommendationService:
         except Exception as e:
             logger.warning(f"Error fetching wishlist items for user {user.id}: {e}")
 
-        # 6. Search History (weight 1.5)
         try:
             searches = (
                 SearchHistory.objects.filter(user=user)
@@ -200,14 +194,12 @@ class RecommendationService:
                         s.embedding = vec
                         s.save(update_fields=["embedding"])
                 if vec:
-                    # Scale slightly by repeat searches, capped at 2.5
                     effective_weight = min(cls.WEIGHT_SEARCH + (s.search_count - 1) * 0.2, 2.5)
                     weighted_vectors.append((vec, effective_weight))
                     interaction_count += 1
         except Exception as e:
             logger.warning(f"Error fetching search history for user {user.id}: {e}")
 
-        # 7. Product Views (weight 1.0)
         try:
             views = (
                 ProductView.objects.filter(user=user, product__isnull=False)
@@ -231,7 +223,6 @@ class RecommendationService:
         if not weighted_vectors:
             return None, 0
 
-        # Compute weighted sum
         dim = len(weighted_vectors[0][0])
         sum_vec = [0.0] * dim
         total_weight = 0.0
@@ -354,7 +345,6 @@ class RecommendationService:
 
         normalized_cat = normalize_category_param(category) if category else None
 
-        # Retrieve or compute profile; recompute if cold-start threshold not met or profile is stale
         profile = getattr(user, "taste_profile", None)
         should_recompute = (
             profile is None
@@ -372,7 +362,6 @@ class RecommendationService:
             queryset=ProductVariant.objects.filter(is_active=True).prefetch_related("images", "sizes"),
         )
 
-        # Base active product queryset
         qs = (
             Product.objects.filter(
                 status=ProductStatus.ACTIVE,
@@ -388,7 +377,6 @@ class RecommendationService:
         if normalized_cat:
             qs = qs.filter(category=normalized_cat)
 
-        # Exclude completed/valid purchased products
         purchased_ids = (
             OrderItem.objects.filter(
                 order__user=user,
@@ -401,7 +389,6 @@ class RecommendationService:
         if purchased_ids:
             qs = qs.exclude(id__in=purchased_ids)
 
-        # Exclude cart items if requested
         if exclude_cart:
             cart_ids = CartItem.objects.filter(
                 cart__user=user,
@@ -410,7 +397,6 @@ class RecommendationService:
             if cart_ids:
                 qs = qs.exclude(id__in=cart_ids)
 
-        # pgvector kNN query using CosineDistance if on PostgreSQL; Python cosine sort on SQLite (tests)
         supports_pgvector = (connection.vendor == "postgresql")
         if supports_pgvector:
             qs = qs.annotate(
@@ -549,7 +535,6 @@ class RecommendationService:
             queryset=ProductVariant.objects.filter(is_active=True).prefetch_related("images", "sizes"),
         )
 
-        # Retrieve co-occurring product IDs from existing Combos and Orders to add social proof boost
         co_combo_ids = set()
         try:
             co_combo_ids = set(
@@ -592,11 +577,9 @@ class RecommendationService:
                 if not emb:
                     continue
                 c_vec = list(emb)
-                # Cosine dot product (since embeddings are L2 normalized, dot product = cosine similarity)
                 dot = sum(a * b for a, b in zip(t_vec, c_vec))
                 sim = max(0.0, min(1.0, dot))
 
-                # Demographic / Gender alignment boost
                 demographic_boost = 0.0
                 if product.product_type and cand.product_type:
                     if product.product_type == cand.product_type:
@@ -606,7 +589,6 @@ class RecommendationService:
                     elif {product.product_type, cand.product_type} == {ProductType.MEN, ProductType.WOMEN}:
                         demographic_boost = -0.25
 
-                # Co-occurrence boost (social proof / outfit pairing history)
                 co_boost = 0.0
                 if cand.id in co_combo_ids:
                     co_boost += 0.15
@@ -669,11 +651,8 @@ class RecommendationService:
         combos: List[dict] = []
 
         if target_cat == ProductCategory.ONE_PIECE:
-            # Special Case: ONE_PIECE cannot combine with TOP or BOTTOM!
-            # Only OUTERWEAR can be paired.
             outers = get_candidates(ProductCategory.OUTERWEAR, limit=6)
 
-            # Combo 1 (Regular): Clean / Minimalist pairing (or solo if no outerwear exists)
             if outers:
                 o1, s1 = outers[0]
                 c1 = build_combo("combo-1", "Clean Minimalist Look", "REGULAR", False, [product, o1], s1)
@@ -684,7 +663,6 @@ class RecommendationService:
                 if c1:
                     combos.append(c1)
 
-            # Combo 2 (Layered): Statement Outerwear styling
             if len(outers) > 1:
                 o2, s2 = outers[1]
                 c2 = build_combo("combo-2", "Layered Statement Look", "LAYERED", True, [product, o2], s2)
@@ -696,7 +674,6 @@ class RecommendationService:
                 if c2:
                     combos.append(c2)
 
-            # Combo 3 (Dynamic): Alternative styling if candidates available
             if len(outers) > 2:
                 o3, s3 = outers[2]
                 c3 = build_combo("combo-3", "Editorial Contrast Look", "LAYERED" if s3 >= 0.75 else "REGULAR", s3 >= 0.75, [product, o3], s3)
@@ -709,12 +686,10 @@ class RecommendationService:
                     combos.append(c3)
 
         elif target_cat == ProductCategory.OUTERWEAR:
-            # Target is OUTERWEAR: Can layer over separates (TOP + BOTTOM) or over ONE_PIECE
             tops = get_candidates(ProductCategory.TOP, limit=6)
             bottoms = get_candidates(ProductCategory.BOTTOM, limit=6)
             one_pieces = get_candidates(ProductCategory.ONE_PIECE, limit=6)
 
-            # Combo 1 (Regular): Classic Separates Duo under outerwear
             if tops and bottoms:
                 t1, st1 = tops[0]
                 b1, sb1 = bottoms[0]
@@ -723,7 +698,6 @@ class RecommendationService:
                 if c1:
                     combos.append(c1)
 
-            # Combo 2 (Layered): Layered over a One-Piece dress/jumpsuit (or alternate separates if no one-pieces)
             if one_pieces:
                 op1, sop1 = one_pieces[0]
                 c2 = build_combo("combo-2", "One-Piece Silhouette Look", "LAYERED", True, [product, op1], sop1)
@@ -737,7 +711,6 @@ class RecommendationService:
                 if c2:
                     combos.append(c2)
 
-            # Combo 3 (Dynamic): Compare Candidate Separates vs Candidate One-Piece
             cand_sep = None
             if len(tops) > 1 and len(bottoms) > 1:
                 t_alt, st_alt = tops[1]
@@ -765,19 +738,16 @@ class RecommendationService:
                     combos.append(c3)
 
         else:
-            # Target is TOP, BOTTOM, or other category (FOOTWEAR, etc.)
             partner_cat = ProductCategory.BOTTOM if target_cat == ProductCategory.TOP else ProductCategory.TOP
             partners = get_candidates(partner_cat, limit=6)
             outers = get_candidates(ProductCategory.OUTERWEAR, limit=6)
 
-            # Combo 1 (Regular): At least one base outfit without outerwear (2 items)
             if partners:
                 p1, sp1 = partners[0]
                 c1 = build_combo("combo-1", "Clean Everyday Look", "REGULAR", False, [product, p1], sp1)
                 if c1:
                     combos.append(c1)
 
-            # Combo 2 (Layered): At least one layered look with outerwear (3 items)
             if partners and outers:
                 p_cand = partners[0][0]
                 o1, so1 = outers[0]
@@ -786,13 +756,11 @@ class RecommendationService:
                 if c2:
                     combos.append(c2)
             elif len(partners) > 1:
-                # Fallback if no outerwear in catalog
                 p2, sp2 = partners[1]
                 c2 = build_combo("combo-2", "Alternative Everyday Look", "REGULAR", False, [product, p2], sp2)
                 if c2:
                     combos.append(c2)
 
-            # Combo 3 (Dynamic Choice): Evaluate candidate alternative Regular vs candidate alternative Layered
             cand_regular = None
             if len(partners) > 1:
                 p_alt, sp_alt = partners[1]
@@ -805,9 +773,7 @@ class RecommendationService:
                 score_lay2 = (calc_similarity(product, p_for_lay) + calc_similarity(product, o2) + calc_similarity(p_for_lay, o2)) / 3.0
                 cand_layered = ("LAYERED", True, [product, p_for_lay, o2], score_lay2, "Urban Layered Look")
 
-            # Dynamic selection based on style affinity score
             if cand_regular and cand_layered:
-                # Whichever one has a higher score is picked dynamically!
                 winner = cand_layered if cand_layered[3] >= cand_regular[3] else cand_regular
                 c3 = build_combo("combo-3", winner[4], winner[0], winner[1], winner[2], winner[3])
                 if c3:

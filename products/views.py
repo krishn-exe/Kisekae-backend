@@ -130,7 +130,7 @@ SEASONAL_SALE_PRODUCTS_PAGINATED_RESPONSE_SCHEMA = api_response(
     "SeasonalSaleProductsPaginatedResponse",
 )
 
-MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
 
 
 class ProductPagination(StorePagination):
@@ -241,9 +241,6 @@ def apply_product_filters(queryset, request):
     return queryset
 
 
-# ============================================================================
-# CATEGORY BROWSING
-# ============================================================================
 
 class CategoryListView(APIView):
     """
@@ -287,9 +284,6 @@ class CategoryListView(APIView):
             data=categories_data)
 
 
-# ============================================================================
-# SELLER PRODUCT CATALOG VIEWS
-# ============================================================================
 
 class ProductListCreateView(ProductMethodThrottleMixin, APIView):
     throttle_scope = "store_read"
@@ -403,28 +397,24 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             )
         )
 
-        # Status filter
         status_filter = request.query_params.get("status")
         if status_filter:
             st_clean = status_filter.strip().upper()
             if st_clean in [s.value for s in ProductStatus]:
                 queryset = queryset.filter(status=st_clean)
 
-        # Category filter
         category_param = request.query_params.get("category")
         if category_param:
             cat_code = normalize_category_param(category_param)
             if cat_code:
                 queryset = queryset.filter(category=cat_code)
 
-        # Product Type filter
         product_type = request.query_params.get("product_type") or request.query_params.get("type")
         if product_type:
             pt_clean = product_type.strip().upper()
             if pt_clean in [c.value for c in ProductType]:
                 queryset = queryset.filter(product_type=pt_clean)
 
-        # Search query (name, sku, description, variant sku)
         search = request.query_params.get("search") or request.query_params.get("q")
         if search:
             s_clean = search.strip()
@@ -435,7 +425,6 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 | Q(variants__sku__icontains=s_clean)
             )
 
-        # Color filter
         color = request.query_params.get("color")
         if color:
             c_clean = color.strip()
@@ -443,7 +432,6 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 Q(color__icontains=c_clean) | Q(variants__color_name__icontains=c_clean)
             )
 
-        # Size filter (checks available stock > 0 in size)
         size = request.query_params.get("size")
         if size:
             s_clean = size.strip().upper()
@@ -452,7 +440,6 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
                 | Q(variants__sizes__size__iexact=s_clean, variants__sizes__stock__gt=0)
             )
 
-        # Price range filters
         min_price = request.query_params.get("min_price")
         if min_price:
             try:
@@ -467,7 +454,6 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             except Exception:
                 pass
 
-        # In-stock filter
         in_stock = request.query_params.get("in_stock")
         if in_stock is not None:
             val = str(in_stock).strip().lower()
@@ -476,7 +462,6 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             elif val in ("false", "0", "no"):
                 queryset = queryset.filter(stock=0)
 
-        # Specific stock count range
         min_stock = request.query_params.get("min_stock")
         if min_stock is not None:
             try:
@@ -491,18 +476,15 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             except (ValueError, TypeError):
                 pass
 
-        # Low stock filter (total stock < 250 or variant size < 20)
         low_stock = request.query_params.get("low_stock")
         if low_stock is not None and str(low_stock).strip().lower() in ("true", "1", "yes"):
             queryset = queryset.filter(Q(stock__lt=250) | Q(sizes__stock__lt=20)).distinct()
 
-        # Refundable filter
         is_refundable = request.query_params.get("is_refundable")
         if is_refundable is not None:
             val = str(is_refundable).strip().lower() in ("true", "1", "yes")
             queryset = queryset.filter(is_refundable=val)
 
-        # Sorting / Ordering (including stock sorting)
         ordering = request.query_params.get("ordering") or request.query_params.get("sort") or "-created_at"
         ordering = ordering.strip().lower()
         valid_orderings = {
@@ -827,9 +809,6 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             data=None)
 
 
-# ============================================================================
-# MULTIPLE IMAGES MANAGEMENT (UP TO 10 IMAGES)
-# ============================================================================
 
 class ProductVariantImageView(ProductMethodThrottleMixin, APIView):
     throttle_scope = "store_write"
@@ -947,7 +926,6 @@ class ProductListingStatusView(APIView):
         if not store:
             return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        # Single aggregation query to prevent 6 separate round-trips
         counts = Product.objects.for_store(store).aggregate(
             total=Count("id"),
             active=Count("id", filter=Q(status=ProductStatus.ACTIVE)),
@@ -1016,9 +994,6 @@ class ProductBulkUpdateView(APIView):
             data={"updated_count": len(updated_ids), "updated_ids": updated_ids, "errors": errors})
 
 
-# ============================================================================
-# PUBLIC PRODUCT BROWSING & ADVANCED SEARCH
-# ============================================================================
 
 class PublicProductListView(APIView):
     """
@@ -1053,7 +1028,6 @@ class PublicProductListView(APIView):
     def get(self, request):
         queryset = get_optimized_product_queryset()
 
-        # Search query if present (phrase + multi-token matching)
         search_query = request.query_params.get("search") or request.query_params.get("q")
         if search_query:
             q_str = search_query.strip()
@@ -1081,10 +1055,8 @@ class PublicProductListView(APIView):
             if request.user and request.user.is_authenticated:
                 record_search_query_task.delay(request.user.id, q_str)
 
-        # Apply category, size, color, price range, in-stock, letter filters
         queryset = apply_product_filters(queryset, request)
 
-        # Ordering
         ordering = request.query_params.get("ordering", "name").strip().lower()
         valid_orderings = {
             "name": "name",
@@ -1200,7 +1172,6 @@ class ProductSearchView(APIView):
 
             tokens = [w for w in re.split(r"[\s,\-\+]+", query) if len(w) >= 2]
 
-            # 1. Contiguous exact phrase matching across name, description, color, store
             phrase_filter = (
                 Q(name__icontains=query)
                 | Q(description__icontains=query)
@@ -1209,7 +1180,6 @@ class ProductSearchView(APIView):
                 | Q(store__name__icontains=query)
             )
 
-            # 2. Tokenized multi-word matching (e.g. "black oversize hoodie" matches "Oversized Streetwear Black Hoodie")
             token_filter = Q()
             if tokens and len(tokens) > 1:
                 all_tokens_q = Q()
@@ -1245,9 +1215,7 @@ class ProductSearchView(APIView):
                 except Exception:
                     queryset = queryset.filter(lexical_filter)
             elif not supports_pgvector and query_vector:
-                # SQLite development/testing fallback: evaluate lexical filter, plus semantic match
                 candidate_ids = set(queryset.filter(lexical_filter).values_list("id", flat=True))
-                # Add products with embedding distance <= threshold in Python
                 for prod in queryset.filter(embedding_record__isnull=False):
                     if hasattr(prod, "embedding_record") and prod.embedding_record and prod.embedding_record.embedding:
                         p_emb = list(prod.embedding_record.embedding)
@@ -1260,7 +1228,6 @@ class ProductSearchView(APIView):
             else:
                 queryset = queryset.filter(lexical_filter)
 
-        # Apply category, size, color, price range, in_stock, and letter filters
         queryset = apply_product_filters(queryset, request)
 
         default_ordering = "relevance" if (query and has_vector_search) else "name"
@@ -1416,7 +1383,6 @@ class ProductAutocompleteView(APIView):
                 data=cached_result,
             )
 
-        # 1. Query Suggestions from SearchSuggestion table
         prefix_qs = list(
             SearchSuggestion.objects.filter(query__istartswith=clean_q)
             .order_by("-score", "query")
@@ -1434,7 +1400,6 @@ class ProductAutocompleteView(APIView):
             )
             query_suggestions.extend(contains_qs)
 
-        # Supplement from active product titles if dictionary is sparse
         if len(query_suggestions) < limit:
             remaining = limit - len(query_suggestions)
             prod_names = (
@@ -1445,7 +1410,6 @@ class ProductAutocompleteView(APIView):
             )
             query_suggestions.extend(prod_names)
 
-        # 2. Instant Top Products (up to 3 products)
         instant_products_qs = (
             get_optimized_product_queryset()
             .filter(Q(name__icontains=clean_q) | Q(description__icontains=clean_q))
@@ -1624,9 +1588,6 @@ class PublicProductRecommendedCombosView(APIView):
 
 
 
-# ============================================================================
-# SEARCH HISTORY & RECOMMENDATIONS VIEWS
-# ============================================================================
 
 class SearchHistoryListView(APIView):
     """
@@ -1872,7 +1833,6 @@ class PublicSeasonalSaleProductsView(APIView):
             )
         )
 
-        # 1. Search Query Filter
         search_query = (request.query_params.get("q") or request.query_params.get("search") or "").strip()
         if search_query:
             queryset = queryset.filter(
@@ -1882,14 +1842,12 @@ class PublicSeasonalSaleProductsView(APIView):
                 | Q(store__name__icontains=search_query)
             )
 
-        # 2. Category Filter
         category_param = request.query_params.get("category")
         if category_param:
             cat_code = normalize_category_param(category_param)
             if cat_code:
                 queryset = queryset.filter(product__category=cat_code)
 
-        # 3. Size Filter
         size_param = request.query_params.get("size")
         if size_param:
             clean_size = str(size_param).strip().upper()
@@ -1898,7 +1856,6 @@ class PublicSeasonalSaleProductsView(APIView):
                 | Q(product__sizes__size=clean_size, product__sizes__stock__gt=0)
             )
 
-        # 4. Color Filter
         color_param = request.query_params.get("color")
         if color_param:
             c_str = color_param.strip()
@@ -1907,7 +1864,6 @@ class PublicSeasonalSaleProductsView(APIView):
                 | Q(product__variants__color_name__icontains=c_str)
             )
 
-        # 5. Price Range Filter (on discounted_price)
         min_price = request.query_params.get("min_price")
         if min_price:
             try:
@@ -1922,12 +1878,10 @@ class PublicSeasonalSaleProductsView(APIView):
             except Exception:
                 pass
 
-        # 6. In-Stock Filter
         in_stock_param = request.query_params.get("in_stock", "").strip().lower()
         if in_stock_param in ("true", "1", "yes"):
             queryset = queryset.filter(product__stock__gt=0)
 
-        # 7. Ordering
         ordering = request.query_params.get("ordering", "newest").strip().lower()
         order_map = {
             "price": "discounted_price",

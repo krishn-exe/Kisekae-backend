@@ -6,6 +6,7 @@ from .models import (
     ProductImage,
     ProductSize,
     ProductVariant,
+    ProductVariant3DModel,
     ProductView,
     SearchHistory,
     SearchSuggestion,
@@ -33,6 +34,13 @@ class ProductImageInline(admin.TabularInline):
     fields = ("variant", "image", "order")
 
 
+class ProductVariant3DModelInline(admin.StackedInline):
+    model = ProductVariant3DModel
+    extra = 0
+    fields = ("model_file", "file_format", "file_size_bytes")
+    readonly_fields = ("file_size_bytes",)
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ("name", "store", "product_type", "category", "price", "stock", "status", "created_at")
@@ -51,7 +59,15 @@ class ProductVariantAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "created_at")
     search_fields = ("color_name", "sku", "product__name")
     autocomplete_fields = ["product"]
-    inlines = [ProductSizeInline, ProductImageInline]
+    inlines = [ProductSizeInline, ProductImageInline, ProductVariant3DModelInline]
+
+
+@admin.register(ProductVariant3DModel)
+class ProductVariant3DModelAdmin(admin.ModelAdmin):
+    list_display = ("variant", "product", "file_format", "file_size_bytes", "created_at")
+    list_filter = ("file_format", "created_at")
+    search_fields = ("variant__color_name", "product__name")
+    readonly_fields = ("file_size_bytes", "created_at", "updated_at")
 
 
 @admin.register(ProductEmbedding)

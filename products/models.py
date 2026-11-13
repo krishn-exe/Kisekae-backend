@@ -27,6 +27,16 @@ def product_gallery_image_upload_path(instance, filename):
     return f"products/{store_id}/gallery/{uuid.uuid4().hex}.{ext}"
 
 
+def product_3d_model_upload_path(instance, filename):
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "glb"
+    store_id = (
+        instance.product.store_id
+        if instance.product_id
+        else (instance.variant.product.store_id if instance.variant_id else "common")
+    )
+    return f"products/{store_id}/3d-models/{uuid.uuid4().hex}.{ext}"
+
+
 class ProductStatus(models.TextChoices):
     DRAFT = "DRAFT", "Draft"
     ACTIVE = "ACTIVE", "Active"
@@ -542,6 +552,54 @@ class ProductImage(models.Model):
 
 
 ProductVariantImage = ProductImage
+
+
+class ProductVariant3DModel(models.Model):
+    """
+    Optional 3D model file for a product variant (one per variant).
+    Supports GLB binary format for AR/3D viewer experiences.
+    Max file size: 30 MB.
+    """
+    variant = models.OneToOneField(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name="model_3d",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="models_3d",
+    )
+    model_file = models.FileField(
+        upload_to=product_3d_model_upload_path,
+        help_text="3D model file (.glb format, max 30 MB).",
+    )
+    file_format = models.CharField(
+        max_length=10,
+        default="glb",
+        help_text="3D file format (glb).",
+    )
+    file_size_bytes = models.PositiveIntegerField(
+        default=0,
+        help_text="File size in bytes for client preload decisions.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Product Variant 3D Model"
+        verbose_name_plural = "Product Variant 3D Models"
+
+    def __str__(self):
+        return f"3D Model ({self.file_format}) for {self.variant}"
+
+    @property
+    def model_url(self):
+        if self.model_file and hasattr(self.model_file, "url"):
+            return self.model_file.url
+        return None
+
 
 
 class CompatibleHnswIndex(HnswIndex):

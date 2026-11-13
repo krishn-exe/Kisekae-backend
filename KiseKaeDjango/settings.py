@@ -464,6 +464,8 @@ SPECTACULAR_SETTINGS = {
 
         {'name': 'Store - Products', 'description': 'Seller product catalog management, sizes, pricing, and multi-image galleries.'},
 
+        {'name': 'Products 3D Model', 'description': 'Upload, retrieve, and delete optional 3D model (.glb) files for product color variants. Enables AR/3D viewer experiences for clothing products.'},
+
         {'name': 'Store - Inventory', 'description': 'Store stock adjustments, inventory history, and low-stock alert thresholds.'},
 
         {'name': 'Store - Orders', 'description': 'Seller order processing, state lifecycle transitions, bulk status updates, and delivery fulfillment.'},
@@ -570,7 +572,8 @@ AWS_S3_ADDRESSING_STYLE = os.getenv("AWS_S3_ADDRESSING_STYLE", "virtual")
 
 AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
 
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
 
 MEDIA_ROOT = BASE_DIR / "media"
 

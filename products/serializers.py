@@ -18,6 +18,7 @@ from .models import (
     ProductStatus,
     ProductType,
     ProductVariant,
+    ProductVariant3DModel,
     SearchHistory,
 )
 
@@ -36,9 +37,31 @@ class ProductVariantImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image_url", "order", "created_at"]
 
 
+class ProductVariant3DModelSerializer(serializers.ModelSerializer):
+    model_url = serializers.CharField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = ProductVariant3DModel
+        fields = [
+            "id",
+            "model_url",
+            "file_format",
+            "file_size_bytes",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class ProductVariant3DModelUploadSerializer(serializers.Serializer):
+    model_file = serializers.FileField(
+        help_text="3D model file (.glb binary format, max 30 MB)."
+    )
+
+
 class ProductVariantSerializer(serializers.ModelSerializer):
     sizes = ProductVariantSizeSerializer(many=True, read_only=True)
     images = ProductVariantImageSerializer(many=True, read_only=True)
+    model_3d = ProductVariant3DModelSerializer(read_only=True, allow_null=True)
     total_stock = serializers.IntegerField(read_only=True)
     thumbnail = serializers.CharField(read_only=True, allow_null=True)
 
@@ -54,6 +77,7 @@ class ProductVariantSerializer(serializers.ModelSerializer):
             "thumbnail",
             "sizes",
             "images",
+            "model_3d",
             "created_at",
             "updated_at",
         ]

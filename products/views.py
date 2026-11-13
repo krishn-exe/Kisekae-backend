@@ -1,6 +1,7 @@
 import re
 from decimal import Decimal
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.db.models import Case, Count, FloatField, IntegerField, Prefetch, Q, Value, When
 from django.utils import timezone
@@ -21,7 +22,7 @@ from accounts.responses import error_response, success_response
 from stores.models import StoreStatus
 from stores.pagination import StorePagination
 from stores.permissions import IsBusinessVerified, IsSeller, get_store_membership
-from stores.validators import validate_store_image
+from stores.validators import validate_3d_model_file, validate_store_image, MAX_3D_MODEL_SIZE
 
 from .models import (
     Product,
@@ -31,6 +32,7 @@ from .models import (
     ProductType,
     SearchHistory,
     ProductVariant,
+    ProductVariant3DModel,
     SearchSuggestion,
     SeasonalSale,
     SeasonalSaleProduct,
@@ -45,6 +47,8 @@ from .serializers import (
     ProductSerializer,
     ProductUpdateSerializer,
     ProductVariantImageSerializer,
+    ProductVariant3DModelSerializer,
+    ProductVariant3DModelUploadSerializer,
     PublicSeasonalSaleDetailSerializer,
     PublicSeasonalSaleSerializer,
     SeasonalSaleProductCardSerializer,
@@ -66,6 +70,7 @@ STORE_PRODUCT_DETAIL_RESPONSE_SCHEMA = api_response(ProductSerializer, "StorePro
 STORE_PRODUCT_LIST_RESPONSE_SCHEMA = api_response(ProductSerializer, "StoreProductListResponse", many=True)
 CATEGORY_LIST_RESPONSE_SCHEMA = api_response(CategoryItemSerializer, "CategoryListResponse", many=True, message="Categories fetched successfully.")
 VARIANT_IMAGE_LIST_RESPONSE_SCHEMA = api_response(ProductVariantImageSerializer, "VariantImageListResponse", many=True)
+VARIANT_3D_MODEL_RESPONSE_SCHEMA = api_response(ProductVariant3DModelSerializer, "Variant3DModelResponse")
 PRODUCT_LISTING_STATUS_RESPONSE_SCHEMA = api_response(ProductListingStatusSerializer, "ProductListingStatusResponse")
 PRODUCT_LIST_PAGINATED_RESPONSE_SCHEMA = api_response(
     inline_serializer(
@@ -169,7 +174,9 @@ def get_optimized_product_queryset():
             "sizes",
             Prefetch(
                 "variants",
-                queryset=ProductVariant.objects.filter(is_active=True).prefetch_related("images", "sizes"),
+                queryset=ProductVariant.objects.filter(is_active=True)
+                .prefetch_related("images", "sizes")
+                .select_related("model_3d"),
             ),
         )
     )
@@ -392,6 +399,7 @@ class ProductListCreateView(ProductMethodThrottleMixin, APIView):
             .prefetch_related(
                 "variants__sizes",
                 Prefetch("variants__images", queryset=ProductImage.objects.order_by("order", "id")),
+                "variants__model_3d",
                 "sizes",
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
             )
@@ -692,6 +700,7 @@ class ProductDetailView(ProductMethodThrottleMixin, APIView):
             .prefetch_related(
                 "variants__sizes",
                 Prefetch("variants__images", queryset=ProductImage.objects.order_by("order", "id")),
+                "variants__model_3d",
                 "sizes",
                 Prefetch("images", queryset=ProductImage.objects.order_by("order", "id")),
             )
@@ -909,6 +918,141 @@ class ProductVariantImageDetailView(ProductMethodThrottleMixin, APIView):
         return success_response(
             message="Variant image removed successfully.",
             data=ProductSerializer(product).data,
+        )
+
+
+class ProductVariant3DModelView(ProductMethodThrottleMixin, APIView):
+    """
+    CRUD endpoints for optional 3D model (.glb) files attached to a product color variant.
+    """
+    throttle_scope = "store_write"
+    permission_classes = [IsAuthenticated, IsSeller]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        tags=["Products 3D Model"],
+        summary="Get variant 3D model",
+        description="Returns the 3D model metadata and download URL for a specific color variant, or null if none uploaded.",
+        responses={
+            200: VARIANT_3D_MODEL_RESPONSE_SCHEMA,
+            404: PRODUCT_ERROR_SCHEMA,
+        },
+    )
+    def get(self, request, pk, product_pk, variant_pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        product = Product.objects.filter(store=store, pk=product_pk).first()
+        if not product:
+            return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        model_3d = getattr(variant, "model_3d", None)
+        if not model_3d:
+            return success_response(
+                message="No 3D model uploaded for this variant.",
+                data=None,
+            )
+
+        return success_response(
+            message="Variant 3D model fetched successfully.",
+            data=ProductVariant3DModelSerializer(model_3d).data,
+        )
+
+    @extend_schema(
+        tags=["Products 3D Model"],
+        summary="Upload or replace variant 3D model (.glb)",
+        description=(
+            "Uploads or replaces the 3D model file for a specific color variant. "
+            "Accepted format: binary glTF (.glb) only. Maximum file size: 30 MB. "
+            "Each color variant can have at most one 3D model."
+        ),
+        request=ProductVariant3DModelUploadSerializer,
+        responses={
+            201: VARIANT_3D_MODEL_RESPONSE_SCHEMA,
+            400: PRODUCT_ERROR_SCHEMA,
+            403: PRODUCT_ERROR_SCHEMA,
+            404: PRODUCT_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request, pk, product_pk, variant_pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        if store.is_archived:
+            return error_response("Cannot modify products in an archived store.", "STORE_ARCHIVED", status_code=status.HTTP_400_BAD_REQUEST)
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response("Cannot modify products in a suspended store.", "STORE_SUSPENDED", status_code=status.HTTP_403_FORBIDDEN)
+
+        product = Product.objects.filter(store=store, pk=product_pk).first()
+        if not product:
+            return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        serializer = ProductVariant3DModelUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        model_file = serializer.validated_data["model_file"]
+
+        try:
+            file_format = validate_3d_model_file(model_file, MAX_3D_MODEL_SIZE)
+        except ValidationError as exc:
+            return error_response(
+                message=exc.message if hasattr(exc, "message") else str(exc),
+                code="INVALID_3D_MODEL",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        model_obj = ProductService.upload_variant_3d_model(variant, model_file, file_format)
+
+        return success_response(
+            message="Variant 3D model uploaded successfully.",
+            data=ProductVariant3DModelSerializer(model_obj).data,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        tags=["Products 3D Model"],
+        summary="Delete variant 3D model",
+        description="Permanently deletes the 3D model (.glb) file associated with a color variant.",
+        responses={
+            200: PRODUCT_ACTION_SUCCESS_SCHEMA,
+            400: PRODUCT_ERROR_SCHEMA,
+            403: PRODUCT_ERROR_SCHEMA,
+            404: PRODUCT_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request, pk, product_pk, variant_pk):
+        store, _ = get_store_membership(request.user, pk)
+        if not store:
+            return error_response("Store not found.", "STORE_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+        if store.is_archived:
+            return error_response("Cannot modify products in an archived store.", "STORE_ARCHIVED", status_code=status.HTTP_400_BAD_REQUEST)
+        if store.status == StoreStatus.SUSPENDED:
+            return error_response("Cannot modify products in a suspended store.", "STORE_SUSPENDED", status_code=status.HTTP_403_FORBIDDEN)
+
+        product = Product.objects.filter(store=store, pk=product_pk).first()
+        if not product:
+            return error_response("Product not found.", "PRODUCT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        variant = product.variants.filter(pk=variant_pk).first()
+        if not variant:
+            return error_response("Product variant not found.", "VARIANT_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        if not hasattr(variant, "model_3d"):
+            return error_response("No 3D model found for this variant.", "MODEL_3D_NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        ProductService.delete_variant_3d_model(variant)
+        return success_response(
+            message="Variant 3D model deleted successfully.",
+            data=None,
         )
 
 

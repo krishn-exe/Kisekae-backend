@@ -88,3 +88,43 @@ def validate_store_image(file_obj, max_size, field_name="image"):
         file_obj.seek(0)
 
     return True
+
+
+MAX_3D_MODEL_SIZE = 30 * 1024 * 1024  # 30 MB
+GLB_MAGIC = b"glTF"
+
+
+def validate_3d_model_file(file_obj, max_size=MAX_3D_MODEL_SIZE):
+    """
+    Validates 3D model file:
+    - Must be a .glb file
+    - Size <= max_size (default 30 MB)
+    - Starts with valid glTF binary header magic bytes (b'glTF')
+    """
+    if not file_obj:
+        raise ValidationError("3D model file is required.")
+
+    if file_obj.size > max_size:
+        max_mb = max_size // (1024 * 1024)
+        raise ValidationError(f"3D model file size cannot exceed {max_mb}MB. Got {file_obj.size / (1024 * 1024):.1f}MB.")
+
+    filename = getattr(file_obj, "name", "") or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext != "glb":
+        raise ValidationError(
+            f"Unsupported 3D model format '.{ext}'. Only '.glb' files are accepted."
+        )
+
+    try:
+        header = file_obj.read(4)
+        if header != GLB_MAGIC:
+            raise ValidationError("Invalid GLB file. File header does not match glTF binary format.")
+    except Exception as exc:
+        if isinstance(exc, ValidationError):
+            raise
+        raise ValidationError("Could not read 3D model file header.")
+    finally:
+        file_obj.seek(0)
+
+    return "glb"
+

@@ -9,6 +9,7 @@ from .models import (
     ProductImage,
     ProductSize,
     ProductVariant,
+    ProductVariant3DModel,
 )
 from .tasks import generate_product_embedding_task
 
@@ -209,7 +210,47 @@ class ProductService:
         for img in product.images.all():
             if img.image:
                 img.image.delete(save=False)
+        for model_3d in product.models_3d.all():
+            if model_3d.model_file:
+                model_3d.model_file.delete(save=False)
         product.delete()
+        return True
+
+    @staticmethod
+    @transaction.atomic
+    def upload_variant_3d_model(variant, model_file, file_format="glb"):
+        """
+        Uploads or replaces the 3D model for a product variant.
+        Each variant can have at most one 3D model (OneToOne).
+        """
+        existing = getattr(variant, "model_3d", None)
+        if existing:
+            if existing.model_file:
+                existing.model_file.delete(save=False)
+            existing.delete()
+
+        model_obj = ProductVariant3DModel.objects.create(
+            variant=variant,
+            product=variant.product,
+            model_file=model_file,
+            file_format=file_format,
+            file_size_bytes=model_file.size,
+        )
+        return model_obj
+
+    @staticmethod
+    @transaction.atomic
+    def delete_variant_3d_model(variant):
+        """
+        Deletes the 3D model associated with a product variant.
+        """
+        model_obj = getattr(variant, "model_3d", None)
+        if not model_obj:
+            raise ValidationError("No 3D model found for this variant.", code="MODEL_3D_NOT_FOUND")
+
+        if model_obj.model_file:
+            model_obj.model_file.delete(save=False)
+        model_obj.delete()
         return True
 
     @staticmethod

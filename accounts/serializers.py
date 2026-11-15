@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from drf_spectacular.utils import extend_schema_field
@@ -96,23 +97,35 @@ class LoginPasswordSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         email = attrs.get("email", "").strip().lower()
+        password = attrs.get("password", "")
         user = User.objects.filter(email__iexact=email).first()
-        if not user:
-            raise serializers.ValidationError("No account found with that email address.")
 
-        if not user.is_active:
-            raise serializers.ValidationError("This account is inactive.")
-
-        if not user.is_email_verified:
-            raise serializers.ValidationError("Email is not verified. Please verify your email before logging in.")
-
-        if not user.has_usable_password():
-            raise serializers.ValidationError(
-                "This account doesn't have a password set. Use 'Send me a code' to sign in instead."
+        # Mitigate user enumeration & timing attacks:
+        # Run dummy password hasher if user does not exist or has no usable password.
+        if not user or not user.has_usable_password():
+            User().set_password(password)
+            raise AuthenticationFailed(
+                "Invalid email or password.",
+                code="invalid_credentials",
             )
 
-        if not user.check_password(attrs["password"]):
-            raise serializers.ValidationError("Incorrect password.")
+        if not user.check_password(password):
+            raise AuthenticationFailed(
+                "Invalid email or password.",
+                code="invalid_credentials",
+            )
+
+        if not user.is_active:
+            raise PermissionDenied(
+                "This account is inactive.",
+                code="account_inactive",
+            )
+
+        if not user.is_email_verified:
+            raise PermissionDenied(
+                "Email is not verified. Please verify your email before logging in.",
+                code="email_not_verified",
+            )
 
         attrs["user"] = user
         return attrs

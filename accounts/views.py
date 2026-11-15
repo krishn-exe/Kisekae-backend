@@ -224,6 +224,8 @@ class LoginPasswordView(APIView):
                         }),
                 }),
             400: COMMON_ERROR_SCHEMA,
+            401: COMMON_ERROR_SCHEMA,
+            403: COMMON_ERROR_SCHEMA,
         })
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
@@ -454,9 +456,9 @@ class OTPVerifyView(APIView):
 
         if not user:
             return error_response(
-                message="No account found with that email address.",
-                code="USER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND)
+                message="Invalid or expired code.",
+                code="INVALID_OTP",
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         if not user.is_active:
             return error_response(
@@ -697,9 +699,9 @@ class ResetPasswordView(APIView):
         user = User.objects.filter(id=user_id).first()
         if not user:
             return error_response(
-                message="No account found for this reset token.",
-                code="USER_NOT_FOUND",
-                status_code=status.HTTP_404_NOT_FOUND)
+                message="Invalid or expired reset token.",
+                code="INVALID_TOKEN",
+                status_code=status.HTTP_400_BAD_REQUEST)
 
         if not user.is_active:
             return error_response(

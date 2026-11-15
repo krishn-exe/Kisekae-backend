@@ -172,7 +172,7 @@ def custom_exception_handler(exc, context):
         error_code = "ACCOUNT_INACTIVE"
     elif "not verified" in msg_lower:
         error_code = "EMAIL_NOT_VERIFIED"
-    elif any(phrase in msg_lower for phrase in ["incorrect password", "no account found", "invalid credentials"]):
+    elif any(phrase in msg_lower for phrase in ["incorrect password", "no account found", "invalid credentials", "invalid email or password", "invalid email"]):
         error_code = "INVALID_CREDENTIALS"
     elif "token" in msg_lower and any(kw in msg_lower for kw in ["invalid", "expired", "blacklisted"]):
         error_code = "INVALID_TOKEN"

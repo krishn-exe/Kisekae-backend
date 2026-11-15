@@ -183,6 +183,11 @@ class TryOnProductAsset(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-updated_at"]
+        verbose_name = "Try-On Product Asset"
+        verbose_name_plural = "Try-On Product Assets"
+
     def __str__(self):
         return f"{self.product.name} - AR: {self.status}"
 

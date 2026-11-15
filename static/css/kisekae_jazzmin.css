@@ -1,0 +1,421 @@
+/* ==========================================================================
+   KISEKAE Jazzmin Theme Styling
+   Brand Colors: Primary Burgundy: #802B3E | Deep Wine: #5B1C2A | Rose: #E28294
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --kisekae-primary: #802B3E;
+  --kisekae-primary-dark: #5B1C2A;
+  --kisekae-primary-hover: #631726;
+  --kisekae-accent-pink: #E28294;
+  --kisekae-pale-pink: #FCE8EC;
+  --kisekae-sidebar-bg: #1A0D11;
+  --kisekae-sidebar-active: #802B3E;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* 1. Brand Logo Header (Top Left) */
+.brand-link {
+  background: linear-gradient(135deg, #3A0C17 0%, #6E1F30 100%) !important;
+  border-bottom: 1px solid rgba(226, 130, 148, 0.2) !important;
+  padding: 12px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.brand-link .brand-image {
+  max-height: 34px !important;
+  width: auto !important;
+  object-fit: contain !important;
+  margin-right: 10px !important;
+  border-radius: 4px !important;
+}
+
+.brand-link .brand-text {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 3px !important;
+  color: #FFFFFF !important;
+  text-transform: uppercase !important;
+}
+
+/* 2. Top Navbar */
+.main-header.navbar {
+  background: #380C16 !important;
+  border-bottom: 2px solid #5B1C2A !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  padding: 6px 16px !important;
+}
+
+.main-header.navbar .nav-link,
+.main-header.navbar .navbar-nav .nav-link {
+  color: #FCE8EC !important;
+  font-weight: 600 !important;
+  font-size: 0.92rem !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  margin: 0 3px !important;
+  transition: all 0.15s ease !important;
+}
+
+.main-header.navbar .nav-link:hover,
+.main-header.navbar .navbar-nav .nav-link:hover {
+  background-color: rgba(226, 130, 148, 0.18) !important;
+  color: #FFFFFF !important;
+}
+
+.main-header.navbar .nav-link i {
+  color: #E28294 !important;
+  margin-right: 6px !important;
+}
+
+/* 3. Sidebar */
+.main-sidebar {
+  background: var(--kisekae-sidebar-bg) !important;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3) !important;
+}
+
+.sidebar {
+  padding-top: 8px !important;
+}
+
+/* Sidebar App Header Labels */
+.nav-header {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.5px !important;
+  text-transform: uppercase !important;
+  color: #E28294 !important;
+  padding: 12px 16px 4px 16px !important;
+  opacity: 0.9 !important;
+}
+
+/* Sidebar Menu Items */
+.nav-sidebar .nav-item > .nav-link {
+  color: #D6CAD0 !important;
+  border-radius: 6px !important;
+  margin: 2px 10px !important;
+  padding: 8px 12px !important;
+  font-size: 0.88rem !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.nav-sidebar .nav-item > .nav-link i.nav-icon {
+  color: #C27888 !important;
+  margin-right: 8px !important;
+}
+
+.nav-sidebar .nav-item > .nav-link:hover {
+  background: #2E151E !important;
+  color: #FFFFFF !important;
+}
+
+.nav-sidebar .nav-item > .nav-link:hover i.nav-icon {
+  color: #FFFFFF !important;
+}
+
+/* Active Sidebar Item */
+.sidebar-dark-danger .nav-sidebar > .nav-item > .nav-link.active,
+.nav-sidebar .nav-item > .nav-link.active {
+  background: var(--kisekae-primary) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  border-left: 3px solid #E28294 !important;
+  box-shadow: 0 2px 6px rgba(128, 43, 62, 0.4) !important;
+}
+
+.sidebar-dark-danger .nav-sidebar > .nav-item > .nav-link.active i.nav-icon,
+.nav-sidebar .nav-item > .nav-link.active i.nav-icon {
+  color: #FFFFFF !important;
+}
+
+/* 4. Content Header & Breadcrumbs */
+.content-header {
+  padding: 18px 16px 12px 16px !important;
+}
+
+.content-header h1 {
+  font-size: 1.6rem !important;
+  font-weight: 700 !important;
+  color: #EDE5DE !important;
+  letter-spacing: -0.3px !important;
+}
+
+.breadcrumb {
+  background: transparent !important;
+}
+
+.breadcrumb-item a {
+  color: #E28294 !important;
+  text-decoration: none !important;
+  font-weight: 500 !important;
+}
+
+.breadcrumb-item a:hover {
+  color: #FFFFFF !important;
+  text-decoration: underline !important;
+}
+
+.breadcrumb-item.active {
+  color: #A8A29E !important;
+}
+
+/* 5. Cards & Tables Styling */
+.card {
+  border-radius: 10px !important;
+  border: 1px solid #3A242B !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+  overflow: hidden !important;
+  background-color: #1E171A !important;
+}
+
+/* Card Header — Deep Burgundy Wine Gradient with Bold White Text */
+.card-header {
+  background: linear-gradient(135deg, #3D0F1A 0%, #6E1F30 100%) !important;
+  border-bottom: 1px solid rgba(226, 130, 148, 0.3) !important;
+  padding: 12px 18px !important;
+}
+
+.card-header .card-title,
+.card-header h3,
+.card-header h3 a,
+.card-header a {
+  color: #FFFFFF !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-size: 1.08rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.6px !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  margin: 0 !important;
+  text-decoration: none !important;
+}
+
+.card-body {
+  background-color: #1E171A !important;
+  padding: 14px 16px !important;
+}
+
+/* High Contrast Model Links in Dashboard Cards and Tables */
+.card-body .table td a,
+.card-body .table th a,
+.table td a,
+.table th a {
+  color: #EDE5DE !important;
+  font-weight: 600 !important;
+  font-size: 0.94rem !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease !important;
+}
+
+.card-body .table td a:hover,
+.card-body .table th a:hover,
+.table td a:hover,
+.table th a:hover {
+  color: #E28294 !important;
+  text-decoration: underline !important;
+}
+
+/* Table Headers (ChangeList & Dashboard) */
+.table thead th {
+  background: #2D141D !important;
+  color: #E28294 !important;
+  font-weight: 700 !important;
+  font-size: 0.82rem !important;
+  letter-spacing: 0.5px !important;
+  border-bottom: 2px solid #5B1C2A !important;
+  text-transform: uppercase !important;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.table tbody tr:hover {
+  background-color: rgba(226, 130, 148, 0.09) !important;
+}
+
+/* 6. Dashboard Action Buttons ("Add" & "Change") */
+.card-body .btn-success,
+.table .btn-success,
+.btn-success {
+  background-color: #198754 !important;
+  border-color: #198754 !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 11px !important;
+  border-radius: 4px !important;
+}
+
+.card-body .btn-info,
+.table .btn-info,
+.card-body .btn-secondary,
+.table .btn-secondary,
+.btn-info {
+  background-color: #4A1D27 !important;
+  border: 1px solid #C2526B !important;
+  color: #FCE8EC !important;
+  font-weight: 600 !important;
+  font-size: 0.78rem !important;
+  padding: 4px 11px !important;
+  border-radius: 4px !important;
+}
+
+.card-body .btn-info:hover,
+.table .btn-info:hover,
+.card-body .btn-secondary:hover,
+.table .btn-secondary:hover,
+.btn-info:hover {
+  background-color: #802B3E !important;
+  border-color: #E28294 !important;
+  color: #FFFFFF !important;
+}
+
+.btn-primary,
+.btn-danger {
+  background-color: var(--kisekae-primary) !important;
+  border-color: var(--kisekae-primary) !important;
+  color: #FFFFFF !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  padding: 6px 14px !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-primary:hover,
+.btn-danger:hover {
+  background-color: var(--kisekae-primary-hover) !important;
+  border-color: var(--kisekae-primary-hover) !important;
+  transform: translateY(-1px);
+}
+
+/* 7. Footer */
+.main-footer {
+  border-top: 1px solid #EBE2E5 !important;
+  background: #FAF7F5 !important;
+  font-size: 0.85rem !important;
+  color: #78716C !important;
+}
+
+/* ==========================================================================
+   8. Dedicated KISEKAE Login Page Styling
+   ========================================================================== */
+.login-page {
+  background: #FAF7F5 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 100vh !important;
+}
+
+html[data-bs-theme="dark"] .login-page {
+  background: #141012 !important;
+}
+
+.login-box {
+  width: 440px !important;
+  max-width: 92% !important;
+  margin: 30px auto !important;
+}
+
+.login-logo {
+  text-align: center !important;
+  margin-bottom: 24px !important;
+}
+
+.login-logo img {
+  max-height: 140px !important;
+  width: auto !important;
+  max-width: 80% !important;
+  object-fit: contain !important;
+  margin: 0 auto !important;
+  display: block !important;
+  filter: drop-shadow(0 4px 10px rgba(128, 43, 62, 0.1));
+}
+
+html[data-bs-theme="light"] .login-logo .logo-dark {
+  display: none !important;
+}
+
+html[data-bs-theme="dark"] .login-logo .logo-light {
+  display: none !important;
+}
+
+.login-box .card {
+  border-radius: 14px !important;
+  border: 1px solid #EBE2E5 !important;
+  box-shadow: 0 10px 30px rgba(128, 43, 62, 0.08) !important;
+  background: #FFFFFF !important;
+  overflow: hidden !important;
+}
+
+html[data-bs-theme="dark"] .login-box .card {
+  background: #1E171A !important;
+  border-color: #38242B !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
+}
+
+.login-card-body {
+  padding: 32px 28px !important;
+}
+
+.login-box-msg {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  color: #802B3E !important;
+  letter-spacing: 0.5px !important;
+  text-align: center !important;
+  margin-bottom: 24px !important;
+}
+
+html[data-bs-theme="dark"] .login-box-msg {
+  color: #E28294 !important;
+}
+
+.login-box .input-group .form-control {
+  border-radius: 8px 0 0 8px !important;
+  border-color: #DEC8CF !important;
+  padding: 10px 14px !important;
+  font-size: 0.95rem !important;
+}
+
+.login-box .input-group-text {
+  border-radius: 0 8px 8px 0 !important;
+  background-color: #F8EDF1 !important;
+  border-color: #DEC8CF !important;
+  color: #802B3E !important;
+  padding: 10px 14px !important;
+}
+
+.login-box .form-control:focus {
+  border-color: #802B3E !important;
+  box-shadow: 0 0 0 0.2rem rgba(128, 43, 62, 0.15) !important;
+}
+
+.login-box .btn-primary {
+  width: 100% !important;
+  padding: 10px !important;
+  font-size: 1rem !important;
+  letter-spacing: 0.5px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  background-color: #802B3E !important;
+  border-color: #802B3E !important;
+  margin-top: 8px !important;
+  box-shadow: 0 4px 12px rgba(128, 43, 62, 0.25) !important;
+}
+
+.login-box .btn-primary:hover {
+  background-color: #631726 !important;
+  border-color: #631726 !important;
+  transform: translateY(-1px) !important;
+}
+

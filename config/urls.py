@@ -52,3 +52,13 @@ urlpatterns = [
 
     path("googleAuth/redirect", google_to_app, name="google-auth-redirect"),
 ]
+
+from django.conf import settings
+from django.conf.urls.static import static
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+
+urlpatterns += staticfiles_urlpatterns()
+if settings.MEDIA_URL.startswith("/"):
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+

@@ -80,6 +80,8 @@ INSTALLED_APPS = [
 
     'django_prometheus',
 
+    'jazzmin',
+
     'django.contrib.admin',
 
     'django.contrib.auth',
@@ -529,13 +531,17 @@ USE_TZ = True
 
 
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
 
 
-if os.getenv("DJANGO_USE_WHITENOISE", "False") == "True":
+
+if (os.getenv("DJANGO_USE_WHITENOISE", "False") or "False").strip().lower() in ("true", "1"):
 
     MIDDLEWARE.insert(
 
@@ -945,6 +951,156 @@ FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
 
 FIREBASE_SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+
+
+# ==============================================================================
+# JAZZMIN ADMIN THEME CONFIGURATION (KISEKAE BRANDING)
+# ==============================================================================
+JAZZMIN_SETTINGS = {
+    "site_title": "KISEKAE Admin Portal",
+    "site_header": "KISEKAE",
+    "site_brand": "KISEKAE",
+    "site_logo": "img/kisekae_logo.png",
+    "login_logo": "img/kisekae_logo.png",
+    "login_logo_dark": "img/kisekae_logo.png",
+    "site_logo_classes": "img-fluid",
+    "site_icon": "img/kisekae_logo.png",
+    "welcome_sign": "Welcome to Kisekae Management Portal",
+    "copyright": "KISEKAE Fashion Technologies",
+    "search_model": None,
+    "user_avatar": None,
+    "topmenu_links": [
+        {"name": "API Docs", "url": "swagger-ui", "new_window": True, "icon": "fas fa-book"},
+        {"name": "Live Store", "url": "https://live.kisekae.app", "new_window": True, "icon": "fas fa-external-link-alt"},
+    ],
+    "show_sidebar": True,
+    "navigation_expanded": True,
+    "hide_apps": [],
+    "hide_models": [],
+    "order_with_respect_to": [
+        "accounts",
+        "stores",
+        "products",
+        "inventory",
+        "cart",
+        "orders",
+        "reviews",
+        "tryon",
+        "notifications",
+        "auth",
+        "token_blacklist",
+        "django_celery_beat",
+    ],
+    "icons": {
+        "auth": "fas fa-shield-alt",
+        "auth.Group": "fas fa-users-cog",
+
+        "accounts.User": "fas fa-user",
+        "accounts.Address": "fas fa-map-marker-alt",
+        "accounts.PendingRegistration": "fas fa-user-clock",
+        "accounts.UserSettings": "fas fa-user-cog",
+        "accounts.Wallet": "fas fa-wallet",
+        "accounts.WalletTransaction": "fas fa-receipt",
+        "accounts.WishlistItem": "fas fa-heart",
+
+        "stores.Store": "fas fa-store",
+        "stores.StoreMembership": "fas fa-id-badge",
+        "stores.StoreInvitation": "fas fa-envelope-open-text",
+        "stores.BusinessVerification": "fas fa-file-contract",
+        "stores.StoreBankAccount": "fas fa-university",
+        "stores.StorePaymentSettings": "fas fa-credit-card",
+        "stores.StoreSettlement": "fas fa-money-check-alt",
+        "stores.PromotedProduct": "fas fa-bullhorn",
+        "stores.AdEvent": "fas fa-chart-line",
+
+        "products.Product": "fas fa-tshirt",
+        "products.ProductVariant": "fas fa-palette",
+        "products.ProductSize": "fas fa-ruler",
+        "products.ProductImage": "fas fa-images",
+        "products.ProductVariant3DModel": "fas fa-cube",
+        "products.ProductEmbedding": "fas fa-brain",
+        "products.SearchHistory": "fas fa-history",
+        "products.ProductView": "fas fa-eye",
+        "products.UserTasteProfile": "fas fa-fingerprint",
+        "products.SearchSuggestion": "fas fa-lightbulb",
+        "products.SeasonalSale": "fas fa-tags",
+        "products.SeasonalSaleProduct": "fas fa-percent",
+
+        "inventory.StockUpdate": "fas fa-boxes",
+        "inventory.StockAlert": "fas fa-exclamation-triangle",
+
+        "cart.Cart": "fas fa-shopping-cart",
+        "cart.CartItem": "fas fa-shopping-basket",
+
+        "orders.Order": "fas fa-shopping-bag",
+        "orders.CouponCode": "fas fa-ticket-alt",
+        "orders.CouponUsage": "fas fa-clipboard-check",
+
+        "reviews.Review": "fas fa-star",
+        "reviews.ReviewImage": "fas fa-camera",
+        "reviews.ProductReviewSummary": "fas fa-magic",
+
+        "tryon.Combo": "fas fa-layer-group",
+        "tryon.ComboItem": "fas fa-vest",
+        "tryon.TryOnProductAsset": "fas fa-vr-cardboard",
+        "tryon.TryOnRequest": "fas fa-magic",
+
+        "notifications.CustomerDevice": "fas fa-mobile-alt",
+
+        "token_blacklist.OutstandingToken": "fas fa-key",
+        "token_blacklist.BlacklistedToken": "fas fa-ban",
+
+        "django_celery_beat.ClockedSchedule": "fas fa-clock",
+        "django_celery_beat.CrontabSchedule": "fas fa-calendar-alt",
+        "django_celery_beat.IntervalSchedule": "fas fa-stopwatch",
+        "django_celery_beat.PeriodicTask": "fas fa-tasks",
+        "django_celery_beat.SolarSchedule": "fas fa-sun",
+    },
+    "default_icon_parents": "fas fa-folder",
+    "default_icon_children": "fas fa-angle-right",
+    "related_modal_active": True,
+    "custom_css": "css/kisekae_jazzmin.css",
+    "changeform_format": "horizontal_tabs",
+    "changeform_format_overrides": {
+        "accounts.User": "collapsible",
+        "stores.Store": "horizontal_tabs",
+        "products.Product": "horizontal_tabs",
+        "orders.Order": "horizontal_tabs",
+    },
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": True,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-dark",
+    "accent": "accent-danger",
+    "navbar": "navbar-dark",
+    "no_navbar_border": True,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-danger",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-danger",
+        "secondary": "btn-outline-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success",
+    },
+}
+
 
 
 

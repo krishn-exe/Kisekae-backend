@@ -115,6 +115,10 @@ class UserSettings(models.Model):
     timezone = models.CharField(max_length=50, default="Asia/Kolkata")
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        verbose_name = "User Settings"
+        verbose_name_plural = "User Settings"
+
     def __str__(self):
         return f"Settings for {self.user.email}"
 

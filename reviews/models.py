@@ -161,6 +161,8 @@ class ProductReviewSummary(models.Model):
 
     class Meta:
         ordering = ["-generated_at"]
+        verbose_name = "Product Review Summary"
+        verbose_name_plural = "Product Review Summaries"
 
     def __str__(self):
         return f"AI Review Summary for {self.product.name} ({self.review_count_at_summary} reviews)"

@@ -62,6 +62,25 @@ class ProductVariantAdmin(admin.ModelAdmin):
     inlines = [ProductSizeInline, ProductImageInline, ProductVariant3DModelInline]
 
 
+@admin.register(ProductSize)
+class ProductSizeAdmin(admin.ModelAdmin):
+    list_display = ("product", "variant", "size", "stock", "updated_at", "created_at")
+    list_filter = ("size", "created_at")
+    search_fields = ("product__name", "variant__color_name", "size")
+    autocomplete_fields = ["product", "variant"]
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ("id", "product", "variant", "order", "created_at")
+    list_filter = ("order", "created_at")
+    search_fields = ("product__name", "variant__color_name")
+    autocomplete_fields = ["product", "variant"]
+    readonly_fields = ("created_at",)
+
+
+
 @admin.register(ProductVariant3DModel)
 class ProductVariant3DModelAdmin(admin.ModelAdmin):
     list_display = ("variant", "product", "file_format", "file_size_bytes", "created_at")

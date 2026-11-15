@@ -473,7 +473,7 @@
             "type": "prometheus",
             "uid": "Prometheus"
           },
-          "expr": "sum(rate(django_http_responses_total_by_status_view_method_total[1m])) by (view)",
+          "expr": "sum(rate(django_http_responses_total_by_status_view_method_total{view!~\"<unnamed view>|prometheus-django-metrics\"}[1m])) by (view)",
           "legendFormat": "{{view}}",
           "refId": "A"
         }

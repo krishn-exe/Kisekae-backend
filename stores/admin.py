@@ -1,7 +1,9 @@
 from django.contrib import admin
 
 from .models import (
+    AdEvent,
     BusinessVerification,
+    PromotedProduct,
     Store,
     StoreBankAccount,
     StoreInvitation,
@@ -61,6 +63,14 @@ class StoreInvitationInline(admin.TabularInline):
     readonly_fields = ("created_at",)
 
 
+class PromotedProductInline(admin.TabularInline):
+    model = PromotedProduct
+    extra = 0
+    autocomplete_fields = ["product"]
+    fields = ("product", "is_active", "created_at")
+    readonly_fields = ("created_at",)
+
+
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
     list_display = ("name", "slug", "status", "created_by", "created_at")
@@ -68,7 +78,14 @@ class StoreAdmin(admin.ModelAdmin):
     search_fields = ("name", "slug", "contact_email")
     prepopulated_fields = {"slug": ("name",)}
     readonly_fields = ("created_at", "updated_at", "archived_at")
-    inlines = [BusinessVerificationInline, StoreBankAccountInline, StorePaymentSettingsInline, StoreMembershipInline, StoreInvitationInline]
+    inlines = [
+        BusinessVerificationInline,
+        StoreBankAccountInline,
+        StorePaymentSettingsInline,
+        StoreMembershipInline,
+        StoreInvitationInline,
+        PromotedProductInline,
+    ]
     actions = ["suspend_stores", "archive_stores"]
 
     @admin.action(description="Suspend selected stores")
@@ -161,3 +178,22 @@ class StoreSettlementAdmin(admin.ModelAdmin):
     list_filter = ("status", "settlement_type", "processed_at")
     search_fields = ("settlement_number", "store__name", "account_holder_name_snapshot", "ifsc_code_snapshot")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(PromotedProduct)
+class PromotedProductAdmin(admin.ModelAdmin):
+    list_display = ("product", "store", "is_active", "created_at", "updated_at")
+    list_filter = ("is_active", "created_at")
+    search_fields = ("product__name", "store__name")
+    autocomplete_fields = ["product", "store"]
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(AdEvent)
+class AdEventAdmin(admin.ModelAdmin):
+    list_display = ("event_type", "store", "product", "cost", "units", "user", "order", "created_at")
+    list_filter = ("event_type", "created_at")
+    search_fields = ("store__name", "product__name", "user__email", "order__order_number")
+    autocomplete_fields = ["store", "product", "user", "order"]
+    readonly_fields = ("created_at",)
+

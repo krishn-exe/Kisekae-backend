@@ -31,6 +31,10 @@ def google_to_app(request):
         headers={"Location": f"kisekae://auth/google/callback?{qs}"},
     )
 
+admin.site.site_header = "KISEKAE Administration"
+admin.site.site_title = "KISEKAE Admin Portal"
+admin.site.index_title = "Store & Platform Management"
+
 urlpatterns = [
     re_path(r'^metrics/?$', secured_metrics_view, name='prometheus-django-metrics'),
     path('admin/', admin.site.urls),
@@ -46,5 +50,5 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
-    path("googleAuth/redirect", google_to_app),
+    path("googleAuth/redirect", google_to_app, name="google-auth-redirect"),
 ]

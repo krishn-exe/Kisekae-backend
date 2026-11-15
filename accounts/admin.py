@@ -1,7 +1,45 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import Address, PendingRegistration, User, Wallet, WalletTransaction, WishlistItem
+from .models import (
+    Address,
+    PendingRegistration,
+    User,
+    UserSettings,
+    Wallet,
+    WalletTransaction,
+    WishlistItem,
+)
+
+
+class AddressInline(admin.TabularInline):
+    model = Address
+    extra = 0
+    fields = ("title", "recipient_name", "phone", "city", "state", "postal_code", "is_default")
+
+
+class WalletInline(admin.StackedInline):
+    model = Wallet
+    extra = 0
+    can_delete = False
+    fields = ("balance", "created_at", "updated_at")
+    readonly_fields = ("balance", "created_at", "updated_at")
+
+
+class UserSettingsInline(admin.StackedInline):
+    model = UserSettings
+    extra = 0
+    can_delete = False
+    fields = (
+        "email_notifications",
+        "push_notifications",
+        "order_alerts",
+        "stock_alerts",
+        "low_stock_total_alerts",
+        "low_stock_variant_alerts",
+        "language",
+        "timezone",
+    )
 
 
 @admin.register(User)
@@ -24,6 +62,7 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
     readonly_fields = ("date_joined", "last_login")
+    inlines = [UserSettingsInline, WalletInline, AddressInline]
 
 
 @admin.register(Address)
@@ -61,6 +100,27 @@ class WalletTransactionAdmin(admin.ModelAdmin):
     list_filter = ("txn_type", "created_at")
     search_fields = ("wallet__user__email", "razorpay_payment_id", "order__order_number", "description")
     readonly_fields = ("created_at",)
+
+
+@admin.register(UserSettings)
+class UserSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "email_notifications",
+        "push_notifications",
+        "order_alerts",
+        "stock_alerts",
+        "low_stock_total_alerts",
+        "low_stock_variant_alerts",
+        "language",
+        "timezone",
+        "updated_at",
+    )
+    list_filter = ("email_notifications", "push_notifications", "order_alerts", "stock_alerts", "language")
+    search_fields = ("user__email", "user__name")
+    autocomplete_fields = ["user"]
+    readonly_fields = ("updated_at",)
+
 
 
 

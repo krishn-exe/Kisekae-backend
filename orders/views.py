@@ -40,7 +40,7 @@ from .serializers import (
 )
 from .services import OrderService
 
-from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
 logger = logging.getLogger(__name__)
 

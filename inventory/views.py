@@ -22,7 +22,7 @@ from .serializers import (
 )
 from .services import InventoryService
 
-from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
 INVENTORY_ERROR_SCHEMA = ERROR_SCHEMA
 STOCK_ADJUST_RESPONSE_SCHEMA = api_response(

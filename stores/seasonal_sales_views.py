@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from KiseKaeDjango.schema.helpers import ERROR_SCHEMA, api_response
+from config.schema.helpers import ERROR_SCHEMA, api_response
 from products.models import Product, ProductStatus, SeasonalSale, SeasonalSaleProduct
 
 from .models import StoreStatus

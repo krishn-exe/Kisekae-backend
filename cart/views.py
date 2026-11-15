@@ -17,7 +17,7 @@ from .serializers import (
 )
 from .services import CartService
 
-from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, ERROR_SCHEMA
 
 CART_ERROR_SCHEMA = ERROR_SCHEMA
 CART_DETAIL_RESPONSE_SCHEMA = api_response(CartSerializer, "CartDetailResponse")

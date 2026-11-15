@@ -18,7 +18,7 @@ class KiseKaeS3Storage(S3Storage):
        Served as AWS SigV4 presigned URLs with temporary expiration to prevent
        unauthorized access while avoiding 403 Forbidden errors.
     """
-    PUBLIC_PREFIXES = ("products/", "stores/")
+    PUBLIC_PREFIXES = ("products/", "stores/", "reviews/")
 
     def url(self, name, parameters=None, expire=None, http_method=None):
         name = self._normalize_name(clean_name(name))

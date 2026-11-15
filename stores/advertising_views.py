@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from accounts.responses import error_response, success_response
-from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, ERROR_SCHEMA
 from products.models import Product
 
 from .models import PromotedProduct, StorePaymentSettings

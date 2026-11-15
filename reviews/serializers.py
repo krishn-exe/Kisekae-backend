@@ -1,13 +1,22 @@
 from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
-from .models import Review
+from .models import Review, ReviewImage
+
+
+class ReviewImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ReviewImage
+        fields = ["id", "image_url", "created_at"]
 
 
 class ReviewSerializer(serializers.ModelSerializer):
     """Full review serializer for public reading and user responses."""
     product_name = serializers.CharField(source="product.name", read_only=True)
     user_name = serializers.SerializerMethodField()
+    images = ReviewImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Review
@@ -21,6 +30,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "is_verified_buyer",
+            "images",
             "created_at",
             "updated_at",
         ]
@@ -31,6 +41,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "user",
             "user_name",
             "is_verified_buyer",
+            "images",
             "created_at",
             "updated_at",
         ]
@@ -62,6 +73,13 @@ class ReviewCreateSerializer(serializers.Serializer):
         min_length=5,
         help_text="Full text feedback detailing customer experience.",
     )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        default=list,
+        max_length=5,
+        help_text="Optional customer review photos (up to 5 images, max 1MB each).",
+    )
 
 
 class ReviewUpdateSerializer(serializers.Serializer):
@@ -83,6 +101,27 @@ class ReviewUpdateSerializer(serializers.Serializer):
         required=False,
         help_text="Updated review description.",
     )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        max_length=5,
+        help_text="Optional new review photos to attach (up to 5 images total on the review, max 1MB each).",
+    )
+
+
+class ReviewImageUploadSerializer(serializers.Serializer):
+    """Upload photos for an existing review."""
+    image = serializers.ImageField(
+        required=False,
+        help_text="Single review image file (max 1MB).",
+    )
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        max_length=5,
+        help_text="Multiple review image files (max 1MB each, up to 5 total on the review).",
+    )
+
 
 
 
@@ -117,6 +156,24 @@ REVIEW_DETAIL_RESPONSE_SCHEMA = inline_serializer(
         "success": serializers.BooleanField(default=True),
         "message": serializers.CharField(),
         "data": ReviewSerializer(),
+    },
+)
+
+REVIEW_IMAGE_RESPONSE_SCHEMA = inline_serializer(
+    name="ReviewImageResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ReviewImageSerializer(),
+    },
+)
+
+REVIEW_IMAGE_LIST_RESPONSE_SCHEMA = inline_serializer(
+    name="ReviewImageListResponse",
+    fields={
+        "success": serializers.BooleanField(default=True),
+        "message": serializers.CharField(),
+        "data": ReviewImageSerializer(many=True),
     },
 )
 

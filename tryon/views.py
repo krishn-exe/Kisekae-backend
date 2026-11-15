@@ -33,7 +33,7 @@ from .serializers import (
 from .services import ComboService, TryOnService
 from .tasks import generate_tryon_task
 
-from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
 COMBO_RESPONSE_SCHEMA = api_response(ComboSerializer, "ComboResponseEnvelope")
 COMBO_LIST_RESPONSE_SCHEMA = api_response(ComboSerializer, "ComboListResponseEnvelope", many=True)

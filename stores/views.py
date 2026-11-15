@@ -38,7 +38,7 @@ from .serializers import (
 from .services import StoreService
 from .validators import MAX_BANNER_SIZE, MAX_LOGO_SIZE, validate_store_image
 
-from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, ERROR_SCHEMA
 
 STORE_ERROR_SCHEMA = ERROR_SCHEMA
 STORE_ACTION_SUCCESS_SCHEMA = api_response(serializers.JSONField(default=None, allow_null=True), "StoreActionSuccessResponse")

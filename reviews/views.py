@@ -1,6 +1,9 @@
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Avg, Count
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
@@ -8,18 +11,27 @@ from accounts.responses import error_response, success_response
 from products.models import Product, ProductStatus
 
 from .ai_service import ReviewAIService
-from .models import ProductReviewSummary, Review
+from .models import ProductReviewSummary, Review, ReviewImage
 from .pagination import ReviewPagination
+from .validators import (
+    MAX_REVIEW_IMAGE_SIZE,
+    MAX_REVIEW_IMAGES_COUNT,
+    validate_review_image,
+)
 from .serializers import (
     REVIEW_CHAT_RESPONSE_SCHEMA,
     REVIEW_DELETE_RESPONSE_SCHEMA,
     REVIEW_DETAIL_RESPONSE_SCHEMA,
     REVIEW_ERROR_SCHEMA,
+    REVIEW_IMAGE_LIST_RESPONSE_SCHEMA,
+    REVIEW_IMAGE_RESPONSE_SCHEMA,
     REVIEW_PAGINATED_LIST_RESPONSE_SCHEMA,
     REVIEW_SUMMARY_RESPONSE_SCHEMA,
     ProductReviewSummarySerializer,
     ReviewChatRequestSerializer,
     ReviewCreateSerializer,
+    ReviewImageSerializer,
+    ReviewImageUploadSerializer,
     ReviewSerializer,
     ReviewUpdateSerializer,
 )
@@ -32,6 +44,7 @@ class ProductReviewListCreateView(APIView):
     - POST: Submit a 1-to-5 star review with title and description (authenticated).
     """
     pagination_class = ReviewPagination
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
         if self.request.method == "POST":
@@ -85,7 +98,7 @@ class ProductReviewListCreateView(APIView):
             "rating_breakdown": breakdown_counts,
         }
 
-        queryset = all_product_reviews.select_related("user", "product")
+        queryset = all_product_reviews.select_related("user", "product").prefetch_related("images")
 
         rating_param = request.query_params.get("rating")
         if rating_param:
@@ -135,7 +148,11 @@ class ProductReviewListCreateView(APIView):
     @extend_schema(
         tags=["Reviews & Ratings"],
         summary="Post a review for a product",
-        description="Allows an authenticated user to submit a rating (1 to 5 stars), title, and description for a product. Only one review per user per product is permitted. Automatically verifies buyer purchase status.",
+        description=(
+            "Allows an authenticated user to submit a rating (1 to 5 stars), title, description, "
+            "and up to 5 optional customer photos (max 1MB each, JPEG/PNG/WEBP). "
+            "Only one review per user per product is permitted. Automatically verifies buyer purchase status."
+        ),
         request=ReviewCreateSerializer,
         responses={201: REVIEW_DETAIL_RESPONSE_SCHEMA, 400: REVIEW_ERROR_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
     )
@@ -157,18 +174,48 @@ class ProductReviewListCreateView(APIView):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = ReviewCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        review = Review.objects.create(
-            product=product,
-            user=request.user,
-            rating=data["rating"],
-            title=data["title"],
-            description=data["description"],
+        data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        image_files = (
+            request.FILES.getlist("images")
+            or request.FILES.getlist("images[]")
+            or request.FILES.getlist("image")
         )
+        if image_files and hasattr(data, "setlist"):
+            data.setlist("images", image_files)
 
+        serializer = ReviewCreateSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+
+        if len(image_files) > MAX_REVIEW_IMAGES_COUNT:
+            return error_response(
+                message=f"Maximum of {MAX_REVIEW_IMAGES_COUNT} images allowed per review. Provided: {len(image_files)}.",
+                code="TOO_MANY_IMAGES",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for img in image_files:
+            try:
+                validate_review_image(img, MAX_REVIEW_IMAGE_SIZE)
+            except ValidationError as exc:
+                return error_response(
+                    message=exc.message if hasattr(exc, "message") else str(exc),
+                    code="INVALID_IMAGE",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        with transaction.atomic():
+            review = Review.objects.create(
+                product=product,
+                user=request.user,
+                rating=validated_data["rating"],
+                title=validated_data["title"],
+                description=validated_data["description"],
+            )
+            for img in image_files:
+                ReviewImage.objects.create(review=review, image=img)
+
+        review.refresh_from_db()
         return success_response(
             message="Review submitted successfully.",
             data=ReviewSerializer(review).data,
@@ -180,6 +227,8 @@ class ReviewDetailView(APIView):
     """
     Retrieve, update, or delete a single review.
     """
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def get_permissions(self):
         if self.request.method in ("PUT", "PATCH", "DELETE"):
             return [IsAuthenticated()]
@@ -192,7 +241,7 @@ class ReviewDetailView(APIView):
         responses={200: REVIEW_DETAIL_RESPONSE_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
     )
     def get(self, request, review_pk):
-        review = Review.objects.filter(pk=review_pk).select_related("product", "user").first()
+        review = Review.objects.filter(pk=review_pk).select_related("product", "user").prefetch_related("images").first()
         if not review:
             return error_response(
                 message="Review not found.",
@@ -208,7 +257,7 @@ class ReviewDetailView(APIView):
     @extend_schema(
         tags=["Reviews & Ratings"],
         summary="Update your review (full)",
-        description="Allows the review author to update the star rating, title, or description. Recomputes product rating average.",
+        description="Allows the review author to update the star rating, title, description, or attach new photos (max 5 total). Recomputes product rating average.",
         request=ReviewUpdateSerializer,
         responses={200: REVIEW_DETAIL_RESPONSE_SCHEMA, 400: REVIEW_ERROR_SCHEMA, 403: REVIEW_ERROR_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
     )
@@ -218,7 +267,7 @@ class ReviewDetailView(APIView):
     @extend_schema(
         tags=["Reviews & Ratings"],
         summary="Partially update your review",
-        description="Allows the review author to update specific fields of their review (rating, title, description). Recomputes product rating average.",
+        description="Allows the review author to update specific fields of their review (rating, title, description, photos). Recomputes product rating average.",
         request=ReviewUpdateSerializer,
         responses={200: REVIEW_DETAIL_RESPONSE_SCHEMA, 400: REVIEW_ERROR_SCHEMA, 403: REVIEW_ERROR_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
     )
@@ -226,7 +275,7 @@ class ReviewDetailView(APIView):
         return self._update_review(request, review_pk)
 
     def _update_review(self, request, review_pk):
-        review = Review.objects.filter(pk=review_pk).select_related("product", "user").first()
+        review = Review.objects.filter(pk=review_pk).select_related("product", "user").prefetch_related("images").first()
         if not review:
             return error_response(
                 message="Review not found.",
@@ -241,19 +290,52 @@ class ReviewDetailView(APIView):
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = ReviewUpdateSerializer(data=request.data, partial=True)
+        data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        image_files = (
+            request.FILES.getlist("images")
+            or request.FILES.getlist("images[]")
+            or request.FILES.getlist("image")
+        )
+        if image_files and hasattr(data, "setlist"):
+            data.setlist("images", image_files)
+
+        serializer = ReviewUpdateSerializer(data=data, partial=True)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        validated_data = serializer.validated_data
 
-        if "rating" in data:
-            review.rating = data["rating"]
-        if "title" in data:
-            review.title = data["title"]
-        if "description" in data:
-            review.description = data["description"]
+        if image_files:
+            current_count = review.images.count()
+            if current_count + len(image_files) > MAX_REVIEW_IMAGES_COUNT:
+                return error_response(
+                    message=f"Cannot add {len(image_files)} image(s). Review already has {current_count} (maximum {MAX_REVIEW_IMAGES_COUNT}).",
+                    code="TOO_MANY_IMAGES",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
 
-        review.save()
+            for img in image_files:
+                try:
+                    validate_review_image(img, MAX_REVIEW_IMAGE_SIZE)
+                except ValidationError as exc:
+                    return error_response(
+                        message=exc.message if hasattr(exc, "message") else str(exc),
+                        code="INVALID_IMAGE",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
 
+        with transaction.atomic():
+            if "rating" in validated_data:
+                review.rating = validated_data["rating"]
+            if "title" in validated_data:
+                review.title = validated_data["title"]
+            if "description" in validated_data:
+                review.description = validated_data["description"]
+            review.save()
+
+            if image_files:
+                for img in image_files:
+                    ReviewImage.objects.create(review=review, image=img)
+
+        review.refresh_from_db()
         return success_response(
             message="Review updated successfully.",
             data=ReviewSerializer(review).data,
@@ -289,6 +371,132 @@ class ReviewDetailView(APIView):
         )
 
 
+class ReviewImageUploadView(APIView):
+    """
+    Dedicated endpoint to upload additional photos for an existing review (up to 5 total, max 1MB each).
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        tags=["Reviews & Ratings"],
+        summary="Upload photos for an existing review",
+        description="Allows the review author to upload images for their existing review (max 1MB per image, up to 5 images total per review).",
+        request=ReviewImageUploadSerializer,
+        responses={
+            201: REVIEW_DETAIL_RESPONSE_SCHEMA,
+            400: REVIEW_ERROR_SCHEMA,
+            403: REVIEW_ERROR_SCHEMA,
+            404: REVIEW_ERROR_SCHEMA,
+        },
+    )
+    def post(self, request, review_pk):
+        review = Review.objects.filter(pk=review_pk).select_related("product", "user").prefetch_related("images").first()
+        if not review:
+            return error_response(
+                message="Review not found.",
+                code="REVIEW_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if review.user != request.user and not request.user.is_staff:
+            return error_response(
+                message="You do not have permission to upload photos to this review.",
+                code="PERMISSION_DENIED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        image_files = (
+            request.FILES.getlist("images")
+            or request.FILES.getlist("images[]")
+            or request.FILES.getlist("image")
+        )
+        if not image_files:
+            return error_response(
+                message="At least one image file is required.",
+                code="IMAGE_REQUIRED",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        current_count = review.images.count()
+        if current_count + len(image_files) > MAX_REVIEW_IMAGES_COUNT:
+            return error_response(
+                message=f"Cannot add {len(image_files)} image(s). Review already has {current_count} (maximum {MAX_REVIEW_IMAGES_COUNT}).",
+                code="TOO_MANY_IMAGES",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for img in image_files:
+            try:
+                validate_review_image(img, MAX_REVIEW_IMAGE_SIZE)
+            except ValidationError as exc:
+                return error_response(
+                    message=exc.message if hasattr(exc, "message") else str(exc),
+                    code="INVALID_IMAGE",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        with transaction.atomic():
+            for img in image_files:
+                ReviewImage.objects.create(review=review, image=img)
+
+        review.refresh_from_db()
+        return success_response(
+            message=f"{len(image_files)} image(s) uploaded successfully.",
+            data=ReviewSerializer(review).data,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class ReviewImageDetailView(APIView):
+    """
+    Delete a specific review photo.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Reviews & Ratings"],
+        summary="Delete a review image",
+        description="Allows the review author to delete a specific photo attached to their review.",
+        responses={
+            200: REVIEW_DETAIL_RESPONSE_SCHEMA,
+            403: REVIEW_ERROR_SCHEMA,
+            404: REVIEW_ERROR_SCHEMA,
+        },
+    )
+    def delete(self, request, review_pk, image_pk):
+        review = Review.objects.filter(pk=review_pk).select_related("product", "user").prefetch_related("images").first()
+        if not review:
+            return error_response(
+                message="Review not found.",
+                code="REVIEW_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if review.user != request.user and not request.user.is_staff:
+            return error_response(
+                message="You do not have permission to delete photos from this review.",
+                code="PERMISSION_DENIED",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        image_obj = review.images.filter(pk=image_pk).first()
+        if not image_obj:
+            return error_response(
+                message="Review image not found.",
+                code="IMAGE_NOT_FOUND",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        image_obj.delete()
+        review.refresh_from_db()
+        return success_response(
+            message="Review image deleted successfully.",
+            data=ReviewSerializer(review).data,
+        )
+
+
+
 class CustomerMyReviewsView(APIView):
     """
     Returns all reviews written by the authenticated user with pagination.
@@ -310,6 +518,7 @@ class CustomerMyReviewsView(APIView):
         queryset = (
             Review.objects.filter(user=request.user)
             .select_related("product")
+            .prefetch_related("images")
             .order_by("-created_at")
         )
         paginator = self.pagination_class()

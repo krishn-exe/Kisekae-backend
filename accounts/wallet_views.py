@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from accounts.responses import error_response, success_response
 from orders.razorpay_service import RazorpayService
 from stores.pagination import StorePagination
-from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
 from .models import Wallet, WalletTransaction
 from .wallet_serializers import (

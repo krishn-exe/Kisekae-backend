@@ -1,6 +1,14 @@
+import uuid
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+
+
+def review_image_upload_path(instance, filename):
+    ext = filename.split(".")[-1].lower() if "." in filename else "jpg"
+    product_id = instance.review.product_id if instance.review_id else "common"
+    review_id = instance.review_id or "new"
+    return f"reviews/{product_id}/{review_id}/{uuid.uuid4().hex}.{ext}"
 
 
 class Review(models.Model):
@@ -72,9 +80,45 @@ class Review(models.Model):
 
     def delete(self, *args, **kwargs):
         product = self.product
+        for img in self.images.all():
+            if img.image:
+                img.image.delete(save=False)
         super().delete(*args, **kwargs)
         if product:
             product.update_rating_stats()
+
+
+class ReviewImage(models.Model):
+    """
+    Customer photo attached to a product review (up to 5 images per review, max 1MB each).
+    """
+    review = models.ForeignKey(
+        Review,
+        on_delete=models.CASCADE,
+        related_name="images",
+        db_index=True,
+    )
+    image = models.ImageField(upload_to=review_image_upload_path)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+        verbose_name = "Review Image"
+        verbose_name_plural = "Review Images"
+
+    def __str__(self):
+        return f"ReviewImage #{self.id} for Review #{self.review_id}"
+
+    @property
+    def image_url(self):
+        if self.image and hasattr(self.image, "url"):
+            return self.image.url
+        return None
+
+    def delete(self, *args, **kwargs):
+        if self.image:
+            self.image.delete(save=False)
+        super().delete(*args, **kwargs)
 
 
 class ProductReviewSummary(models.Model):

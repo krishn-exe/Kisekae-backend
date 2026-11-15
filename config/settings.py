@@ -174,7 +174,7 @@ MIDDLEWARE = [
 
 
 
-ROOT_URLCONF = 'KiseKaeDjango.urls'
+ROOT_URLCONF = 'config.urls'
 
 
 
@@ -208,7 +208,7 @@ TEMPLATES = [
 
 
 
-WSGI_APPLICATION = 'KiseKaeDjango.wsgi.application'
+WSGI_APPLICATION = 'config.wsgi.application'
 
 
 
@@ -597,7 +597,7 @@ if AWS_STORAGE_BUCKET_NAME and 'test' not in sys.argv:
 
         "default": {
 
-            "BACKEND": "KiseKaeDjango.storage.KiseKaeS3Storage",
+            "BACKEND": "config.storage.KiseKaeS3Storage",
 
         },
 

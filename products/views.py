@@ -62,7 +62,7 @@ from .recommendation_service import RecommendationService
 from .services import ProductService
 from .tasks import record_product_view_task, record_search_query_task
 
-from KiseKaeDjango.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, paginated_response, ERROR_SCHEMA
 
 PRODUCT_ERROR_SCHEMA = ERROR_SCHEMA
 PRODUCT_ACTION_SUCCESS_SCHEMA = api_response(serializers.JSONField(default=None, allow_null=True), "ProductActionSuccessResponse")

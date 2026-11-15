@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA, paginated_response
+from config.schema.helpers import api_response, ERROR_SCHEMA, paginated_response
 
 from .models import (
     StoreBankAccount,

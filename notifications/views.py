@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from accounts.responses import error_response, success_response
-from KiseKaeDjango.schema.helpers import api_response, ERROR_SCHEMA
+from config.schema.helpers import api_response, ERROR_SCHEMA
 
 from .models import CustomerDevice
 from .serializers import (

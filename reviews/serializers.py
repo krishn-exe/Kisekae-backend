@@ -225,30 +225,36 @@ class ProductReviewSummarySerializer(serializers.ModelSerializer):
 
 
 class ReviewChatHistoryItemSerializer(serializers.Serializer):
-    role = serializers.ChoiceField(choices=["user", "model"])
-    content = serializers.CharField(max_length=300)
+    role = serializers.ChoiceField(
+        choices=["user", "model", "assistant"],
+        help_text="Speaker role. Accepts 'user' (shopper) or 'model' / 'assistant' (chatbot).",
+    )
+    content = serializers.CharField(
+        max_length=300,
+        help_text="Message text for this turn (maximum 300 characters).",
+    )
 
 
 class ReviewChatRequestSerializer(serializers.Serializer):
     question = serializers.CharField(
         max_length=300,
         required=True,
-        help_text="Customer question about this product's reviews.",
+        help_text="Shopper question about the product or customer reviews (maximum 300 characters).",
     )
     history = serializers.ListField(
         child=ReviewChatHistoryItemSerializer(),
         required=False,
         default=list,
-        max_length=5,
-        help_text="Client-side ephemeral prior chat turns (max 5). Not saved server-side.",
+        max_length=3,
+        help_text="Prior conversation context containing up to 3 messages. Maximum limit: 3.",
     )
 
 
 REVIEW_SUMMARY_RESPONSE_SCHEMA = inline_serializer(
     name="ReviewSummaryResponse",
     fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
+        "success": serializers.BooleanField(default=True, help_text="Indicates whether the request succeeded."),
+        "message": serializers.CharField(help_text="Human-readable status message."),
         "data": ProductReviewSummarySerializer(),
     },
 )
@@ -256,12 +262,12 @@ REVIEW_SUMMARY_RESPONSE_SCHEMA = inline_serializer(
 REVIEW_CHAT_RESPONSE_SCHEMA = inline_serializer(
     name="ReviewChatResponse",
     fields={
-        "success": serializers.BooleanField(default=True),
-        "message": serializers.CharField(),
+        "success": serializers.BooleanField(default=True, help_text="Indicates whether the query succeeded."),
+        "message": serializers.CharField(help_text="Human-readable status message."),
         "data": inline_serializer(
             name="ReviewChatResponseData",
             fields={
-                "reply": serializers.CharField(help_text="Concise review-grounded reply."),
+                "reply": serializers.CharField(help_text="Concise answer grounded in product specifications, attributes, and customer reviews."),
                 "is_guardrail_refusal": serializers.BooleanField(help_text="True if question was out of scope or triggered guardrails."),
             },
         ),

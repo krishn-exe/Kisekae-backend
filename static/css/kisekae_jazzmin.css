@@ -296,12 +296,17 @@ body {
   transform: translateY(-1px);
 }
 
-/* 7. Footer */
-.main-footer {
-  border-top: 1px solid #EBE2E5 !important;
-  background: #FAF7F5 !important;
-  font-size: 0.85rem !important;
-  color: #78716C !important;
+/* 7. Footer - Hidden */
+.app-footer,
+.main-footer,
+footer.app-footer,
+footer {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
 }
 
 /* ==========================================================================

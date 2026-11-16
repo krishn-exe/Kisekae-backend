@@ -966,12 +966,11 @@ JAZZMIN_SETTINGS = {
     "site_logo_classes": "img-fluid",
     "site_icon": "img/kisekae_logo.png",
     "welcome_sign": "Welcome to Kisekae Management Portal",
-    "copyright": "KISEKAE Fashion Technologies",
+    "copyright": "",
     "search_model": None,
     "user_avatar": None,
     "topmenu_links": [
         {"name": "API Docs", "url": "swagger-ui", "new_window": True, "icon": "fas fa-book"},
-        {"name": "Live Store", "url": "https://live.kisekae.app", "new_window": True, "icon": "fas fa-external-link-alt"},
     ],
     "show_sidebar": True,
     "navigation_expanded": True,

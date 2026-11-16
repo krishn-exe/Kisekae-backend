@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from accounts.responses import error_response, success_response
 from products.models import Product, ProductStatus
 
-from .ai_service import ReviewAIService
+from .ai_service import FALLBACK_REFUSAL, ReviewAIService
 from .models import ProductReviewSummary, Review, ReviewImage
 from .pagination import ReviewPagination
 from .validators import (
@@ -564,18 +564,31 @@ class ProductReviewSummaryView(APIView):
 
 
 class ProductReviewChatView(APIView):
-    """
-    Stateless, guardrailed review assistant.
-    Answers shopper questions grounded strictly in customer reviews with fast Gemini 2.5 Flash response.
-    Chats are completely temporary and never stored server-side.
-    """
     permission_classes = [AllowAny]
     throttle_scope = "review_chat"
 
     @extend_schema(
         tags=["Reviews & Ratings"],
-        summary="Ask review chatbot a question (stateless, guardrailed)",
-        description="Stateless endpoint allowing shoppers to ask questions about customer reviews. Fast Gemini response, strictly guardrailed to review feedback. Chats are not stored on the server.",
+        summary="Ask product & review chatbot a question (stateless, guardrailed)",
+        description=(
+            "Stateless, guardrailed AI chatbot endpoint that answers shopper questions using product specifications, "
+            "attributes, pricing, and customer reviews.\n\n"
+            "Key Features & Guardrails:\n"
+            "- Operates via Gemini 1.5 Flash with deterministic prompt injection and scope-enforcing guardrails.\n"
+            "- Answers questions based on product details (name, category, description, price, sizes, stock, refund policy) "
+            "and buyer reviews.\n"
+            "- Fully functional even when a product does not yet have customer reviews (gracefully grounds answers in product details).\n"
+            "- Supports conversational continuity with a sliding context window of up to 3 prior messages (`history`).\n"
+            "- Stateless and ephemeral: chat history is processed in-memory and never stored on the server."
+        ),
+        parameters=[
+            OpenApiParameter(
+                name="product_pk",
+                type=int,
+                location=OpenApiParameter.PATH,
+                description="Unique integer primary key of the active product to inquire about.",
+            ),
+        ],
         request=ReviewChatRequestSerializer,
         responses={200: REVIEW_CHAT_RESPONSE_SCHEMA, 400: REVIEW_ERROR_SCHEMA, 404: REVIEW_ERROR_SCHEMA},
     )
@@ -588,14 +601,8 @@ class ProductReviewChatView(APIView):
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        if product.review_count == 0:
-            return success_response(
-                data={
-                    "reply": "This product does not have any customer reviews yet.",
-                    "is_guardrail_refusal": True,
-                },
-                message="No reviews available.",
-            )
+        if product.review_count == 0 and Review.objects.filter(product=product).exists():
+            product.update_rating_stats()
 
         serializer = ReviewChatRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -616,7 +623,7 @@ class ProductReviewChatView(APIView):
                     "reply": refusal_reason,
                     "is_guardrail_refusal": True,
                 },
-                message="Chat response generated.",
+                message="Chat response generated successfully.",
             )
 
         summary = getattr(product, "review_summary", None)
@@ -626,7 +633,7 @@ class ProductReviewChatView(APIView):
         )
 
         reply = ReviewAIService.ask_review_question(
-            product_name=product.name,
+            product=product,
             summary_obj=summary,
             reviews_sample=reviews_sample,
             question=question,
@@ -634,8 +641,8 @@ class ProductReviewChatView(APIView):
         )
 
         is_refusal = (
-            "I can only answer questions regarding customer reviews" in reply
-            or "do not mention this aspect" in reply
+            "I can only answer questions regarding" in reply
+            or reply == FALLBACK_REFUSAL
         )
 
         return success_response(

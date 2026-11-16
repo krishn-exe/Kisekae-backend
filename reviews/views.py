@@ -571,15 +571,9 @@ class ProductReviewChatView(APIView):
         tags=["Reviews & Ratings"],
         summary="Ask product & review chatbot a question (stateless, guardrailed)",
         description=(
-            "Stateless, guardrailed AI chatbot endpoint that answers shopper questions using product specifications, "
-            "attributes, pricing, and customer reviews.\n\n"
-            "Key Features & Guardrails:\n"
-            "- Operates via Gemini 1.5 Flash with deterministic prompt injection and scope-enforcing guardrails.\n"
-            "- Answers questions based on product details (name, category, description, price, sizes, stock, refund policy) "
-            "and buyer reviews.\n"
-            "- Fully functional even when a product does not yet have customer reviews (gracefully grounds answers in product details).\n"
-            "- Supports conversational continuity with a sliding context window of up to 3 prior messages (`history`).\n"
-            "- Stateless and ephemeral: chat history is processed in-memory and never stored on the server."
+            "Ask questions about this product and its customer reviews. "
+            "Accepts up to 3 prior context messages in 'history'. "
+            "'role' accepts 'user' (shopper) or 'model' / 'assistant' (chatbot)."
         ),
         parameters=[
             OpenApiParameter(

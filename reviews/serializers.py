@@ -227,11 +227,11 @@ class ProductReviewSummarySerializer(serializers.ModelSerializer):
 class ReviewChatHistoryItemSerializer(serializers.Serializer):
     role = serializers.ChoiceField(
         choices=["user", "model", "assistant"],
-        help_text="Speaker identity in the prior conversation turn. Accepts 'user' (shopper/customer), or 'model' / 'assistant' (AI assistant).",
+        help_text="Speaker role. Accepts 'user' (shopper) or 'model' / 'assistant' (chatbot).",
     )
     content = serializers.CharField(
         max_length=300,
-        help_text="Text content of the message sent in this turn (maximum 300 characters).",
+        help_text="Message text for this turn (maximum 300 characters).",
     )
 
 
@@ -239,14 +239,14 @@ class ReviewChatRequestSerializer(serializers.Serializer):
     question = serializers.CharField(
         max_length=300,
         required=True,
-        help_text="Shopper's current question about the product specifications, materials, sizing, pricing, or customer reviews (maximum 300 characters).",
+        help_text="Shopper question about the product or customer reviews (maximum 300 characters).",
     )
     history = serializers.ListField(
         child=ReviewChatHistoryItemSerializer(),
         required=False,
         default=list,
         max_length=3,
-        help_text="Optional conversation context containing up to 3 prior messages (alternating user/assistant turns) for conversational continuity. Ephemeral and not stored server-side.",
+        help_text="Prior conversation context containing up to 3 messages. Maximum limit: 3.",
     )
 
 
